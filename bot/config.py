@@ -8,6 +8,10 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://redis:6379/0"
 
+    # Local faster-whisper model size for voice-note transcription.
+    # "small" = good Russian accuracy (~0.5 GB); "base" is lighter/faster.
+    whisper_model: str = "small"
+
     s3_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""

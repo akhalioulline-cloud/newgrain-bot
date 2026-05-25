@@ -6,3 +6,7 @@ class PhotoForm(StatesGroup):
     category = State()
     subcategory = State()
     comment = State()
+
+
+class ProblemForm(StatesGroup):
+    waiting = State()

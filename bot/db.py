@@ -10,7 +10,7 @@ async def get_active_user(tg_id: int):
     async with engine.connect() as conn:
         result = await conn.execute(
             text(
-                "SELECT id, full_name, phone, farm_id "
+                "SELECT id, tg_user_id, full_name, phone, farm_id, role "
                 "FROM users WHERE tg_user_id = :tg AND is_active"
             ),
             {"tg": tg_id},
@@ -29,10 +29,48 @@ async def ensure_user(tg_id: int, full_name: str):
                 VALUES (:tg, :name, :farm, true, 'admin')
                 ON CONFLICT (tg_user_id)
                 DO UPDATE SET is_active = true, full_name = EXCLUDED.full_name
-                RETURNING id, full_name, phone, farm_id
+                RETURNING id, tg_user_id, full_name, phone, farm_id, role
                 """
             ),
             {"tg": tg_id, "name": full_name, "farm": farm_id},
+        )
+        return result.mappings().first()
+
+
+async def add_agronomist(tg_id: int, full_name: str | None, farm_id: int | None):
+    """Whitelist a new agronomist (or re-activate an existing user) on the
+    admin's farm. Never downgrades an existing admin — role is left untouched
+    on conflict."""
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                """
+                INSERT INTO users (tg_user_id, full_name, farm_id, is_active, role)
+                VALUES (:tg, :name, :farm, true, 'agronomist')
+                ON CONFLICT (tg_user_id)
+                DO UPDATE SET
+                    is_active = true,
+                    full_name = COALESCE(EXCLUDED.full_name, users.full_name),
+                    farm_id = COALESCE(users.farm_id, EXCLUDED.farm_id)
+                RETURNING tg_user_id, full_name, role
+                """
+            ),
+            {"tg": tg_id, "name": full_name, "farm": farm_id},
+        )
+        return result.mappings().first()
+
+
+async def deactivate_user(tg_id: int):
+    """Revoke a user's access (soft — keeps the row and their submissions).
+    Returns the affected user's name/role, or None if no such active user."""
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                "UPDATE users SET is_active = false "
+                "WHERE tg_user_id = :tg AND is_active "
+                "RETURNING tg_user_id, full_name, role"
+            ),
+            {"tg": tg_id},
         )
         return result.mappings().first()
 
@@ -130,6 +168,60 @@ async def update_submission(submission_id: str, **fields) -> None:
             ),
             params,
         )
+
+
+async def get_user_history(user_id: int, limit: int = 10):
+    """Return the user's most recent saved submissions, newest first.
+
+    Joins fields for the readable field name and weed_species so a stored
+    latin subcategory can be shown back in Russian.
+    """
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT
+                    s.created_at,
+                    s.category,
+                    s.subcategory,
+                    s.comment_text,
+                    s.comment_voice_url,
+                    s.comment_voice_text,
+                    f.name AS field_name,
+                    ws.russian_name AS species_name
+                FROM submissions s
+                LEFT JOIN fields f ON f.id = s.field_id
+                LEFT JOIN weed_species ws ON ws.latin_name = s.subcategory
+                WHERE s.user_id = :user_id AND s.status <> 'draft'
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"user_id": user_id, "limit": limit},
+        )
+        return result.mappings().all()
+
+
+async def get_user_stats(user_id: int):
+    """Aggregate counts for /stats: today, this week, total, and the number of
+    distinct days this week the user uploaded at least one photo (engagement)."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT
+                    count(*) FILTER (WHERE created_at::date = CURRENT_DATE) AS today,
+                    count(*) FILTER (WHERE created_at >= date_trunc('week', CURRENT_DATE)) AS week,
+                    count(*) AS total,
+                    count(DISTINCT created_at::date)
+                        FILTER (WHERE created_at >= date_trunc('week', CURRENT_DATE)) AS active_days
+                FROM submissions
+                WHERE user_id = :user_id AND status <> 'draft'
+                """
+            ),
+            {"user_id": user_id},
+        )
+        return result.mappings().first()
 
 
 async def count_user_submissions(user_id: int) -> tuple[int, int]:

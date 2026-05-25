@@ -16,6 +16,7 @@ async def main() -> None:
 
     from aiogram import Bot, Dispatcher
     from aiogram.fsm.storage.redis import RedisStorage
+    from aiogram.types import BotCommand
 
     from bot.handlers import router
     from bot.middlewares import AuthMiddleware
@@ -24,6 +25,15 @@ async def main() -> None:
     await ensure_bucket()
 
     bot = Bot(settings.bot_token)
+    await bot.set_my_commands(
+        [
+            BotCommand(command="history", description="Последние снимки"),
+            BotCommand(command="stats", description="Статистика за неделю"),
+            BotCommand(command="fields", description="Ваши пилотные поля"),
+            BotCommand(command="problem", description="Сообщить о проблеме"),
+            BotCommand(command="help", description="Справка"),
+        ]
+    )
     dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())

@@ -1,0 +1,56 @@
+# NewGrain — production stack (Yandex Cloud VM).
+# Differs from docker-compose.yml (dev):
+#   - no MinIO  (photos go to real Yandex Object Storage)
+#   - no api / worker  (not used yet; bot talks to Postgres directly)
+#   - no exposed ports  (postgres/redis are internal-only; bot dials out)
+#   - no source bind-mount  (code is baked into the image; rebuild to ship changes)
+#   - restart: unless-stopped  (survives reboots)
+#
+# Usage on the server:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml run --rm bot alembic upgrade head
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    command: python -m bot.main
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - whisper_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  whisper_cache:

@@ -1,9 +1,10 @@
+import logging
 import re
 from datetime import date
 from uuid import uuid4
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
@@ -15,19 +16,26 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
+from bot.config import settings
 from bot.db import (
+    add_agronomist,
     count_user_submissions,
     create_submission,
+    deactivate_user,
     get_pilot_fields,
     get_species,
     get_top_species,
+    get_user_history,
+    get_user_stats,
     set_user_phone,
     update_submission,
 )
-from bot.states import PhotoForm
+from bot.states import PhotoForm, ProblemForm
 from bot.storage import upload_bytes
+from bot.transcribe import transcribe
 
 router = Router()
+logger = logging.getLogger("bot.handlers")
 
 CATEGORIES = [
     ("Сорняк", "weed"),
@@ -36,6 +44,8 @@ CATEGORIES = [
     ("Контроль", "control"),
     ("Результат обработки", "treatment_result"),
 ]
+
+CATEGORY_LABELS = {code: label for label, code in CATEGORIES}
 
 
 # ---------- keyboards ----------
@@ -103,6 +113,185 @@ async def cmd_start(message: Message, state: FSMContext, user) -> None:
 async def cmd_cancel(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("Отменено.", reply_markup=ReplyKeyboardRemove())
+
+
+@router.message(Command("history"))
+async def cmd_history(message: Message, user) -> None:
+    rows = await get_user_history(user["id"])
+    if not rows:
+        await message.answer("Пока нет сохранённых фото. Отправьте первое — просто пришлите снимок.")
+        return
+
+    lines = ["Последние снимки:"]
+    for r in rows:
+        when = f"{r['created_at']:%d.%m %H:%M}"
+        label = CATEGORY_LABELS.get(r["category"], r["category"] or "—")
+        parts = [when, r["field_name"] or "поле?", label]
+        if r["species_name"]:
+            parts.append(r["species_name"])
+        line = " · ".join(parts)
+
+        comment = r["comment_text"]
+        if comment:
+            snippet = comment if len(comment) <= 40 else comment[:39] + "…"
+            line += f"\n  💬 {snippet}"
+        elif r["comment_voice_text"]:
+            voice = r["comment_voice_text"]
+            snippet = voice if len(voice) <= 40 else voice[:39] + "…"
+            line += f"\n  🎤 {snippet}"
+        elif r["comment_voice_url"]:
+            line += "\n  🎤 голосовой комментарий"
+        lines.append(f"• {line}")
+
+    await message.answer("\n".join(lines))
+
+
+HELP_TEXT = (
+    "Что я умею:\n"
+    "📷 Просто пришлите фото — я задам пару уточнений и сохраню снимок.\n\n"
+    "Команды:\n"
+    "/history — последние сохранённые снимки\n"
+    "/stats — сколько фото за сегодня, неделю и всего\n"
+    "/fields — ваши пилотные поля\n"
+    "/problem — сообщить о проблеме или задать вопрос\n"
+    "/cancel — отменить текущий шаг\n"
+    "/help — это сообщение"
+)
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.answer(HELP_TEXT)
+
+
+@router.message(Command("fields"))
+async def cmd_fields(message: Message, user) -> None:
+    await _show_fields(message, user["farm_id"])
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, user) -> None:
+    s = await get_user_stats(user["id"])
+    week = int(s["week"])
+    # Weekly goal is 15–30 photos (the single success metric).
+    if week >= 15:
+        progress = "цель недели выполнена ✅"
+    else:
+        progress = f"до цели недели (15) осталось {15 - week}"
+    await message.answer(
+        "Ваша статистика:\n"
+        f"• Сегодня: {int(s['today'])}\n"
+        f"• За эту неделю: {week} — {progress}\n"
+        f"• Дней с фото на этой неделе: {int(s['active_days'])}\n"
+        f"• Всего сохранено: {int(s['total'])}"
+    )
+
+
+# ---------- /adduser: admin whitelists a new agronomist ----------
+
+def _is_admin(user) -> bool:
+    return user["role"] == "admin" or user["tg_user_id"] in settings.admin_ids
+
+
+@router.message(Command("adduser"))
+async def cmd_adduser(message: Message, command: CommandObject, user) -> None:
+    if not _is_admin(user):
+        await message.answer("Эта команда доступна только администратору.")
+        return
+
+    tg_id: int | None = None
+    name: str | None = None
+
+    if command.args:
+        parts = command.args.split(maxsplit=1)
+        if parts[0].lstrip("-").isdigit():
+            tg_id = int(parts[0])
+            name = parts[1].strip() if len(parts) > 1 else None
+
+    if tg_id is None:
+        await message.answer(
+            "Как добавить агронома:\n"
+            "/adduser 123456789 Иван Петров\n\n"
+            "Номер (123456789) человек видит сам, когда впервые нажимает Start — "
+            "пусть пришлёт его вам."
+        )
+        return
+
+    added = await add_agronomist(tg_id, name, user["farm_id"])
+    who = added["full_name"] or str(tg_id)
+    if added["role"] == "admin":
+        await message.answer(f"{who} — администратор, доступ уже есть.")
+    else:
+        await message.answer(
+            f"Готово ✓ {who} добавлен(а) как агроном. "
+            "Попросите нажать Start — бот его впустит."
+        )
+
+
+@router.message(Command("removeuser"))
+async def cmd_removeuser(message: Message, command: CommandObject, user) -> None:
+    if not _is_admin(user):
+        await message.answer("Эта команда доступна только администратору.")
+        return
+
+    arg = (command.args or "").strip()
+    if not arg.lstrip("-").isdigit():
+        await message.answer(
+            "Как убрать доступ:\n"
+            "/removeuser 123456789\n\n"
+            "Номер можно посмотреть в /adduser или в списке пользователей."
+        )
+        return
+
+    tg_id = int(arg)
+    if tg_id == user["tg_user_id"]:
+        await message.answer("Нельзя убрать доступ у самого себя.")
+        return
+
+    removed = await deactivate_user(tg_id)
+    if removed is None:
+        await message.answer("Активный пользователь с таким номером не найден.")
+        return
+
+    who = removed["full_name"] or str(tg_id)
+    await message.answer(
+        f"Готово ✓ доступ для {who} отозван. Снимки и история сохранены."
+    )
+
+
+# ---------- /problem: collect a free-text report, forward to admins ----------
+
+@router.message(Command("problem"))
+async def cmd_problem(message: Message, state: FSMContext) -> None:
+    await state.set_state(ProblemForm.waiting)
+    await message.answer(
+        "Опишите проблему или вопрос одним сообщением — я передам администратору. "
+        "Или /cancel, чтобы отменить."
+    )
+
+
+@router.message(ProblemForm.waiting, F.text)
+async def on_problem_text(message: Message, state: FSMContext, user) -> None:
+    await state.clear()
+    name = user["full_name"] or "без имени"
+    report = (
+        f"⚠️ Сообщение о проблеме от {name} (tg id {message.from_user.id}):\n\n"
+        f"{message.text}"
+    )
+    delivered = False
+    for admin_id in settings.admin_ids:
+        try:
+            await message.bot.send_message(admin_id, report)
+            delivered = True
+        except Exception:
+            continue
+    if delivered:
+        await message.answer("Спасибо! Передал администратору.")
+    else:
+        await message.answer(
+            "Записал, но не удалось уведомить администратора автоматически. "
+            "Свяжитесь с ним напрямую, если вопрос срочный."
+        )
 
 
 # ---------- photo flow (the core) ----------
@@ -193,9 +382,24 @@ async def on_voice_comment(message: Message, state: FSMContext, user) -> None:
     data = await state.get_data()
     file = await message.bot.get_file(message.voice.file_id)
     buffer = await message.bot.download_file(file.file_path)
+    audio = buffer.read()
     key = f"voice/{date.today():%Y-%m-%d}/{data['submission_id']}.ogg"
-    voice_url = await upload_bytes(key, buffer.read(), "audio/ogg")
+    voice_url = await upload_bytes(key, audio, "audio/ogg")
     await update_submission(data["submission_id"], comment_voice_url=voice_url)
+
+    await message.answer("Расшифровываю голосовое…")
+    try:
+        recognized = await transcribe(audio)
+    except Exception:
+        logger.exception("voice transcription failed for %s", data["submission_id"])
+        recognized = ""
+
+    if recognized:
+        await update_submission(data["submission_id"], comment_voice_text=recognized)
+        await message.answer(f"Распознал: «{recognized}»")
+    else:
+        await message.answer("Не удалось распознать речь — голосовое сохранил как есть.")
+
     await _finalize(message, state, user)
 
 

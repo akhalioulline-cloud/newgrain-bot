@@ -76,6 +76,7 @@ services:
     env_file: .env
     volumes:
       - ./:/app
+      - whisper_cache:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,3 +99,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  whisper_cache:
