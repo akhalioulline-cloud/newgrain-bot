@@ -1,0 +1,188 @@
+[
+  {
+    "name": "ambrosia",
+    "type": "rectangle",
+    "color": "#f25454",
+    "attributes": []
+  },
+  {
+    "name": "cirsium",
+    "type": "rectangle",
+    "color": "#f27354",
+    "attributes": []
+  },
+  {
+    "name": "convolvulus",
+    "type": "rectangle",
+    "color": "#f29154",
+    "attributes": []
+  },
+  {
+    "name": "chenopodium",
+    "type": "rectangle",
+    "color": "#f2b054",
+    "attributes": []
+  },
+  {
+    "name": "amaranthus",
+    "type": "rectangle",
+    "color": "#f2ce54",
+    "attributes": []
+  },
+  {
+    "name": "setaria",
+    "type": "rectangle",
+    "color": "#f2ed54",
+    "attributes": []
+  },
+  {
+    "name": "echinochloa",
+    "type": "rectangle",
+    "color": "#d8f254",
+    "attributes": []
+  },
+  {
+    "name": "sonchus",
+    "type": "rectangle",
+    "color": "#baf254",
+    "attributes": []
+  },
+  {
+    "name": "helianthus_v",
+    "type": "rectangle",
+    "color": "#9bf254",
+    "attributes": []
+  },
+  {
+    "name": "brassica_v",
+    "type": "rectangle",
+    "color": "#7df254",
+    "attributes": []
+  },
+  {
+    "name": "elytrigia",
+    "type": "rectangle",
+    "color": "#5ef254",
+    "attributes": []
+  },
+  {
+    "name": "avena",
+    "type": "rectangle",
+    "color": "#54f269",
+    "attributes": []
+  },
+  {
+    "name": "xanthium",
+    "type": "rectangle",
+    "color": "#54f287",
+    "attributes": []
+  },
+  {
+    "name": "galium",
+    "type": "rectangle",
+    "color": "#54f2a6",
+    "attributes": []
+  },
+  {
+    "name": "polygonum",
+    "type": "rectangle",
+    "color": "#54f2c4",
+    "attributes": []
+  },
+  {
+    "name": "rust_brown",
+    "type": "rectangle",
+    "color": "#54f2e3",
+    "attributes": []
+  },
+  {
+    "name": "rust_yellow",
+    "type": "rectangle",
+    "color": "#54e3f2",
+    "attributes": []
+  },
+  {
+    "name": "septoria_leaf",
+    "type": "rectangle",
+    "color": "#54c4f2",
+    "attributes": []
+  },
+  {
+    "name": "septoria_glume",
+    "type": "rectangle",
+    "color": "#54a6f2",
+    "attributes": []
+  },
+  {
+    "name": "powdery_mildew",
+    "type": "rectangle",
+    "color": "#5487f2",
+    "attributes": []
+  },
+  {
+    "name": "fusarium_head",
+    "type": "rectangle",
+    "color": "#5469f2",
+    "attributes": []
+  },
+  {
+    "name": "helminthosporium",
+    "type": "rectangle",
+    "color": "#5e54f2",
+    "attributes": []
+  },
+  {
+    "name": "sunflower_phomopsis",
+    "type": "rectangle",
+    "color": "#7d54f2",
+    "attributes": []
+  },
+  {
+    "name": "sunflower_phoma",
+    "type": "rectangle",
+    "color": "#9b54f2",
+    "attributes": []
+  },
+  {
+    "name": "sunflower_alternaria",
+    "type": "rectangle",
+    "color": "#ba54f2",
+    "attributes": []
+  },
+  {
+    "name": "drought",
+    "type": "tag",
+    "color": "#d854f2",
+    "attributes": []
+  },
+  {
+    "name": "waterlogging",
+    "type": "tag",
+    "color": "#f254ed",
+    "attributes": []
+  },
+  {
+    "name": "nitrogen_deficiency",
+    "type": "tag",
+    "color": "#f254ce",
+    "attributes": []
+  },
+  {
+    "name": "potassium_deficiency",
+    "type": "tag",
+    "color": "#f254b0",
+    "attributes": []
+  },
+  {
+    "name": "herbicide_damage",
+    "type": "tag",
+    "color": "#f25491",
+    "attributes": []
+  },
+  {
+    "name": "frost",
+    "type": "tag",
+    "color": "#f25473",
+    "attributes": []
+  }
+]

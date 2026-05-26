@@ -7,7 +7,7 @@ A Telegram bot (Г1 / discovery phase) where an agronomist uploads field photos;
 The owner is a **non-technical founder** with no coding background, building solo with Claude Code as the implementer. Explain things in plain language, define jargon, and use the pattern: the user makes decisions & sets up accounts; Claude writes the code and gives exact copy-paste commands + how to verify. Flag the blast radius before risky/irreversible steps.
 
 ## Spec location
-`~/Library/Mobile Documents/com~apple~CloudDocs/SFAI/tech_spec_v3.docx` — reference its section numbers (§1.5 DB schema, §1.4 architecture, §2.x pipeline).
+`~/Library/Mobile Documents/com~apple~CloudDocs/NGAI/tech_spec_v3.docx` — reference its section numbers (§1.5 DB schema, §1.4 architecture, §2.x pipeline).
 
 ## Stack
 aiogram 3 (bot), FastAPI (api, minimal so far), PostgreSQL 16 + PostGIS, Redis (FSM state + future ARQ queue), Yandex Object Storage in prod / MinIO locally (S3), Whisper (voice→text, not built yet). Everything runs via `docker-compose.yml`.
