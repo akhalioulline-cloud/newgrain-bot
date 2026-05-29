@@ -213,7 +213,11 @@ async def get_user_history(user_id: int, limit: int = 10):
                     s.comment_voice_url,
                     s.comment_voice_text,
                     f.name AS field_name,
-                    ws.russian_name AS species_name
+                    -- For keyboard-picked species, subcategory is the Latin
+                    -- name and the join gives a Russian display name.
+                    -- For free-text ("Другой") rows, subcategory IS the
+                    -- typed text and the join misses; fall back to it.
+                    COALESCE(ws.russian_name, s.subcategory) AS species_name
                 FROM submissions s
                 LEFT JOIN fields f ON f.id = s.field_id
                 LEFT JOIN weed_species ws ON ws.latin_name = s.subcategory

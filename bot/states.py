@@ -5,6 +5,7 @@ class PhotoForm(StatesGroup):
     field = State()
     category = State()
     subcategory = State()
+    subcategory_other = State()  # waiting for free-text species name
     comment = State()
 
 

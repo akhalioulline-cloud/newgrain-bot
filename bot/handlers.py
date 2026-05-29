@@ -84,6 +84,7 @@ def _species_kb(species) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=s["russian_name"], callback_data=f"sub:{s['id']}")]
         for s in species
     ]
+    rows.append([InlineKeyboardButton(text="Другой", callback_data="sub:other")])
     rows.append([InlineKeyboardButton(text="Пропустить", callback_data="sub:skip")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -455,6 +456,13 @@ async def on_category(callback: CallbackQuery, state: FSMContext) -> None:
 async def on_subcategory(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     value = callback.data.split(":")[1]
+
+    # "Другой" — branch to free-text input.
+    if value == "other":
+        await state.set_state(PhotoForm.subcategory_other)
+        await callback.message.answer("Введите название вида (или /skip):")
+        return
+
     data = await state.get_data()
     if value != "skip":
         species = await get_species(int(value))
@@ -462,6 +470,28 @@ async def on_subcategory(callback: CallbackQuery, state: FSMContext) -> None:
             await update_submission(data["submission_id"], subcategory=species["latin_name"])
     await state.set_state(PhotoForm.comment)
     await callback.message.answer("Комментарий? Текстом или голосом. Или /skip.")
+
+
+@router.message(PhotoForm.subcategory_other, Command("skip"))
+async def on_skip_subcategory_other(message: Message, state: FSMContext) -> None:
+    await state.set_state(PhotoForm.comment)
+    await message.answer("Комментарий? Текстом или голосом. Или /skip.")
+
+
+@router.message(PhotoForm.subcategory_other, F.text)
+async def on_subcategory_other_text(message: Message, state: FSMContext) -> None:
+    # Free-text species name. Saved verbatim in submissions.subcategory.
+    # Mixed-format on purpose: keyboard-picked rows store Latin (e.g.
+    # "Setaria viridis"); free-text rows store whatever the agronomist
+    # typed (Russian, regional name, sometimes both). /history's
+    # COALESCE on weed_species.russian_name handles the display gracefully.
+    # Promotion of frequently-typed names into the seed/keyboard is a
+    # monthly review per labeling/schema_promotion_policy.md.
+    data = await state.get_data()
+    typed = message.text.strip()
+    await update_submission(data["submission_id"], subcategory=typed)
+    await state.set_state(PhotoForm.comment)
+    await message.answer(f"Записал: «{typed}». Комментарий? Текстом или голосом. Или /skip.")
 
 
 async def _finalize(message: Message, state: FSMContext, user) -> None:

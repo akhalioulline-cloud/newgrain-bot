@@ -12,6 +12,9 @@ The owner is a **non-technical founder** with no coding background, building sol
 ## Third-party content policy
 [LICENSING.md](LICENSING.md) governs what we may do with external materials (commercial atlases, public datasets, recommendation tables). **Read it before ingesting any external source into the product.** Key rule: Syngenta/BASF/Bayer/etc. atlases are off-limits for any product-facing use (text, photos, recommendations); their TOCs are usable as taxonomy signal only. See [labeling/class_gaps_from_atlases.md](labeling/class_gaps_from_atlases.md) for the worked example.
 
+## Schema-promotion policy
+[labeling/schema_promotion_policy.md](labeling/schema_promotion_policy.md) governs how new species enter the schema: **data-driven, not catalog-driven**. New species typed via /Другой live in `submissions.subcategory` as free text; promotion to dictionary / inline keyboard / CV training class happens on observed frequency thresholds, not by pre-importing an atlas TOC. Monthly review queries are in the doc.
+
 ## Stack
 aiogram 3 (bot), FastAPI (api, minimal so far), PostgreSQL 16 + PostGIS, Redis (FSM state + future ARQ queue), Yandex Object Storage in prod / MinIO locally (S3), Whisper (voice→text, not built yet). Everything runs via `docker-compose.yml`.
 
