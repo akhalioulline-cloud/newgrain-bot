@@ -1,12 +1,8 @@
 # Draft: MFWD dataset license clarification email
 
-**To send:** to the corresponding author(s) of the MFWD paper. The paper lists
-multiple authors at the Grimm Lab, TU Munich. Best primary recipient is
-**Prof. Dr. Dominik Grimm** (head of lab) — the contact email is on the
-[grimmlab.de](https://grimmlab.de/) site or on the article's first page.
-If a co-author is listed as "corresponding author" in the article, copy them too.
+**To:** `dominik.grimm@hswt.de` (Prof. Dr. Dominik Grimm — head of Grimm Lab, joint TUM Campus Straubing / Hochschule Weihenstephan-Triesdorf; senior author on the MFWD paper). Verified via the official TUM `professoren.tum.de` directory.
 
-**Suggested cc:** none initially.
+**Other authors on the paper** (Nikita Genze, Wouter K. Vahl, Jennifer Groth, Maximilian Wirth, Michael Grieb) — do not cc; Prof. Grimm can route internally. Adding addressees slows replies in academic contexts.
 
 **Subject:** MFWD dataset license clarification for commercial use
 
