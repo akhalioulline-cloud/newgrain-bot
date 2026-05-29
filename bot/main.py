@@ -30,6 +30,7 @@ async def main() -> None:
             BotCommand(command="history", description="Последние снимки"),
             BotCommand(command="stats", description="Статистика за неделю"),
             BotCommand(command="fields", description="Ваши пилотные поля"),
+            BotCommand(command="finish", description="Закончить незавершённое фото"),
             BotCommand(command="problem", description="Сообщить о проблеме"),
             BotCommand(command="help", description="Справка"),
         ]

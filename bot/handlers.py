@@ -22,6 +22,7 @@ from bot.db import (
     count_user_submissions,
     create_submission,
     deactivate_user,
+    get_pending_submission,
     get_pilot_fields,
     get_species,
     get_top_species,
@@ -153,6 +154,7 @@ HELP_TEXT = (
     "/history — последние сохранённые снимки\n"
     "/stats — сколько фото за сегодня, неделю и всего\n"
     "/fields — ваши пилотные поля\n"
+    "/finish — закончить незавершённое фото\n"
     "/problem — сообщить о проблеме или задать вопрос\n"
     "/cancel — отменить текущий шаг\n"
     "/help — это сообщение"
@@ -185,6 +187,48 @@ async def cmd_stats(message: Message, user) -> None:
         f"• Дней с фото на этой неделе: {int(s['active_days'])}\n"
         f"• Всего сохранено: {int(s['total'])}"
     )
+
+
+# ---------- /finish: resume an interrupted photo upload ----------
+# The FSM state in Redis expires after ~10 min of inactivity, but the
+# submission row sits in Postgres at status=awaiting_metadata forever.
+# /finish picks the user's most recent stuck submission and re-enters the
+# FSM at whichever step they didn't complete (category / subcategory / comment).
+# The existing on_category / on_subcategory / on_*_comment handlers do the rest.
+
+@router.message(Command("finish"))
+async def cmd_finish(message: Message, state: FSMContext, user) -> None:
+    if await state.get_state() is not None:
+        await message.answer(
+            "Вы сейчас в процессе загрузки. Сначала /cancel, потом /finish."
+        )
+        return
+
+    pending = await get_pending_submission(user["id"])
+    if pending is None:
+        await message.answer("Незавершённых фото нет — всё сохранено ✓")
+        return
+
+    await state.update_data(submission_id=str(pending["id"]))
+    field_label = pending["field_name"] or "неизвестное поле"
+    when = f"{pending['created_at']:%d.%m %H:%M}"
+    intro = f"Продолжаем фото с поля {field_label} от {when}."
+
+    # Resume at whichever step is still missing.
+    if pending["category"] is None:
+        await state.set_state(PhotoForm.category)
+        await message.answer(f"{intro} Что на фото?", reply_markup=_category_kb())
+    elif pending["category"] == "weed" and pending["subcategory"] is None:
+        species = await get_top_species()
+        await state.set_state(PhotoForm.subcategory)
+        await message.answer(
+            f"{intro} Какой вид? (можно пропустить)",
+            reply_markup=_species_kb(species),
+        )
+    else:
+        # Category set (and subcategory if weed) — only the comment remains.
+        await state.set_state(PhotoForm.comment)
+        await message.answer(f"{intro} Комментарий? Текстом или голосом. Или /skip.")
 
 
 # ---------- /adduser: admin whitelists a new agronomist ----------

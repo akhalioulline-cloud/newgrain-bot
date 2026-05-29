@@ -97,6 +97,31 @@ async def get_pilot_fields(farm_id: int | None):
         return result.mappings().all()
 
 
+async def get_pending_submission(user_id: int):
+    """Most recent of the user's submissions stuck at awaiting_metadata.
+
+    Used by /finish to resume an interrupted FSM (state in Redis expires
+    after 10 min, but the DB row lives forever). Joins fields so the
+    resume prompt can show the agronomist which photo we're resuming.
+    """
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT s.id, s.category, s.subcategory, s.created_at,
+                       f.name AS field_name
+                FROM submissions s
+                LEFT JOIN fields f ON f.id = s.field_id
+                WHERE s.user_id = :user_id AND s.status = 'awaiting_metadata'
+                ORDER BY s.created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_id},
+        )
+        return result.mappings().first()
+
+
 async def get_top_species():
     async with engine.connect() as conn:
         result = await conn.execute(
