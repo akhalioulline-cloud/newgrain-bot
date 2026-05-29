@@ -20,7 +20,7 @@ this file *before* downloading.
 | 3 | Multi-modal Weed Dataset (wheat, China) | ✅ APPROVED | CC BY | Frontiers open access. |
 | 4 | GrowingSoy / soy-segmentation-ds | ✅ APPROVED | MIT | Repo + dataset MIT. |
 | 5 | Sunflower Fruits & Leaves (Mendeley) | ✅ APPROVED | CC BY | For sunflower diseases. |
-| 6 | **MFWD** (Moving Fields Weed Dataset) | ✅ APPROVED (provisional, paper trail pending) | Article CC BY + code MIT; data license inferred from article CC BY | Verified 29 May 2026: article is CC BY, dataset is the article's primary output. Used under inferred CC BY interpretation. Email to grimmlab (TU Munich) sent on the same date to obtain explicit written confirmation for the Series A paper trail. If response is negative — revert to PARKED. |
+| 6 | **MFWD** (Moving Fields Weed Dataset) | ✅ APPROVED | Article CC BY + code MIT + **explicit written grant from Prof. D. Grimm (29 May 2026)** for commercial use with attribution and no dataset redistribution. See [mfwd_license_reply.md](mfwd_license_reply.md). |
 | 7 | **OPPD** (Open Plant Phenotype Database) | ❌ **EXCLUDED** | **CC BY-NC-SA 4.0** | Non-commercial — incompatible with Flagleaf. |
 | 8 | PlantVillage soybean subset | ⏸️ PARKED | license inconsistent across mirrors; soy coverage thin | Re-evaluate only if other soy sources insufficient. |
 | 9 | Roboflow Universe weed/disease subsets | ⏸️ PARKED | mixed (per-subset) | Per-subset audit required; defer until specific need. |
@@ -72,20 +72,25 @@ this file *before* downloading.
 - **Coverage of our schema:** 2 of the 5 sunflower-disease classes proposed in [labeling/class_gaps_from_atlases.md](../labeling/class_gaps_from_atlases.md). Strong signal for `sunflower_downy_mildew`.
 - **Note:** images are *leaves close-up*, not in-canopy whole-plant. Domain shift to phone-photo in-field will be significant; expect bootstrap-only utility.
 
-## 6. MFWD (Moving Fields Weed Dataset) ✅ APPROVED (provisional)
+## 6. MFWD (Moving Fields Weed Dataset) ✅ APPROVED
 
 - **Authoritative source:** Genze et al. 2024, *Scientific Data* [10.1038/s41597-024-02945-6](https://www.nature.com/articles/s41597-024-02945-6); repo [github.com/grimmlab/MFWD](https://github.com/grimmlab/MFWD)
-- **License analysis (verified 29 May 2026):**
-  - **Article: CC BY** — confirmed via the Nature article footer: *"This is an open access article distributed under the terms of the Creative Commons CC BY license, which permits unrestricted use, distribution, and reproduction in any medium, provided the original work is properly cited. You are not required to obtain permission to reuse this article."*
-  - **Code (`download_by_ftp.py` and helpers): MIT** — confirmed via repo
-  - **Data: license not separately stated** in the article's Data Availability section or in the repo's README
-- **Working interpretation:** the article is published in *Scientific Data* as a **data paper** — the dataset is the article's primary contribution. The CC BY notice that "permits unrestricted use, distribution, and reproduction in any medium" is interpreted to extend to the dataset described in the article, on the basis that (a) authors clearly intended the work to be openly reusable (it's a data paper), (b) the dataset is the article's central reuseable artifact, (c) Nature Scientific Data's mission and editorial policy framework presume open data terms.
-- **Caveat:** this interpretation is reasonable but not strictly explicit. For the Series A paper trail, an email was sent **29 May 2026** to Prof. Dominik Grimm (`dominik.grimm@hswt.de`) requesting written confirmation that the dataset reuse falls under the article's CC BY terms for commercial purposes with attribution. Save the response to the project's legal archive when received. Follow-up if no response by 12 June 2026.
-- **If response is negative:** revert this row to PARKED, delete downloaded data, re-publish updated coverage math.
+- **License status (29 May 2026 — definitive):**
+  - **Article: CC BY** — Nature article footer
+  - **Code (`download_by_ftp.py` and helpers): MIT**
+  - **Data: explicit written grant from Prof. Dr. Dominik Grimm**, head of Grimm Lab (TU Munich / HSWT Straubing), received 29 May 2026 in response to our license-clarification email. Full text and conditions in [mfwd_license_reply.md](mfwd_license_reply.md).
+- **Permitted (binding per the grant):**
+  - Use a subset of MFWD for training internal CV models
+  - Use the resulting trained models in the Flagleaf commercial product
+  - Commercial use broadly within those bounds
+- **Required (binding per the grant):**
+  1. **Do NOT redistribute the MFWD dataset itself.** Trained model weights derived from MFWD may be used in the product; the dataset itself stays internal.
+  2. Cite the MFWD paper in our internal data card and in any external publication, report, documentation, or other output resulting from the work.
+  3. Acknowledge MFWD as used for "model training or pre-annotation support" where appropriate.
 - **Content:** 94,321 images covering **28 weed species** in maize and sorghum, Germany. Bbox + instance segmentation + multiple-object-tracking annotations. CVAT-compatible format.
-- **Coverage of our schema:** restores `chenopodium` (P0), and likely `galium` (P2), `polygonum` (P2), `avena` (P1), plus broader exposure for `ambrosia`, `amaranthus`. This is the **single largest bootstrap source** by image count.
+- **Coverage of our schema:** restores `chenopodium` (P0), `galium` (P2), `polygonum` (P2), `avena` (P1), plus broader exposure for `ambrosia`, `amaranthus`, and likely `echinochloa`. The single largest bootstrap source by image count.
 - **Download method:** custom FTP script (see [bootstrap_setup.md §6](bootstrap_setup.md)). Per-species pull via EPPO codes keeps fetch to ~20–30 GB.
-- **Attribution:** *Genze et al., Manually annotated and curated Dataset of diverse Weed Species in Maize and Sorghum for Computer Vision, Scientific Data 2024, CC BY.*
+- **Canonical citation (to use everywhere):** Genze, N., Vahl, W.K., Groth, J., Wirth, M., Grieb, M. & Grimm, D.G. (2024). *Manually annotated and curated Dataset of diverse Weed Species in Maize and Sorghum for Computer Vision.* Scientific Data **11**, 109. https://doi.org/10.1038/s41597-024-02945-6
 
 ## 7. OPPD (Open Plant Phenotype Database) ❌ EXCLUDED
 
@@ -146,15 +151,15 @@ this file *before* downloading.
 - All wheat diseases and all stresses
 
 **Replanning consequences:**
-1. Spec's day-30 acceptance criterion ("v1-модель обучена на ~200 фото наших полей + bootstrap-данных, mAP > 50% baseline") — **on track** under the inferred-CC-BY MFWD position.
-2. **Risk to monitor:** if the TU Munich response is negative or doesn't come, MFWD reverts to PARKED and `chenopodium` (P0), `galium`/`polygonum` (P2), `avena` (P1) drop back to ground-up. Bootstrap shrinks from 8–9 to 5/15 weed classes. Annotator throughput drops ~20%. Manageable but tighter.
-3. **Sub-stage A still produced the smoke-test discipline** (see [domain_shift_notes.md](domain_shift_notes.md)): even with the favorable MFWD interpretation, train v0 only after eyeballing the first 10–20 agronomist photos vs the public corpora.
+1. Spec's day-30 acceptance criterion ("v1-модель обучена на ~200 фото наших полей + bootstrap-данных, mAP > 50% baseline") — **on track**.
+2. The MFWD-license risk that was on the table at the start of the audit is closed; full coverage math holds.
+3. **Sub-stage A's smoke-test discipline still applies** (see [domain_shift_notes.md](domain_shift_notes.md)): train v0 only after eyeballing the first 10–20 agronomist photos vs the public corpora — to make sure domain shift is in the expected envelope before committing GPU time.
 
 ---
 
 ## Action checklist before fetching any data
 
-1. ✅ Open Nature article on MFWD (item 6), read "Data Availability" section, record verdict in this file. **Done 29 May 2026: data has no stated license — parked.**
+1. ✅ MFWD license clarified. Data Availability section gives no explicit license, but explicit written grant for commercial use received from Prof. Grimm on 29 May 2026 ([mfwd_license_reply.md](mfwd_license_reply.md)). MFWD fully approved.
 2. ☐ Verify GrowingSoy MIT scope covers the data (not just code) — open the repo's `LICENSE` and `labeled/` folder license notes.
 3. ☐ Decide storage location — **not iCloud Drive** (will cause sync chaos with 10+ GB). Recommended: local `~/data/flagleaf-bootstrap/` + optional sync to Yandex Object Storage prefix `bootstrap/`.
 4. ☐ For each ✅ APPROVED row, add a `data-card` entry with attribution line for any future model trained on it.

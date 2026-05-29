@@ -50,9 +50,9 @@ Based on the [PUBLIC_SOURCES.md audit](PUBLIC_SOURCES.md), here's the expected v
 | `sunflower_botrytis` (gap-list) | Mendeley sunflower | Same as above | Same. |
 | All other diseases (wheat rust, septoria, etc.) and all stresses | **NONE** | **0%** | Ground-up labeling. |
 
-**Headline number (29 May 2026, under inferred-CC-BY MFWD position):** weighted by class priority, expected v0 pre-annotation coverage is **~35–50% of incoming photos getting a useful box**. That's a meaningful annotator speedup and justifies training v0 when the smoke test passes.
+**Headline number (29 May 2026, MFWD fully approved by author):** weighted by class priority, expected v0 pre-annotation coverage is **~35–50% of incoming photos getting a useful box**. That's a meaningful annotator speedup and justifies training v0 once the smoke test on the first 10–20 real photos passes.
 
-**Risk to monitor:** if TU Munich's response to the MFWD-license email is negative or doesn't come, MFWD reverts to PARKED and the per-class table above downgrades `chenopodium`, `galium`, `polygonum`, `avena` to 0%. Headline coverage drops to ~20–30%. At that level v0 becomes borderline-worth-training and Sub-stage B reverts to the conservative fallback: skip v0, label first 200 ground-up, jump straight to v1.
+The MFWD-license uncertainty that hung over earlier drafts of this memo is resolved — Prof. Grimm granted explicit written permission for commercial use with attribution on 29 May 2026 (see [mfwd_license_reply.md](mfwd_license_reply.md)). Per-class numbers above stand.
 
 ---
 
