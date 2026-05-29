@@ -48,6 +48,24 @@ CATEGORIES = [
 
 CATEGORY_LABELS = {code: label for label, code in CATEGORIES}
 
+# Photos sent via Telegram's "Photo" button are always JPEG. Photos sent as
+# "File" (paperclip → File) preserve the original MIME (HEIC from iPhone,
+# JPEG/PNG from Android, WebP from some apps). Used to pick the S3 object's
+# extension + Content-Type so the file is stored as it came.
+_MIME_TO_EXT = {
+    "image/jpeg": "jpg",
+    "image/jpg":  "jpg",   # non-standard but seen in the wild
+    "image/png":  "png",
+    "image/heic": "heic",
+    "image/heif": "heif",
+    "image/webp": "webp",
+    "image/gif":  "gif",
+}
+
+
+def _ext_for_mime(mime: str) -> str:
+    return _MIME_TO_EXT.get(mime, "bin")
+
 
 # ---------- keyboards ----------
 
@@ -340,11 +358,19 @@ async def on_problem_text(message: Message, state: FSMContext, user) -> None:
 
 # ---------- photo flow (the core) ----------
 
-@router.message(F.photo)
-async def on_photo(message: Message, state: FSMContext, user) -> None:
-    photo = message.photo[-1]  # largest size
+async def _start_photo_flow(
+    message: Message,
+    state: FSMContext,
+    user,
+    file_id: str,
+    mime: str,
+    width: int | None,
+    height: int | None,
+) -> None:
+    """Shared kickoff for both 'Photo'-sent and 'File'-sent images:
+    cache file metadata in FSM, prompt for field."""
     await state.set_state(PhotoForm.field)
-    await state.update_data(file_id=photo.file_id, width=photo.width, height=photo.height)
+    await state.update_data(file_id=file_id, mime=mime, width=width, height=height)
     await message.answer("Принял фото. Пара уточнений:")
 
     fields = await get_pilot_fields(user["farm_id"])
@@ -353,6 +379,37 @@ async def on_photo(message: Message, state: FSMContext, user) -> None:
         await state.clear()
         return
     await message.answer("На каком поле?", reply_markup=_fields_kb(fields))
+
+
+@router.message(F.photo)
+async def on_photo(message: Message, state: FSMContext, user) -> None:
+    """Photo sent via Telegram's camera/gallery button. Telegram compresses
+    to ~1280–2560 px on the long edge; for full original resolution the
+    sender should use paperclip → File (see on_photo_document below)."""
+    photo = message.photo[-1]  # largest variant Telegram offers
+    await _start_photo_flow(
+        message, state, user,
+        file_id=photo.file_id, mime="image/jpeg",
+        width=photo.width, height=photo.height,
+    )
+
+
+@router.message(F.document.mime_type.startswith("image/"))
+async def on_photo_document(message: Message, state: FSMContext, user) -> None:
+    """Photo sent as a File (paperclip → File). Telegram does NOT compress
+    this path, so we get the original — typically 4000+ px on a modern phone
+    vs ~1280 px via the camera button. Worth the small extra friction for
+    detection on small targets (wide-field shots with many small weeds)."""
+    doc = message.document
+    # Telegram's Document object doesn't expose original image width/height
+    # directly (only the thumbnail's). Leave dimensions as None — the
+    # submissions.image_{width,height} columns are nullable, and downstream
+    # CV reads dimensions from the image bytes anyway.
+    await _start_photo_flow(
+        message, state, user,
+        file_id=doc.file_id, mime=doc.mime_type,
+        width=None, height=None,
+    )
 
 
 @router.callback_query(PhotoForm.field, F.data.startswith("field:"))
@@ -364,8 +421,9 @@ async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
     file = await callback.bot.get_file(data["file_id"])
     buffer = await callback.bot.download_file(file.file_path)
     submission_id = str(uuid4())
-    key = f"raw/{user['farm_id']}/{field_id}/{date.today():%Y-%m-%d}/{submission_id}.jpg"
-    image_url = await upload_bytes(key, buffer.read(), "image/jpeg")
+    mime = data.get("mime", "image/jpeg")
+    key = f"raw/{user['farm_id']}/{field_id}/{date.today():%Y-%m-%d}/{submission_id}.{_ext_for_mime(mime)}"
+    image_url = await upload_bytes(key, buffer.read(), mime)
 
     await create_submission(
         submission_id, user["id"], field_id, image_url, data.get("width"), data.get("height")
