@@ -1,17 +1,29 @@
 """Import a CVAT-annotated batch back into the labels table (Stage 2 MVP).
 
-Run from the founder's Mac, piping the CVAT export zip through SSH:
+Two ways to invoke:
 
-    cat cvat-export.zip | ssh newgrain@158.160.46.89 \\
-        'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \\
-         python -m labeling.import'
+  A. Auto-fetch from CVAT (recommended — no browser involvement):
 
-The CVAT export must be in the "CVAT for Images 1.1" format (the default
-when you click "Export Job" → "CVAT for images 1.1" in the CVAT UI). That
-gives a zip containing annotations.xml with per-image <box> entries.
+      ssh newgrain@158.160.46.89 \\
+          'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \\
+           python -m labeling.import --task 2291559'
 
-What it does:
-  1. Reads annotations.xml from the input zip.
+     Triggers a server-side export for that task ID, polls until ready,
+     downloads the zip, and processes it. This bypasses the CVAT UI's
+     fragile browser-download step (which has been observed to silently
+     drop the file).
+
+  B. Pipe a zip on stdin (fallback — when you already have the zip):
+
+      cat cvat-export.zip | ssh newgrain@158.160.46.89 \\
+          'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \\
+           python -m labeling.import'
+
+     The zip must be a CVAT "CVAT for Images 1.1" export with
+     annotations.xml at its top level.
+
+What it does (same for both paths):
+  1. Reads annotations.xml from the zip.
   2. Converts pixel xtl/ytl/xbr/ybr → YOLO-normalized (cx, cy, w, h).
   3. DELETEs any prior labels for the affected submissions and INSERTs
      the new ones — re-importing a corrected batch is safe (idempotent).
@@ -19,16 +31,95 @@ What it does:
      that received ≥1 box. Unannotated images keep in_labeling for
      follow-up (e.g. annotator flagged as ambiguous).
 """
+import argparse
 import asyncio
 import io
 import sys
+import time
 import zipfile
 from collections import defaultdict
 from xml.etree import ElementTree as ET
 
 from sqlalchemy import text
 
+from bot.config import settings
 from bot.db import engine
+
+
+def _fetch_zip_from_cvat(task_id: int) -> bytes:
+    """Trigger a CVAT export for `task_id`, poll until ready, return the
+    zip bytes. Sidesteps the UI's browser-download step (which has been
+    seen to silently fail on CVAT Cloud).
+    """
+    import requests
+
+    if not settings.cvat_api_token:
+        raise RuntimeError(
+            "CVAT_API_TOKEN not set in .env. Generate one at "
+            f"{settings.cvat_host}/auth/settings (Settings → Personal access tokens)."
+        )
+
+    base = settings.cvat_host
+    # Bearer scheme (CVAT Cloud-specific; "Token" returns 401 — verified empirically).
+    headers = {"Authorization": f"Bearer {settings.cvat_api_token}"}
+
+    # 1. Resolve the task's organization so we can scope subsequent calls.
+    task_resp = requests.get(f"{base}/api/tasks/{task_id}",
+                             headers=headers, timeout=30)
+    task_resp.raise_for_status()
+    org_id = task_resp.json().get("organization")
+    if org_id is not None:
+        orgs = requests.get(f"{base}/api/organizations",
+                            headers=headers, timeout=30).json()
+        org_slug = next(
+            (o["slug"] for o in orgs["results"] if o["id"] == org_id), None,
+        )
+        if org_slug:
+            headers["X-Organization"] = org_slug
+
+    # 2. Trigger the server-side export. CVAT returns 202 immediately with
+    # an `rq_id`; the actual zip is generated async.
+    print(f"Triggering CVAT export of task {task_id}…", file=sys.stderr)
+    export_resp = requests.post(
+        f"{base}/api/tasks/{task_id}/dataset/export"
+        "?format=CVAT+for+images+1.1&save_images=false",
+        headers=headers, timeout=30,
+    )
+    export_resp.raise_for_status()
+    rq_id = export_resp.json()["rq_id"]
+
+    # 3. Poll the requests endpoint until our rq_id reports finished.
+    print(f"Waiting for CVAT to package the export…", file=sys.stderr)
+    deadline = time.monotonic() + 300  # 5 min cap; real exports take ~2–5 s
+    result_url = None
+    while time.monotonic() < deadline:
+        time.sleep(2)
+        list_resp = requests.get(
+            f"{base}/api/requests?action=export",
+            headers=headers, timeout=30,
+        )
+        list_resp.raise_for_status()
+        match = next(
+            (r for r in list_resp.json()["results"] if r["id"] == rq_id),
+            None,
+        )
+        if match is None:
+            continue
+        if match["status"] == "failed":
+            raise RuntimeError(
+                f"CVAT export request failed: {match.get('message') or '(no message)'}"
+            )
+        if match["status"] == "finished":
+            result_url = match["result_url"]
+            break
+    if result_url is None:
+        raise RuntimeError("CVAT export timed out after 5 minutes.")
+
+    # 4. Download the zip from the result_url.
+    print(f"Downloading export zip…", file=sys.stderr)
+    download_resp = requests.get(result_url, headers=headers, timeout=120)
+    download_resp.raise_for_status()
+    return download_resp.content
 
 
 def _parse_cvat_xml(xml_bytes: bytes):
@@ -138,11 +229,30 @@ async def _import_zip(zip_bytes: bytes) -> int:
 
 
 def main() -> int:
-    zip_bytes = sys.stdin.buffer.read()
-    if not zip_bytes:
-        print("ERROR: no data on stdin. Pipe a CVAT 'CVAT for Images 1.1' export "
-              "zip into this command.", file=sys.stderr)
-        return 1
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--task", type=int, default=None,
+        help="CVAT task ID to fetch annotations from. If set, the export is "
+             "requested and downloaded directly from CVAT via the API "
+             "(no zip needed on stdin).",
+    )
+    args = parser.parse_args()
+
+    if args.task is not None:
+        try:
+            zip_bytes = _fetch_zip_from_cvat(args.task)
+        except Exception as exc:
+            print(f"ERROR: fetch from CVAT failed: {exc}", file=sys.stderr)
+            return 2
+    else:
+        zip_bytes = sys.stdin.buffer.read()
+        if not zip_bytes:
+            print("ERROR: no data on stdin and no --task given.\n"
+                  "Either pipe a CVAT 'CVAT for Images 1.1' export zip into the "
+                  "command, or pass --task <id> to auto-fetch from CVAT.",
+                  file=sys.stderr)
+            return 1
+
     return asyncio.run(_import_zip(zip_bytes))
 
 

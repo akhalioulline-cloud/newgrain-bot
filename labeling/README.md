@@ -97,7 +97,29 @@ Then:
 
 Re-importing back (next section).
 
-### Importing labels back (CVAT zip → prod)
+### Importing labels back — default: auto-fetch from CVAT
+
+```bash
+ssh newgrain@158.160.46.89 \
+  'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \
+   python -m labeling.import --task <TASK_ID>'
+```
+
+The task ID is the number in the CVAT URL (e.g. `https://app.cvat.ai/tasks/2291559` → `2291559`), and is also printed by `labeling.export` when the batch is first uploaded.
+
+What it does:
+1. Triggers a server-side CVAT export.
+2. Polls until the export is ready (typically 2–5 s; 5 min cap).
+3. Downloads the zip directly via the API.
+4. Reads `annotations.xml`, converts pixel coords → YOLO-normalized.
+5. DELETEs prior labels for the affected submissions, INSERTs the new ones (idempotent — re-importing corrections is safe).
+6. Flips `in_labeling → labeled` for every submission with ≥1 box. Submissions with **zero** boxes stay at `in_labeling` for follow-up.
+
+**Why this is the default**: CVAT Cloud's UI "Export Job" button can silently fail to deliver the zip to your browser (observed on Safari/Chrome — likely pop-up blocker or session quirk). The API path is reliable.
+
+### Importing labels back — fallback: pipe a zip on stdin
+
+When you already have an export zip (e.g. someone else exported via the UI and sent it to you):
 
 ```bash
 cat task_batch-YYYYMMDD_xxx.zip | ssh newgrain@158.160.46.89 \
@@ -105,14 +127,7 @@ cat task_batch-YYYYMMDD_xxx.zip | ssh newgrain@158.160.46.89 \
    python -m labeling.import'
 ```
 
-What it does:
-- Reads `annotations.xml` from the input.
-- Converts pixel CVAT coords → YOLO-normalized (cx, cy, w, h ∈ [0, 1]).
-- DELETEs prior labels for the affected submissions, then INSERTs the new ones
-  (idempotent — safe to re-import corrections).
-- Flips `in_labeling → labeled` for every submission with ≥1 box.
-- Submissions with **zero** boxes (annotator left them unlabeled or flagged
-  as ambiguous) stay at `in_labeling` for follow-up.
+Same semantics, same idempotency. Just reads the zip from stdin instead of fetching it.
 
 Verify with:
 ```bash
@@ -126,4 +141,4 @@ ssh newgrain@158.160.46.89 \
 - ❌ Scheduled cron (B per the Stage-2 plan) — when batches are weekly+, add 1 line to crontab. Auto-upload (this PR) is the prerequisite; cron is now ~30 min.
 - ❌ Pre-annotation by v0 model (C per Stage-2 plan) — needs MFWD download + v0 training first; gated on agronomist throughput becoming the bottleneck.
 - ❌ Per-image annotator notes back into the bot's prod DB. The `note` column exists on `labels` but isn't populated from CVAT.
-- ❌ Auto-download from CVAT. After annotating, you still click `Export Job → CVAT for images 1.1` in the UI and pipe through `labeling.import`. Polling for completion vs explicit click is the next call; not built.
+- ✅ Auto-download from CVAT — `labeling.import --task <id>` triggers + polls + downloads the export via the API.
