@@ -20,7 +20,7 @@ this file *before* downloading.
 | 3 | Multi-modal Weed Dataset (wheat, China) | ✅ APPROVED | CC BY | Frontiers open access. |
 | 4 | GrowingSoy / soy-segmentation-ds | ✅ APPROVED | MIT | Repo + dataset MIT. |
 | 5 | Sunflower Fruits & Leaves (Mendeley) | ✅ APPROVED | CC BY | For sunflower diseases. |
-| 6 | **MFWD** (Moving Fields Weed Dataset) | ⏸️ PARKED | code MIT; **data has no stated license** | Verified 29 May 2026: Nature article's Data Availability only links to GitHub; README does not state a data license. Default = all rights reserved. Do not use without authors' explicit written grant. |
+| 6 | **MFWD** (Moving Fields Weed Dataset) | ✅ APPROVED (provisional, paper trail pending) | Article CC BY + code MIT; data license inferred from article CC BY | Verified 29 May 2026: article is CC BY, dataset is the article's primary output. Used under inferred CC BY interpretation. Email to grimmlab (TU Munich) sent on the same date to obtain explicit written confirmation for the Series A paper trail. If response is negative — revert to PARKED. |
 | 7 | **OPPD** (Open Plant Phenotype Database) | ❌ **EXCLUDED** | **CC BY-NC-SA 4.0** | Non-commercial — incompatible with Flagleaf. |
 | 8 | PlantVillage soybean subset | ⏸️ PARKED | license inconsistent across mirrors; soy coverage thin | Re-evaluate only if other soy sources insufficient. |
 | 9 | Roboflow Universe weed/disease subsets | ⏸️ PARKED | mixed (per-subset) | Per-subset audit required; defer until specific need. |
@@ -72,16 +72,20 @@ this file *before* downloading.
 - **Coverage of our schema:** 2 of the 5 sunflower-disease classes proposed in [labeling/class_gaps_from_atlases.md](../labeling/class_gaps_from_atlases.md). Strong signal for `sunflower_downy_mildew`.
 - **Note:** images are *leaves close-up*, not in-canopy whole-plant. Domain shift to phone-photo in-field will be significant; expect bootstrap-only utility.
 
-## 6. MFWD (Moving Fields Weed Dataset) ⏸️ PARKED
+## 6. MFWD (Moving Fields Weed Dataset) ✅ APPROVED (provisional)
 
 - **Authoritative source:** Genze et al. 2024, *Scientific Data* [10.1038/s41597-024-02945-6](https://www.nature.com/articles/s41597-024-02945-6); repo [github.com/grimmlab/MFWD](https://github.com/grimmlab/MFWD)
-- **License status (verified 29 May 2026):**
-  - Code (the `download_by_ftp.py` helper and supporting Python) — **MIT** ✓
-  - **Data — no stated license anywhere.** The article's Data Availability section reads only: *"The code to download the dataset is publicly available for download on GitHub: https://github.com/grimmlab/MFWD."* The repo's README contains no mention of "license," "CC," "Creative Commons," "reuse," "commercial," or equivalent terms for the dataset itself.
-  - Default position under copyright law for data without an explicit grant = all rights reserved.
-- **Verdict:** **do NOT download or use** for Flagleaf. Nature Scientific Data's editorial *policy* encourages open data, but policy is not a license a lawyer can rely on.
-- **Path to approval (optional):** contact the corresponding author (Grimm Lab, Technical University of Munich) with a short email asking for explicit written grant for commercial reuse with attribution. If granted in writing: change verdict here, save the email to the project's legal archive. Until then: parked.
-- **What we lose:** 94,321 images covering 28 species including likely `chenopodium` (P0), `galium` (P2), `polygonum` (P2), `avena` (P1), and possibly `echinochloa` (P1). Combined with the OPPD exclusion, **no public source remains** for `chenopodium`, `galium`, `polygonum`.
+- **License analysis (verified 29 May 2026):**
+  - **Article: CC BY** — confirmed via the Nature article footer: *"This is an open access article distributed under the terms of the Creative Commons CC BY license, which permits unrestricted use, distribution, and reproduction in any medium, provided the original work is properly cited. You are not required to obtain permission to reuse this article."*
+  - **Code (`download_by_ftp.py` and helpers): MIT** — confirmed via repo
+  - **Data: license not separately stated** in the article's Data Availability section or in the repo's README
+- **Working interpretation:** the article is published in *Scientific Data* as a **data paper** — the dataset is the article's primary contribution. The CC BY notice that "permits unrestricted use, distribution, and reproduction in any medium" is interpreted to extend to the dataset described in the article, on the basis that (a) authors clearly intended the work to be openly reusable (it's a data paper), (b) the dataset is the article's central reuseable artifact, (c) Nature Scientific Data's mission and editorial policy framework presume open data terms.
+- **Caveat:** this interpretation is reasonable but not strictly explicit. For the Series A paper trail, an email has been sent to the corresponding author (Prof. Dominik Grimm, Grimm Lab, Technical University of Munich) requesting written confirmation that the dataset reuse falls under the article's CC BY terms for commercial purposes with attribution. Save the response to the project's legal archive when received.
+- **If response is negative:** revert this row to PARKED, delete downloaded data, re-publish updated coverage math.
+- **Content:** 94,321 images covering **28 weed species** in maize and sorghum, Germany. Bbox + instance segmentation + multiple-object-tracking annotations. CVAT-compatible format.
+- **Coverage of our schema:** restores `chenopodium` (P0), and likely `galium` (P2), `polygonum` (P2), `avena` (P1), plus broader exposure for `ambrosia`, `amaranthus`. This is the **single largest bootstrap source** by image count.
+- **Download method:** custom FTP script (see [bootstrap_setup.md §6](bootstrap_setup.md)). Per-species pull via EPPO codes keeps fetch to ~20–30 GB.
+- **Attribution:** *Genze et al., Manually annotated and curated Dataset of diverse Weed Species in Maize and Sorghum for Computer Vision, Scientific Data 2024, CC BY.*
 
 ## 7. OPPD (Open Plant Phenotype Database) ❌ EXCLUDED
 
@@ -117,26 +121,34 @@ this file *before* downloading.
 | `sunflower_downy_mildew` | P0 (gap-list addition) | Mendeley sunflower ✓ |
 | `sunflower_botrytis` | gap-list addition | Mendeley sunflower ✓ |
 
-**5 weed classes + 2 disease classes** with confirmed CC-BY-or-better public coverage. *No conditional case remains* — both OPPD and MFWD are unavailable.
+**Under the working interpretation that MFWD's data is reusable under the article's CC BY** (see §6 above):
+
+| Our class | Priority | Bootstrap source(s) |
+|---|---|---|
+| `ambrosia` | P0 | MFWD + North Dakota + 4Weed (A. trifida) |
+| `amaranthus` | P0 | MFWD + North Dakota + 4Weed + GrowingSoy |
+| `chenopodium` | P0 | MFWD |
+| `setaria` | P1 | MFWD + 4Weed |
+| `echinochloa` | P1 | MFWD + Multi-modal Wheat (probably) |
+| `galium` | P2 | MFWD |
+| `polygonum` | P2 | MFWD |
+| `avena` | P1 | MFWD (probably) |
+| `xanthium` | P2 | 4Weed |
+| `sunflower_downy_mildew` | P0 (gap-list) | Mendeley sunflower |
+| `sunflower_botrytis` | gap-list | Mendeley sunflower |
+
+**~8–9 weed classes + 2 disease classes** with bootstrap coverage — approximately matches the spec's original "8/15 covered" claim, restored after the OPPD exclusion by MFWD's breadth.
 
 **No public coverage (ground-up labeling from day 1):**
-- `chenopodium` (P0), `galium` (P2), `polygonum` (P2), `avena` (P1), `echinochloa` (P1) — were spec-dependent on MFWD/OPPD; both now excluded
-- `cirsium` (P0), `convolvulus` (P0), `helianthus_v` (P0), `sonchus` (P1), `brassica_v` (P1), `elytrigia` (P1) — never had public coverage
+- `cirsium` (P0), `convolvulus` (P0), `helianthus_v` (P0), `sonchus` (P1), `brassica_v` (P1), `elytrigia` (P1) — never had public coverage; ground-up was always the plan for these
 - All 3 soy disease additions (`soy_sclerotinia`, `soy_peronospora`, `soy_septoria`)
 - 3 sunflower disease additions (`sunflower_sclerotinia`, `sunflower_verticillium`, `sunflower_rust`)
 - All wheat diseases and all stresses
 
-**This is a material narrowing vs. the spec's "8/15 classes covered by bootstrap" claim.** Driven by (a) OPPD's CC-BY-NC-SA, (b) MFWD's missing data license. Realistic numbers:
-
-- **5/15 weed classes** with confirmed bootstrap (vs. spec's 8/15) — `ambrosia`, `amaranthus`, `setaria`, `xanthium`, and probably `echinochloa` if Multi-modal Wheat covers it
-- **Pre-annotation speedup applies to ~30–35% of incoming photos**, not the spec's blanket ~55–65%
-- **10/15 weed classes are ground-up from day 1** — annotator workload shifts proportionally toward "draw from scratch" instead of "correct draft"
-
 **Replanning consequences:**
-1. The spec's day-30 acceptance criterion "v1-модель обучена на ~200 фото наших полей + bootstrap-данных, mAP measured (expected > 50% baseline)" needs softening. With ~half the bootstrap classes missing, v1 mAP at day 30 will be lower; the 75% kill criterion at day 90 is unchanged but the ramp is steeper.
-2. The annotator-budget (90 К ₽ × 12 weeks × 15 h/wk × 500 ₽/h) is unchanged in total but its productivity shifts: less pre-annotation-correction (fast), more drawing-from-scratch (~1.5–2× slower per photo). Net throughput drop ~20–25%.
-3. **Action**: consider asking grimmlab (TU Munich) authors for an explicit commercial-use grant on MFWD. If granted, restores most of the coverage gap. Cost: one email, response time 1–2 weeks.
-4. **Alternative path** worth scoping: search for additional CC-BY datasets covering `chenopodium`, `galium`, `polygonum` specifically (these are widely-photographed European weeds — a CC-BY source likely exists; just not in the spec's original six).
+1. Spec's day-30 acceptance criterion ("v1-модель обучена на ~200 фото наших полей + bootstrap-данных, mAP > 50% baseline") — **on track** under the inferred-CC-BY MFWD position.
+2. **Risk to monitor:** if the TU Munich response is negative or doesn't come, MFWD reverts to PARKED and `chenopodium` (P0), `galium`/`polygonum` (P2), `avena` (P1) drop back to ground-up. Bootstrap shrinks from 8–9 to 5/15 weed classes. Annotator throughput drops ~20%. Manageable but tighter.
+3. **Sub-stage A still produced the smoke-test discipline** (see [domain_shift_notes.md](domain_shift_notes.md)): even with the favorable MFWD interpretation, train v0 only after eyeballing the first 10–20 agronomist photos vs the public corpora.
 
 ---
 

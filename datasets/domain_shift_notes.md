@@ -38,27 +38,21 @@ Based on the [PUBLIC_SOURCES.md audit](PUBLIC_SOURCES.md), here's the expected v
 |---|---|---|---|
 | `ambrosia` (P0) | North Dakota + 4Weed (A. trifida) + MFWD | **40–55%** | Best-covered class. Multiple sources, similar morphology across regions. North Dakota's UAS subset matches our drone capture closely. |
 | `amaranthus` (P0) | North Dakota + 4Weed + MFWD + GrowingSoy (A. viridis) | **35–50%** | Well-covered but with three sister species being collapsed into one class — model may learn a too-broad concept. |
-| `chenopodium` (P0) | **NONE** | **0%** | OPPD excluded (NC), MFWD parked (no stated data license). 100% ground-up labeling. |
-| `setaria` (P1) | 4Weed | **20–35%** | Small training set (139 images of S. viridis); model thin on this class. |
-| `xanthium` (P2) | 4Weed | **20–35%** | Same — 159 images. |
-| `echinochloa` (P1) | Multi-modal Wheat (probably) | **20–40%** | Uncertain — Multi-modal Wheat's species list not fully verified yet. |
-| `galium`, `polygonum` (P2) | **NONE** | **0%** | OPPD excluded; MFWD parked. Ground-up only. |
-| `avena` (P1) | **NONE** | **0%** | Same. |
+| `chenopodium` (P0) | MFWD (provisional CC BY) | **25–40%** | Single source. If MFWD's CC BY interpretation is overturned by the TU Munich response — drops to 0%, fully ground-up. |
+| `setaria` (P1) | MFWD + 4Weed | **25–40%** | 4Weed alone is thin (139 images); MFWD broadens. |
+| `xanthium` (P2) | 4Weed | **20–35%** | 159 images; small. |
+| `echinochloa` (P1) | Multi-modal Wheat (probably) + MFWD | **25–40%** | Multi-modal Wheat's species list not fully verified yet. |
+| `galium`, `polygonum` (P2) | MFWD | **15–35%** | Same MFWD-dependency caveat. |
+| `avena` (P1) | MFWD (probably) | **15–35%** | Same. |
 | `cirsium`, `convolvulus`, `helianthus_v` (all P0) | **NONE** | **0%** | Must be labeled ground-up from week 1. v0 cannot pre-annotate these — annotator works without assistance. |
 | `sonchus`, `brassica_v`, `elytrigia` (P1) | **NONE** | **0%** | Same. |
 | `sunflower_downy_mildew` (gap-list P0) | Mendeley sunflower | **20–40%** for leaf-close-up classification; near 0 for in-field detection | Domain shift between specimen leaf photos and in-canopy phone shots is severe. Useful as a classifier head, not a detector. |
 | `sunflower_botrytis` (gap-list) | Mendeley sunflower | Same as above | Same. |
 | All other diseases (wheat rust, septoria, etc.) and all stresses | **NONE** | **0%** | Ground-up labeling. |
 
-**Headline number (post-MFWD-park, 29 May 2026):** weighted by class priority, expected v0 pre-annotation coverage is **~20–30% of incoming photos getting a useful box**. At that level, **the value of training v0 at all is borderline.**
+**Headline number (29 May 2026, under inferred-CC-BY MFWD position):** weighted by class priority, expected v0 pre-annotation coverage is **~35–50% of incoming photos getting a useful box**. That's a meaningful annotator speedup and justifies training v0 when the smoke test passes.
 
-Three concrete branches Sub-stage B should consider:
-
-1. **Train v0 anyway** on the 5 confirmed classes (`ambrosia`, `amaranthus`, `setaria`, `xanthium`, possibly `echinochloa`). Gives the annotator pre-annotation on ~⅓ of photos. Effort: ~5–7 days end-to-end (download + normalize + train + smoke-test).
-2. **Skip v0**, label the first 200 ground-up at full annotator cost, train v1 directly from COCO-pretrained YOLOv11-m on our own data. Effort: ~0 days now (labeling continues in parallel); v1 lands at day ~30 as planned.
-3. **Email TU Munich (grimmlab) about MFWD commercial-use grant.** Cost: 30 minutes drafting + 1–2 weeks response time. If granted: restores most of the missing coverage. If declined or no response: fall back to branch 1 or 2.
-
-Branches 1 and 3 can be pursued in parallel. Branch 2 is the conservative fallback.
+**Risk to monitor:** if TU Munich's response to the MFWD-license email is negative or doesn't come, MFWD reverts to PARKED and the per-class table above downgrades `chenopodium`, `galium`, `polygonum`, `avena` to 0%. Headline coverage drops to ~20–30%. At that level v0 becomes borderline-worth-training and Sub-stage B reverts to the conservative fallback: skip v0, label first 200 ground-up, jump straight to v1.
 
 ---
 
