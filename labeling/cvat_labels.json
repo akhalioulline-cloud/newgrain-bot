@@ -90,6 +90,12 @@
     "attributes": []
   },
   {
+    "name": "lathyrus_tuberosus",
+    "type": "rectangle",
+    "color": "#54e0a8",
+    "attributes": []
+  },
+  {
     "name": "rust_brown",
     "type": "rectangle",
     "color": "#54f2e3",

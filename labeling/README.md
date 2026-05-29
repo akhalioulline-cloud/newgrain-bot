@@ -18,6 +18,7 @@ Use these label codes in CVAT. Weeds & diseases = bounding boxes; stresses = who
 - `xanthium` — Дурнишник обыкновенный (P2)
 - `galium` — Подмаренник цепкий (P2)
 - `polygonum` — Горец вьюнковый (P2)
+- `lathyrus_tuberosus` — Чина клубненосная (tier 2 — observed once on 29 May 2026, awaiting ≥30 examples before CV training; see [schema_promotion_policy.md](schema_promotion_policy.md))
 
 ## Diseases (10) — bounding box
 - `rust_brown` — Бурая ржавчина пшеницы

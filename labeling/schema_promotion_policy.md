@@ -5,29 +5,42 @@
 
 ---
 
-## The rule, in one sentence
+## The rules in one paragraph
 
-A new species is promoted to a CV training class only when **≥30 labeled
-images of that species accumulate from our own fields**, reviewed monthly.
+A species moves through three **independent tiers**, each with its own
+threshold. Tier promotion is always upward, always on evidence, never
+based on the atlas TOC alone.
 
-Why this number: at <30 images, a YOLO-style detector cannot generalize a
-class reliably (the per-class minimum mentioned across the Ultralytics
-docs and most published CV-in-agriculture work). Below the threshold, a
-"class" in the schema is taxonomic clutter that hurts UX without helping
-the model.
+- **Tier 1 — in the bot's species dictionary** (`weed_species`).
+  Threshold: **≥1 sighting** in submissions OR a clear CAO/spec reason
+  to expect it. Effect: agronomist can pick the species via /Другой
+  autocomplete; comments referencing it become queryable. Cost: free
+  (one migration INSERT row).
 
----
+- **Tier 2 — in the CVAT label list** (`labeling/cvat_labels.json` →
+  CVAT project label set). Threshold: **≥1 actual sighting** at our
+  fields (not pre-emptive). Effect: annotator can draw a properly-typed
+  bbox for it; labeled bboxes accumulate in our `labels` table from the
+  first occurrence; the existing CVAT task picks up new labels
+  automatically. Cost: 1 line in JSON + 1 click to re-import to CVAT.
 
-## The three states a species can be in
+- **Tier 3 — in the CV training class set**. Threshold: **≥30 labeled
+  examples** of that species from our own fields. Why this number: at
+  <30 images a YOLO-style detector can't generalize a class reliably,
+  and per-class data sparsity *degrades all other classes* in the same
+  training run. Cost: real — every weak class hurts the trained model.
+  This is the gate that actually matters.
 
-| State | What it means | How it's reached |
-|---|---|---|
-| **Unknown to the system** | Not in `weed_species`; agronomist types it via /Другой; lands in `submissions.subcategory` as free text. | Default for everything not yet seen. |
-| **In the dictionary, not regional-top** | Row in `weed_species` with `is_regional_top = false`. Not shown in the inline keyboard; can still be referenced by free-text matching or future autocomplete. | Add via migration (small) once observed at all. |
-| **Regional top** | `is_regional_top = true`. Shown as one of the ~8 buttons on the inline species keyboard. | Promote via migration after the species shows up regularly in submissions. |
-| **CV training class** | Has a code in `labeling/cvat_labels.json` and is one of the targets the v0/v1/v2/v3 detectors are trained on. | Promote only when ≥30 labeled images of it exist from our fields. |
+The key distinction this codifies: **adding a class to CVAT is cheap
+and lossless** (structured data starts accumulating); **adding a class
+to training is expensive** (degrades model accuracy on every class
+until it has enough data of its own). They're not the same decision.
 
-A species can sit at any state; movement is **always upward**, on evidence.
+| Tier | Lives in | Threshold | What it enables |
+|---|---|---|---|
+| 1 | `weed_species` | ≥1 sighting OR known-relevant | Bot UX: pickable name, free-text matching |
+| 2 | `cvat_labels.json` + CVAT project | ≥1 sighting | Annotator: structured bbox label; `labels` table accumulates |
+| 3 | CV training schema | ≥30 labeled examples | Model: actually targets this class |
 
 ---
 
@@ -85,10 +98,11 @@ promote to the inline keyboard (one-line UPDATE in a migration).
 
 | Date | Species | Latin | From → To | Note |
 |---|---|---|---|---|
-| 29 May 2026 | Чина клубненосная | *Lathyrus tuberosus* | unknown → dictionary | First seen via Almas's free-text comment; added in migration 0005. |
-| 29 May 2026 | Мокрица (Звездчатка средняя) | *Stellaria media* | unknown → dictionary | Added pre-emptively per `class_gaps_from_atlases.md` recommendation. |
-| 29 May 2026 | Пастушья сумка | *Capsella bursa-pastoris* | unknown → dictionary | Same. |
-| 29 May 2026 | Метлица обыкновенная | *Apera spica-venti* | unknown → dictionary | Same — major wheat weed in CBE, atlas item. |
+| 29 May 2026 | Чина клубненосная | *Lathyrus tuberosus* | unknown → tier 1 (dict) | First seen via Almas's free-text comment; added in migration 0005. |
+| 29 May 2026 | Мокрица (Звездчатка средняя) | *Stellaria media* | unknown → tier 1 (dict) | Added pre-emptively per `class_gaps_from_atlases.md` recommendation. |
+| 29 May 2026 | Пастушья сумка | *Capsella bursa-pastoris* | unknown → tier 1 (dict) | Same. |
+| 29 May 2026 | Метлица обыкновенная | *Apera spica-venti* | unknown → tier 1 (dict) | Same — major wheat weed in CBE, atlas item. |
+| 29 May 2026 | Чина клубненосная | *Lathyrus tuberosus* | tier 1 → tier 2 (CVAT) | Observed 1× by Almas; promoted to tier 2 same day. NOT in CV training class set — awaiting ≥30 examples. |
 
 ---
 
