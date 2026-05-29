@@ -38,23 +38,27 @@ Based on the [PUBLIC_SOURCES.md audit](PUBLIC_SOURCES.md), here's the expected v
 |---|---|---|---|
 | `ambrosia` (P0) | North Dakota + 4Weed (A. trifida) + MFWD | **40–55%** | Best-covered class. Multiple sources, similar morphology across regions. North Dakota's UAS subset matches our drone capture closely. |
 | `amaranthus` (P0) | North Dakota + 4Weed + MFWD + GrowingSoy (A. viridis) | **35–50%** | Well-covered but with three sister species being collapsed into one class — model may learn a too-broad concept. |
-| `chenopodium` (P0) | MFWD (only — OPPD excluded) | **25–40%** if MFWD clears; **0%** otherwise | Single-source class. If MFWD's data license is non-commercial, this becomes 100% ground-up labeling at Alekseyevka. |
+| `chenopodium` (P0) | **NONE** | **0%** | OPPD excluded (NC), MFWD parked (no stated data license). 100% ground-up labeling. |
 | `setaria` (P1) | 4Weed | **20–35%** | Small training set (139 images of S. viridis); model thin on this class. |
 | `xanthium` (P2) | 4Weed | **20–35%** | Same — 159 images. |
-| `echinochloa` (P1) | Multi-modal Wheat (probably) + MFWD if clears | **20–40%** | Uncertain — Multi-modal Wheat's species list not fully verified yet. |
-| `galium`, `polygonum` (P2) | MFWD only | **15–35%** if MFWD clears; **0%** otherwise | OPPD was main coverage; lost. |
-| `avena` (P1) | MFWD only | **15–35%** if MFWD clears; **0%** otherwise | Same. |
+| `echinochloa` (P1) | Multi-modal Wheat (probably) | **20–40%** | Uncertain — Multi-modal Wheat's species list not fully verified yet. |
+| `galium`, `polygonum` (P2) | **NONE** | **0%** | OPPD excluded; MFWD parked. Ground-up only. |
+| `avena` (P1) | **NONE** | **0%** | Same. |
 | `cirsium`, `convolvulus`, `helianthus_v` (all P0) | **NONE** | **0%** | Must be labeled ground-up from week 1. v0 cannot pre-annotate these — annotator works without assistance. |
 | `sonchus`, `brassica_v`, `elytrigia` (P1) | **NONE** | **0%** | Same. |
 | `sunflower_downy_mildew` (gap-list P0) | Mendeley sunflower | **20–40%** for leaf-close-up classification; near 0 for in-field detection | Domain shift between specimen leaf photos and in-canopy phone shots is severe. Useful as a classifier head, not a detector. |
 | `sunflower_botrytis` (gap-list) | Mendeley sunflower | Same as above | Same. |
 | All other diseases (wheat rust, septoria, etc.) and all stresses | **NONE** | **0%** | Ground-up labeling. |
 
-**Headline number:** weighted by class priority (P0 weeds get most label budget), expected v0 pre-annotation coverage is **~30–40% of incoming photos getting a useful box**, optimistically. That's still a real speedup on the annotator side (each pre-annotated photo is labeled ~1.5× faster), but it's **not** a transformation of the pipeline.
+**Headline number (post-MFWD-park, 29 May 2026):** weighted by class priority, expected v0 pre-annotation coverage is **~20–30% of incoming photos getting a useful box**. At that level, **the value of training v0 at all is borderline.**
 
-If MFWD's data license clears: bump headline to ~50–60% photo coverage with useful boxes.
+Three concrete branches Sub-stage B should consider:
 
-If MFWD also non-commercial: drop to ~20–25%. At that point, **the value of training v0 at all is marginal** — Sub-stage B should be re-evaluated; might be better to skip v0 entirely and label the first 200 photos ground-up, then jump straight to v1 fine-tuning.
+1. **Train v0 anyway** on the 5 confirmed classes (`ambrosia`, `amaranthus`, `setaria`, `xanthium`, possibly `echinochloa`). Gives the annotator pre-annotation on ~⅓ of photos. Effort: ~5–7 days end-to-end (download + normalize + train + smoke-test).
+2. **Skip v0**, label the first 200 ground-up at full annotator cost, train v1 directly from COCO-pretrained YOLOv11-m on our own data. Effort: ~0 days now (labeling continues in parallel); v1 lands at day ~30 as planned.
+3. **Email TU Munich (grimmlab) about MFWD commercial-use grant.** Cost: 30 minutes drafting + 1–2 weeks response time. If granted: restores most of the missing coverage. If declined or no response: fall back to branch 1 or 2.
+
+Branches 1 and 3 can be pursued in parallel. Branch 2 is the conservative fallback.
 
 ---
 
