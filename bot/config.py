@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     # "small" = good Russian accuracy (~0.5 GB); "base" is lighter/faster.
     whisper_model: str = "small"
 
+    # CVAT Cloud — used by labeling/export.py to auto-create labeling tasks.
+    cvat_host: str = "https://app.cvat.ai"
+    cvat_api_token: str = ""  # generated under Settings → Personal access tokens
+    cvat_project_name: str = "weeds-diseases-stress"
+
     s3_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""

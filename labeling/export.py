@@ -1,27 +1,35 @@
-"""Export ready_for_labeling submissions as a CVAT-ingest zip.
+"""Export ready_for_labeling submissions to CVAT (default) or as a zip (--zip-only).
 
-Run from the founder's Mac, streaming the zip back through SSH:
+Default mode — auto-upload to CVAT:
+    ssh newgrain@158.160.46.89 \\
+        'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \\
+         python -m labeling.export'
 
+    1. Queries submissions WHERE status='ready_for_labeling'.
+    2. Downloads each photo from Object Storage to a temp dir.
+    3. Creates a CVAT task in CVAT_PROJECT_NAME (default: weeds-diseases-stress)
+       named batch-YYYYMMDD, uploads images directly via the CVAT REST API.
+    4. Flips status ready_for_labeling → in_labeling ONLY after the upload
+       succeeds — so a network error doesn't strand data in a half-done state.
+    5. Prints the task URL on stderr; click through to annotate.
+
+Zip-only mode (manual fallback / offline backup):
     ssh newgrain@158.160.46.89 \\
         'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \\
-         python -m labeling.export' > batch.zip
+         python -m labeling.export --zip-only' > batch.zip
 
-What it does:
-  1. Queries submissions WHERE status='ready_for_labeling'.
-  2. Downloads each photo from Object Storage.
-  3. Packages images + manifest.csv into a zip (streamed to stdout).
-  4. Flips status of exported rows ready_for_labeling → in_labeling so
-     the next export is a clean no-op until new photos arrive.
-
-The annotator then uploads the zip to a new task in the CVAT Cloud
-weeds-diseases-stress project and labels using the existing 31-class schema.
-Bring results back via labeling/import.py.
+    Writes the legacy zip to stdout (images/ + manifest.csv). Does NOT flip
+    status — so a subsequent auto-upload picks up the same rows. Use when
+    CVAT is unreachable, or to keep a local archive of the batch.
 """
+import argparse
 import asyncio
 import csv
 import io
 import sys
+import tempfile
 import zipfile
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import text
@@ -31,7 +39,7 @@ from bot.db import engine
 from bot.storage import _client  # noqa: F401 — internal boto3 client
 
 
-async def _export_to_stream(out_stream) -> int:
+async def _fetch_pending():
     async with engine.connect() as conn:
         result = await conn.execute(text(
             """
@@ -44,15 +52,31 @@ async def _export_to_stream(out_stream) -> int:
             ORDER BY s.created_at
             """
         ))
-        rows = result.mappings().all()
+        return result.mappings().all()
 
-    if not rows:
-        print("Nothing to export — no submissions at status=ready_for_labeling.",
-              file=sys.stderr)
-        return 0
 
-    print(f"Packaging {len(rows)} submission(s)…", file=sys.stderr)
+async def _flip_to_in_labeling(submission_ids):
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "UPDATE submissions SET status='in_labeling', updated_at=NOW() "
+            "WHERE id = ANY(:ids)"
+        ), {"ids": submission_ids})
 
+
+def _download_image(s3_key: str) -> bytes:
+    return _client.get_object(Bucket=settings.s3_bucket, Key=s3_key)["Body"].read()
+
+
+def _row_filename(r) -> str:
+    """Per-row image filename: {submission_id}.{ext-from-original-s3-key}."""
+    sid = str(r["id"])
+    s3_key = r["image_url"].replace(f"s3://{settings.s3_bucket}/", "")
+    ext = Path(s3_key).suffix or ".jpg"
+    return f"{sid}{ext}"
+
+
+def _build_zip(rows) -> bytes:
+    """Same packaging as the pre-CVAT export — kept for --zip-only fallback."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         manifest = io.StringIO()
@@ -61,41 +85,175 @@ async def _export_to_stream(out_stream) -> int:
             "submission_id", "image", "field", "crop", "category",
             "species_hint", "comment",
         ])
-
         for r in rows:
-            sid = str(r["id"])
+            img_filename = _row_filename(r)
             s3_key = r["image_url"].replace(f"s3://{settings.s3_bucket}/", "")
-            ext = Path(s3_key).suffix or ".jpg"
-            img_filename = f"{sid}{ext}"
-
-            obj = _client.get_object(Bucket=settings.s3_bucket, Key=s3_key)
-            zf.writestr(f"images/{img_filename}", obj["Body"].read())
-
+            zf.writestr(f"images/{img_filename}", _download_image(s3_key))
             comment = (r["comment_text"] or r["comment_voice_text"] or "").strip()
             writer.writerow([
-                sid, img_filename, r["field_name"] or "", r["crop"] or "",
+                str(r["id"]), img_filename, r["field_name"] or "", r["crop"] or "",
                 r["category"] or "", r["subcategory"] or "", comment,
             ])
-
         zf.writestr("manifest.csv", manifest.getvalue())
+    return buf.getvalue()
 
-    # Mark these as "in_labeling" so re-running won't re-export them.
-    ids = [r["id"] for r in rows]
-    async with engine.begin() as conn:
-        await conn.execute(text(
-            "UPDATE submissions SET status='in_labeling', updated_at=NOW() "
-            "WHERE id = ANY(:ids)"
-        ), {"ids": ids})
 
-    out_stream.write(buf.getvalue())
-    print(f"Exported {len(rows)} submission(s); flipped to status=in_labeling.",
-          file=sys.stderr)
-    return len(rows)
+def _upload_to_cvat(rows, batch_name: str) -> tuple[int, str]:
+    """Create a task in the configured CVAT project, upload images, return
+    (task_id, task_url). Raises on any failure — caller flips status only
+    if this returns cleanly.
+
+    Uses raw REST (requests) instead of cvat-sdk because CVAT Cloud
+    (server 2.66) is multiple versions ahead of the SDK and the SDK's
+    response-type validation chokes on the newer schema. The REST
+    endpoints are stable across this gap.
+    """
+    import requests
+
+    if not settings.cvat_api_token:
+        raise RuntimeError(
+            "CVAT_API_TOKEN not set in .env. Generate one at "
+            f"{settings.cvat_host}/auth/settings (Settings → Personal access tokens)."
+        )
+
+    base = settings.cvat_host
+    # CVAT Cloud uses Bearer-scheme tokens (not "Token <value>" as self-hosted
+    # docs show — verified empirically: Token → 401, Bearer → 200).
+    headers = {"Authorization": f"Bearer {settings.cvat_api_token}"}
+
+    def api_get(path, **params):
+        r = requests.get(f"{base}/api{path}", headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    # 1. Resolve project name → id.
+    projects_resp = api_get("/projects", search=settings.cvat_project_name)
+    project = next(
+        (p for p in projects_resp["results"] if p["name"] == settings.cvat_project_name),
+        None,
+    )
+    if project is None:
+        names = [p["name"] for p in projects_resp["results"]]
+        raise RuntimeError(
+            f"CVAT project {settings.cvat_project_name!r} not found in your "
+            f"account. Available: {names}. Set CVAT_PROJECT_NAME in .env."
+        )
+
+    # 2. If the project lives in an org, scope subsequent calls to it via
+    # X-Organization header — otherwise task creation fails with
+    # "task and project should be in the same organization."
+    org_id = project.get("organization")
+    if org_id is not None:
+        orgs_resp = api_get("/organizations")
+        org_slug = next(
+            (o["slug"] for o in orgs_resp["results"] if o["id"] == org_id), None,
+        )
+        if org_slug is None:
+            raise RuntimeError(
+                f"Project is in org id {org_id} but that org isn't visible "
+                f"on your account."
+            )
+        headers["X-Organization"] = org_slug
+
+    # 3. Create the task (no images yet).
+    create_resp = requests.post(
+        f"{base}/api/tasks",
+        headers={**headers, "Content-Type": "application/json"},
+        json={"name": batch_name, "project_id": project["id"]},
+        timeout=30,
+    )
+    create_resp.raise_for_status()
+    task = create_resp.json()
+    task_id = task["id"]
+
+    # 4. Download images from Object Storage to a temp dir, then upload them
+    # in one multipart POST. CVAT processes async on its end.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        local_paths = []
+        for r in rows:
+            s3_key = r["image_url"].replace(f"s3://{settings.s3_bucket}/", "")
+            local = tmp / _row_filename(r)
+            local.write_bytes(_download_image(s3_key))
+            local_paths.append(local)
+
+        files = []
+        open_handles = []
+        try:
+            for i, p in enumerate(local_paths):
+                fh = open(p, "rb")
+                open_handles.append(fh)
+                files.append((f"client_files[{i}]", (p.name, fh, "image/jpeg")))
+            data = {
+                "image_quality": "95",
+                "use_zip_chunks": "false",
+                "use_cache": "true",
+            }
+            upload_resp = requests.post(
+                f"{base}/api/tasks/{task_id}/data",
+                headers=headers,  # no Content-Type — requests sets multipart boundary
+                files=files,
+                data=data,
+                timeout=120,
+            )
+            upload_resp.raise_for_status()
+        finally:
+            for fh in open_handles:
+                fh.close()
+
+    return task_id, f"{base}/tasks/{task_id}"
+
+
+async def _run(args) -> int:
+    """All DB work happens inside this single asyncio.run() so the asyncpg
+    connection pool isn't bound to a loop that already closed (the bug that
+    showed up the first time we tried calling asyncio.run twice)."""
+    rows = await _fetch_pending()
+    if not rows:
+        print("Nothing to export — no submissions at status=ready_for_labeling.",
+              file=sys.stderr)
+        return 1
+
+    print(f"Found {len(rows)} submission(s) at ready_for_labeling.", file=sys.stderr)
+    sids = [r["id"] for r in rows]
+
+    if args.zip_only:
+        print("--zip-only: writing zip to stdout; status NOT flipped.",
+              file=sys.stderr)
+        sys.stdout.buffer.write(_build_zip(rows))
+        return 0
+
+    batch_name = args.batch_name or f"batch-{date.today():%Y%m%d}"
+    print(f"Uploading to CVAT project {settings.cvat_project_name!r} "
+          f"as task {batch_name!r}…", file=sys.stderr)
+    try:
+        # Sync HTTP via requests — fine to call from async; we're not yielding
+        # to anyone else.
+        task_id, task_url = _upload_to_cvat(rows, batch_name)
+    except Exception as exc:
+        print(f"ERROR: CVAT upload failed: {exc}\n"
+              f"Status NOT flipped — re-run is safe.", file=sys.stderr)
+        return 2
+
+    await _flip_to_in_labeling(sids)
+    print(f"✅ Created CVAT task #{task_id}: {task_url}", file=sys.stderr)
+    print(f"   Flipped {len(sids)} submission(s) → in_labeling.", file=sys.stderr)
+    return 0
 
 
 def main() -> int:
-    n = asyncio.run(_export_to_stream(sys.stdout.buffer))
-    return 0 if n > 0 else 1
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--zip-only", action="store_true",
+        help="Write the zip to stdout instead of uploading to CVAT. "
+             "Does NOT flip status.",
+    )
+    parser.add_argument(
+        "--batch-name", default=None,
+        help="Override task name (default: batch-YYYYMMDD).",
+    )
+    args = parser.parse_args()
+    return asyncio.run(_run(args))
 
 
 if __name__ == "__main__":

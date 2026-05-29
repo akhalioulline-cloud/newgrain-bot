@@ -48,36 +48,53 @@ handle it. Both run as one-off commands streamed over SSH; no cron yet
 (that's a 30-min addition for when batches are weekly+). Pre-annotation
 (Stage 3) not built either — annotator draws every box for now.
 
-### Exporting a batch (prod → CVAT zip)
+### Exporting a batch — default: auto-upload to CVAT
+
+```bash
+ssh newgrain@158.160.46.89 \
+  'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \
+   python -m labeling.export'
+```
+
+What happens:
+1. Queries submissions at `status='ready_for_labeling'`.
+2. Downloads photos from Object Storage.
+3. Creates a new CVAT task in the `weeds-diseases-stress` project,
+   named `batch-YYYYMMDD`, and uploads the images directly.
+4. Flips status `ready_for_labeling → in_labeling` (only if upload succeeded).
+5. Prints the task URL on stderr — click it to start annotating.
+
+Re-running is a no-op if no new submissions have come in.
+On upload failure: status NOT flipped, retry is safe.
+
+### Exporting a batch — fallback: zip-only (CVAT unreachable / local backup)
 
 ```bash
 ssh newgrain@158.160.46.89 \
   'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \
-   python -m labeling.export' > batch-$(date +%Y%m%d).zip
+   python -m labeling.export --zip-only' > batch-$(date +%Y%m%d).zip
 ```
 
-What lands on disk:
+Writes the legacy zip to stdout:
 ```
 batch-YYYYMMDD.zip
 ├── images/{submission_id}.{ext}
 └── manifest.csv  (submission_id, image, field, crop, category, species_hint, comment)
 ```
 
-Side-effect on prod: every exported submission's status flips
-`ready_for_labeling → in_labeling`. Re-running the export is a no-op if
-no new submissions have come in.
+Side-effect: **does NOT flip status** (so a subsequent default-mode auto-upload
+picks up the same rows). Manual upload in CVAT: `+ → Create new task` →
+unzip and drag in the images.
 
 ### Annotating in CVAT Cloud
 
-1. Open the `weeds-diseases-stress` project at app.cvat.ai.
-2. `+ → Create a new task`, name `batch-YYYYMMDD`.
-3. Drag the zip's `images/` folder in (or unzip the batch and upload images).
-4. Open the created job → annotate using the 31-class schema above.
-5. `Export Job → CVAT for images 1.1 → Download`. You'll get
+After auto-upload: click the task URL the export command printed.
+Then:
+1. Open the job → annotate using the 31-class schema above.
+2. `Export Job → CVAT for images 1.1 → Download`. You'll get
    `task_<name>_xxx.zip` with `annotations.xml` inside.
 
-The `manifest.csv` is for context only — open it in a spreadsheet to see
-the agronomist's species hints and comments per photo. CVAT doesn't read it.
+Re-importing back (next section).
 
 ### Importing labels back (CVAT zip → prod)
 
@@ -105,7 +122,7 @@ ssh newgrain@158.160.46.89 \
 
 ### What's NOT in this MVP
 
-- ❌ Scheduled cron (B per the Stage-2 plan) — when batches are weekly+, add 1 line to crontab.
+- ❌ Scheduled cron (B per the Stage-2 plan) — when batches are weekly+, add 1 line to crontab. Auto-upload (this PR) is the prerequisite; cron is now ~30 min.
 - ❌ Pre-annotation by v0 model (C per Stage-2 plan) — needs MFWD download + v0 training first; gated on agronomist throughput becoming the bottleneck.
 - ❌ Per-image annotator notes back into the bot's prod DB. The `note` column exists on `labels` but isn't populated from CVAT.
-- ❌ Automatic CVAT task creation via the CVAT REST API. You create the task in the UI by hand for now.
+- ❌ Auto-download from CVAT. After annotating, you still click `Export Job → CVAT for images 1.1` in the UI and pipe through `labeling.import`. Polling for completion vs explicit click is the next call; not built.
