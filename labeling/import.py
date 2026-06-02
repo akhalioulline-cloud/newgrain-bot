@@ -122,6 +122,125 @@ def _fetch_zip_from_cvat(task_id: int) -> bytes:
     return download_resp.content
 
 
+# ---------------------------------------------------------------------------
+# Auto-discovery mode (--auto): pull every CVAT task the annotator has marked
+# 'completed' whose submissions are still awaiting import. This is what the
+# nightly cron calls — no task IDs, no browser, no human in the loop.
+# ---------------------------------------------------------------------------
+
+def _cvat_base_headers():
+    if not settings.cvat_api_token:
+        raise RuntimeError(
+            "CVAT_API_TOKEN not set in .env. Generate one at "
+            f"{settings.cvat_host}/auth/settings (Settings → Personal access tokens)."
+        )
+    return settings.cvat_host, {"Authorization": f"Bearer {settings.cvat_api_token}"}
+
+
+def _resolve_project(base, headers):
+    """Return the project id for settings.cvat_project_name. Mutates `headers`
+    in place to add X-Organization when the project lives in an org (required
+    for the task-list / meta calls below to be scoped correctly)."""
+    import requests
+
+    r = requests.get(f"{base}/api/projects", headers=headers,
+                     params={"search": settings.cvat_project_name}, timeout=30)
+    r.raise_for_status()
+    project = next((p for p in r.json()["results"]
+                    if p["name"] == settings.cvat_project_name), None)
+    if project is None:
+        names = [p["name"] for p in r.json()["results"]]
+        raise RuntimeError(
+            f"CVAT project {settings.cvat_project_name!r} not found. "
+            f"Available: {names}. Set CVAT_PROJECT_NAME in .env.")
+    org_id = project.get("organization")
+    if org_id is not None:
+        orgs = requests.get(f"{base}/api/organizations",
+                            headers=headers, timeout=30).json()
+        slug = next((o["slug"] for o in orgs["results"] if o["id"] == org_id), None)
+        if slug:
+            headers["X-Organization"] = slug
+    return project["id"]
+
+
+def _list_completed_tasks(base, headers, project_id):
+    """All tasks in the project whose CVAT status == 'completed'
+    (i.e. the annotator finished and marked the job done)."""
+    import requests
+
+    tasks = []
+    url = f"{base}/api/tasks"
+    params = {"project_id": project_id, "page_size": 100}
+    while url:
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        tasks.extend(data.get("results", []))
+        url = data.get("next")   # full URL with params already baked in
+        params = None
+    return [t for t in tasks if t.get("status") == "completed"]
+
+
+def _task_submission_ids(base, headers, task_id):
+    """Submission UUIDs for a task, read from its frame filenames ({sid}.{ext})."""
+    import requests
+
+    r = requests.get(f"{base}/api/tasks/{task_id}/data/meta",
+                     headers=headers, timeout=30)
+    r.raise_for_status()
+    out = []
+    for f in r.json().get("frames", []):
+        name = f.get("name") or ""
+        out.append(name.rsplit(".", 1)[0] if "." in name else name)
+    return [s for s in out if s]
+
+
+async def _count_in_labeling(sids):
+    if not sids:
+        return 0
+    async with engine.connect() as conn:
+        res = await conn.execute(text(
+            "SELECT count(*) FROM submissions "
+            "WHERE id::text = ANY(:ids) AND status = 'in_labeling'"
+        ), {"ids": sids})
+        return res.scalar_one()
+
+
+async def _run_auto() -> int:
+    base, headers = _cvat_base_headers()
+    project_id = _resolve_project(base, headers)
+    tasks = _list_completed_tasks(base, headers, project_id)
+    if not tasks:
+        print("No CVAT tasks at status='completed' — nothing to import.",
+              file=sys.stderr)
+        return 0
+
+    print(f"Found {len(tasks)} completed CVAT task(s) in "
+          f"{settings.cvat_project_name!r}.", file=sys.stderr)
+    imported = skipped = failed = 0
+    for t in tasks:
+        tid = t["id"]
+        try:
+            sids = _task_submission_ids(base, headers, tid)
+            pending = await _count_in_labeling(sids)
+            if pending == 0:
+                skipped += 1   # already imported on an earlier run — idempotent skip
+                continue
+            print(f"Task #{tid} ({t.get('name')}): {pending} submission(s) "
+                  f"still in_labeling — importing.", file=sys.stderr)
+            zip_bytes = _fetch_zip_from_cvat(tid)
+            rc = await _import_zip(zip_bytes)
+            if rc == 0:
+                imported += 1
+        except Exception as exc:
+            failed += 1
+            print(f"ERROR importing task #{tid}: {exc}", file=sys.stderr)
+
+    print(f"Auto-import done: {imported} imported, {skipped} already "
+          f"up-to-date, {failed} failed.", file=sys.stderr)
+    return 0 if failed == 0 else 2
+
+
 def _parse_cvat_xml(xml_bytes: bytes):
     """Yields (submission_id, [(class, cx, cy, w, h), ...]) per annotated image.
 
@@ -236,7 +355,16 @@ def main() -> int:
              "requested and downloaded directly from CVAT via the API "
              "(no zip needed on stdin).",
     )
+    parser.add_argument(
+        "--auto", action="store_true",
+        help="Discover every CVAT task marked 'completed' in the project and "
+             "import any whose submissions are still in_labeling. No task ID "
+             "needed — this is what the nightly cron runs.",
+    )
     args = parser.parse_args()
+
+    if args.auto:
+        return asyncio.run(_run_auto())
 
     if args.task is not None:
         try:
