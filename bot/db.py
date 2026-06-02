@@ -270,3 +270,58 @@ async def count_user_submissions(user_id: int) -> tuple[int, int]:
         )
         row = result.mappings().first()
         return int(row["today"]), int(row["week"])
+
+
+async def get_all_recent_submissions(limit: int = 15):
+    """Recent saved submissions across ALL users (admin /all view).
+
+    Like get_user_history but global and with the uploader's name + status,
+    so the admin can see what every agronomist sent — the per-user /history
+    only ever shows the caller's own photos.
+    """
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT
+                    s.created_at,
+                    s.category,
+                    s.subcategory,
+                    s.status,
+                    s.comment_text,
+                    s.comment_voice_url,
+                    s.comment_voice_text,
+                    f.name AS field_name,
+                    u.full_name AS uploader,
+                    COALESCE(ws.russian_name, s.subcategory) AS species_name
+                FROM submissions s
+                LEFT JOIN fields f ON f.id = s.field_id
+                LEFT JOIN users u ON u.id = s.user_id
+                LEFT JOIN weed_species ws ON ws.latin_name = s.subcategory
+                WHERE s.status <> 'draft'
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        )
+        return result.mappings().all()
+
+
+async def get_team_week_counts():
+    """Per-user count of saved submissions so far this week (for the /all header)."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT u.full_name, count(*) AS week
+                FROM submissions s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.status <> 'draft'
+                  AND s.created_at >= date_trunc('week', CURRENT_DATE)
+                GROUP BY u.full_name
+                ORDER BY count(*) DESC
+                """
+            )
+        )
+        return result.mappings().all()

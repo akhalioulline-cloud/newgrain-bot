@@ -22,9 +22,11 @@ from bot.db import (
     count_user_submissions,
     create_submission,
     deactivate_user,
+    get_all_recent_submissions,
     get_pending_submission,
     get_pilot_fields,
     get_species,
+    get_team_week_counts,
     get_top_species,
     get_user_history,
     get_user_stats,
@@ -47,6 +49,16 @@ CATEGORIES = [
 ]
 
 CATEGORY_LABELS = {code: label for label, code in CATEGORIES}
+
+# Human-readable submission statuses for the admin /all view, so it's clear
+# where each photo is in the pipeline (e.g. already pushed to CVAT).
+STATUS_RU = {
+    "awaiting_metadata": "не завершено",
+    "ready_for_labeling": "ждёт разметки",
+    "in_labeling": "в CVAT",
+    "labeled": "размечено",
+    "in_dataset": "в датасете",
+}
 
 # Photos sent via Telegram's "Photo" button are always JPEG. Photos sent as
 # "File" (paperclip → File) preserve the original MIME (HEIC from iPhone,
@@ -179,10 +191,17 @@ HELP_TEXT = (
     "/help — это сообщение"
 )
 
+ADMIN_HELP = (
+    "\n\nКоманды администратора:\n"
+    "/all — последние загрузки всех агрономов\n"
+    "/adduser <id> <имя> — добавить агронома\n"
+    "/removeuser <id> — убрать доступ"
+)
+
 
 @router.message(Command("help"))
-async def cmd_help(message: Message) -> None:
-    await message.answer(HELP_TEXT)
+async def cmd_help(message: Message, user) -> None:
+    await message.answer(HELP_TEXT + (ADMIN_HELP if _is_admin(user) else ""))
 
 
 @router.message(Command("fields"))
@@ -254,6 +273,49 @@ async def cmd_finish(message: Message, state: FSMContext, user) -> None:
 
 def _is_admin(user) -> bool:
     return user["role"] == "admin" or user["tg_user_id"] in settings.admin_ids
+
+
+@router.message(Command("all"))
+async def cmd_all(message: Message, user) -> None:
+    """Admin-only: recent uploads from EVERY agronomist. /history and /stats are
+    per-user (each person sees only their own), so this is the admin's window
+    into what the rest of the team has sent."""
+    if not _is_admin(user):
+        await message.answer("Эта команда доступна только администратору.")
+        return
+
+    rows = await get_all_recent_submissions()
+    if not rows:
+        await message.answer("Пока нет ни одной загрузки.")
+        return
+
+    lines = []
+    counts = await get_team_week_counts()
+    if counts:
+        head = ", ".join(f"{c['full_name'] or '—'}: {int(c['week'])}" for c in counts)
+        lines.append(f"📊 За эту неделю — {head}")
+        lines.append("")
+    lines.append("Последние загрузки (все агрономы):")
+
+    for r in rows:
+        when = f"{r['created_at']:%d.%m %H:%M}"
+        label = CATEGORY_LABELS.get(r["category"], r["category"] or "—")
+        status = STATUS_RU.get(r["status"], r["status"])
+        parts = [when, r["uploader"] or "—", r["field_name"] or "поле?", label]
+        if r["species_name"]:
+            parts.append(r["species_name"])
+        line = " · ".join(parts) + f"  [{status}]"
+
+        comment = r["comment_text"] or r["comment_voice_text"]
+        if comment:
+            snippet = comment if len(comment) <= 40 else comment[:39] + "…"
+            icon = "💬" if r["comment_text"] else "🎤"
+            line += f"\n  {icon} {snippet}"
+        elif r["comment_voice_url"]:
+            line += "\n  🎤 голосовой комментарий"
+        lines.append(f"• {line}")
+
+    await message.answer("\n".join(lines))
 
 
 @router.message(Command("adduser"))
