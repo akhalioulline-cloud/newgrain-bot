@@ -46,6 +46,15 @@ from bot.config import settings
 from bot.db import engine
 
 
+def _sid_from_name(name: str) -> str:
+    """Recover the submission UUID from a CVAT frame filename. Handles both
+    legacy '{sid}.{ext}' and current '{hint-slug}__{sid}.{ext}' (export.py
+    now prefixes the agronomist's species hint for the annotator)."""
+    n = name or ""
+    stem = n.rsplit(".", 1)[0] if "." in n else n
+    return stem.split("__")[-1]
+
+
 def _fetch_zip_from_cvat(task_id: int) -> bytes:
     """Trigger a CVAT export for `task_id`, poll until ready, return the
     zip bytes. Sidesteps the UI's browser-download step (which has been
@@ -190,8 +199,7 @@ def _task_submission_ids(base, headers, task_id):
     r.raise_for_status()
     out = []
     for f in r.json().get("frames", []):
-        name = f.get("name") or ""
-        out.append(name.rsplit(".", 1)[0] if "." in name else name)
+        out.append(_sid_from_name(f.get("name") or ""))
     return [s for s in out if s]
 
 
@@ -254,7 +262,7 @@ def _parse_cvat_xml(xml_bytes: bytes):
 
     for img in root.findall("image"):
         try:
-            sid = img.get("name").rsplit(".", 1)[0]
+            sid = _sid_from_name(img.get("name"))
             w = float(img.get("width"))
             h = float(img.get("height"))
         except (TypeError, ValueError, AttributeError):
