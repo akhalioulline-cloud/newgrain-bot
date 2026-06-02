@@ -96,6 +96,18 @@
     "attributes": []
   },
   {
+    "name": "apera",
+    "type": "rectangle",
+    "color": "#54d98f",
+    "attributes": []
+  },
+  {
+    "name": "lamium",
+    "type": "rectangle",
+    "color": "#3cb371",
+    "attributes": []
+  },
+  {
     "name": "rust_brown",
     "type": "rectangle",
     "color": "#54f2e3",
