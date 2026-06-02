@@ -26,6 +26,7 @@ import argparse
 import asyncio
 import csv
 import io
+import re
 import sys
 import tempfile
 import zipfile
@@ -37,6 +38,30 @@ from sqlalchemy import text
 from bot.config import settings
 from bot.db import engine
 from bot.storage import _client  # noqa: F401 — internal boto3 client
+
+# Carry the agronomist's hint into CVAT so the annotator knows which class to
+# pick: it goes (a) into the frame filename (visible in the annotation view)
+# and (b) into the task description as a full per-frame legend.
+_CAT_RU = {
+    "weed": "сорняк", "disease": "болезнь", "stress": "стресс",
+    "control": "контроль", "treatment_result": "результат обработки",
+}
+_RU2LAT = {ord(k): v for k, v in {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}.items()}
+
+
+def _slugify(text_value: str, maxlen: int = 40) -> str:
+    """ASCII-safe, '__'-free slug for a filename (transliterates Cyrillic).
+    Latin species ('Amaranthus retroflexus' → 'amaranthus-retroflexus');
+    Russian free-text ('Метлица обыкновенная' → 'metlitsa-obyknovennaya')."""
+    s = (text_value or "").strip().lower().translate(_RU2LAT)
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s[:maxlen].strip("-")
 
 
 async def _fetch_pending():
@@ -68,11 +93,33 @@ def _download_image(s3_key: str) -> bytes:
 
 
 def _row_filename(r) -> str:
-    """Per-row image filename: {submission_id}.{ext-from-original-s3-key}."""
+    """Per-row image filename: {hint-slug}__{submission_id}.{ext}, or just
+    {submission_id}.{ext} when there's no hint. The slug puts the agronomist's
+    species right in the CVAT frame name; import.py recovers the UUID by
+    splitting on '__'."""
     sid = str(r["id"])
     s3_key = r["image_url"].replace(f"s3://{settings.s3_bucket}/", "")
     ext = Path(s3_key).suffix or ".jpg"
-    return f"{sid}{ext}"
+    slug = _slugify(r["subcategory"] or "")
+    return f"{slug}__{sid}{ext}" if slug else f"{sid}{ext}"
+
+
+def _build_legend(rows) -> str:
+    """Per-frame legend for the CVAT task description: filename → field ·
+    category · species hint · comment. Full original text (incl. Russian),
+    as a backup to the slugified filename."""
+    lines = ["Подсказки агронома (по имени кадра):", ""]
+    for r in rows:
+        cat = _CAT_RU.get(r["category"], r["category"] or "—")
+        line = f"{_row_filename(r)} — {r['field_name'] or 'поле?'} · {cat}"
+        species = (r["subcategory"] or "").strip()
+        if species:
+            line += f" · {species}"
+        comment = (r["comment_text"] or r["comment_voice_text"] or "").strip()
+        if comment:
+            line += f" · «{comment}»"
+        lines.append(line)
+    return "\n".join(lines)[:4000]   # CVAT description cap; daily batches fit easily
 
 
 def _build_zip(rows) -> bytes:
@@ -159,7 +206,8 @@ def _upload_to_cvat(rows, batch_name: str) -> tuple[int, str]:
     create_resp = requests.post(
         f"{base}/api/tasks",
         headers={**headers, "Content-Type": "application/json"},
-        json={"name": batch_name, "project_id": project["id"]},
+        json={"name": batch_name, "project_id": project["id"],
+              "description": _build_legend(rows)},
         timeout=30,
     )
     create_resp.raise_for_status()
