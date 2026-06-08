@@ -34,3 +34,13 @@ async def ensure_bucket() -> None:
 
 async def upload_bytes(key: str, data: bytes, content_type: str) -> str:
     return await asyncio.to_thread(_upload_sync, key, data, content_type)
+
+
+def _delete_sync(key: str) -> None:
+    _client.delete_object(Bucket=settings.s3_bucket, Key=key)
+
+
+async def delete_object(key: str) -> None:
+    """Delete one object by key. Used by /cancel to drop a photo whose upload
+    the user aborted. Best-effort — caller handles exceptions."""
+    await asyncio.to_thread(_delete_sync, key)

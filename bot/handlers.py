@@ -22,6 +22,7 @@ from bot.db import (
     count_user_submissions,
     create_submission,
     deactivate_user,
+    delete_submission,
     get_all_recent_submissions,
     get_pending_submission,
     get_pilot_fields,
@@ -34,7 +35,7 @@ from bot.db import (
     update_submission,
 )
 from bot.states import PhotoForm, ProblemForm
-from bot.storage import upload_bytes
+from bot.storage import delete_object, upload_bytes
 from bot.transcribe import transcribe
 
 router = Router()
@@ -143,8 +144,34 @@ async def cmd_start(message: Message, state: FSMContext, user) -> None:
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    """Abort the current photo upload. If a field was already picked, the
+    photo + draft row exist in storage/DB — delete both so a wrong-field
+    (or any aborted) upload leaves no trace and never reaches labeling."""
+    if await state.get_state() is None:
+        await message.answer("Нечего отменять — активной загрузки нет.")
+        return
+
+    data = await state.get_data()
+    submission_id = data.get("submission_id")
     await state.clear()
-    await message.answer("Отменено.", reply_markup=ReplyKeyboardRemove())
+
+    if not submission_id:
+        # Cancelled before picking a field — nothing was saved yet.
+        await message.answer("Загрузка отменена.", reply_markup=ReplyKeyboardRemove())
+        return
+
+    image_url = await delete_submission(submission_id)
+    if image_url:
+        try:
+            key = image_url.split(f"{settings.s3_bucket}/", 1)[-1]
+            await delete_object(key)
+        except Exception:
+            logger.exception("cancel: failed to delete S3 object for %s", submission_id)
+
+    await message.answer(
+        "Загрузка отменена — фото удалено. Можете прислать снимок заново.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @router.message(Command("history"))

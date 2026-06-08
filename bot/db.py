@@ -253,6 +253,24 @@ async def get_user_stats(user_id: int):
         return result.mappings().first()
 
 
+async def delete_submission(submission_id: str):
+    """Hard-delete an in-progress submission (used by /cancel). Guarded to
+    rows still at status='awaiting_metadata', so a finished/labeled
+    submission can never be removed even if called mid-flow. Returns the
+    deleted row's image_url (for S3 cleanup), or None if nothing matched."""
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                "DELETE FROM submissions "
+                "WHERE id = :id AND status = 'awaiting_metadata' "
+                "RETURNING image_url"
+            ),
+            {"id": submission_id},
+        )
+        row = result.first()
+        return row[0] if row else None
+
+
 async def count_user_submissions(user_id: int) -> tuple[int, int]:
     """Returns (today, this_week) counts of saved submissions for the user."""
     async with engine.connect() as conn:
