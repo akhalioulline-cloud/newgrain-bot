@@ -84,6 +84,10 @@ def _ext_for_mime(mime: str) -> str:
 
 def _fields_kb(fields) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(text=f["name"], callback_data=f"field:{f['id']}")] for f in fields]
+    # Off-pilot training photos (margins, other parcels of the farm): valuable
+    # for the CV model, but kept out of the 3 pilot fields' records so the
+    # day-90 economic proof + per-field weed maps stay clean.
+    rows.append([InlineKeyboardButton(text="Другое поле / вне пилота", callback_data="field:other")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -505,14 +509,23 @@ async def on_photo_document(message: Message, state: FSMContext, user) -> None:
 @router.callback_query(PhotoForm.field, F.data.startswith("field:"))
 async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
     await callback.answer()
-    field_id = int(callback.data.split(":")[1])
+    token = callback.data.split(":")[1]
+    # "other" = off-pilot training photo: field_id stays NULL so it never
+    # pollutes the 3 pilot fields' per-field records, but still flows through
+    # labeling as training data.
+    if token == "other":
+        field_id = None
+        path_seg = "other"
+    else:
+        field_id = int(token)
+        path_seg = str(field_id)
     data = await state.get_data()
 
     file = await callback.bot.get_file(data["file_id"])
     buffer = await callback.bot.download_file(file.file_path)
     submission_id = str(uuid4())
     mime = data.get("mime", "image/jpeg")
-    key = f"raw/{user['farm_id']}/{field_id}/{date.today():%Y-%m-%d}/{submission_id}.{_ext_for_mime(mime)}"
+    key = f"raw/{user['farm_id']}/{path_seg}/{date.today():%Y-%m-%d}/{submission_id}.{_ext_for_mime(mime)}"
     image_url = await upload_bytes(key, buffer.read(), mime)
 
     await create_submission(

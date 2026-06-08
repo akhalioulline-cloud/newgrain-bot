@@ -109,7 +109,7 @@ async def get_pending_submission(user_id: int):
             text(
                 """
                 SELECT s.id, s.category, s.subcategory, s.created_at,
-                       f.name AS field_name
+                       COALESCE(f.name, 'вне пилота') AS field_name
                 FROM submissions s
                 LEFT JOIN fields f ON f.id = s.field_id
                 WHERE s.user_id = :user_id AND s.status = 'awaiting_metadata'
@@ -145,7 +145,7 @@ async def get_species(species_id: int):
 async def create_submission(
     submission_id: str,
     user_id: int,
-    field_id: int,
+    field_id: int | None,  # None = off-pilot training photo ("Другое поле")
     image_url: str,
     width: int | None,
     height: int | None,
@@ -212,7 +212,7 @@ async def get_user_history(user_id: int, limit: int = 10):
                     s.comment_text,
                     s.comment_voice_url,
                     s.comment_voice_text,
-                    f.name AS field_name,
+                    COALESCE(f.name, 'вне пилота') AS field_name,
                     -- For keyboard-picked species, subcategory is the Latin
                     -- name and the join gives a Russian display name.
                     -- For free-text ("Другой") rows, subcategory IS the
@@ -309,7 +309,7 @@ async def get_all_recent_submissions(limit: int = 15):
                     s.comment_text,
                     s.comment_voice_url,
                     s.comment_voice_text,
-                    f.name AS field_name,
+                    COALESCE(f.name, 'вне пилота') AS field_name,
                     u.full_name AS uploader,
                     COALESCE(ws.russian_name, s.subcategory) AS species_name
                 FROM submissions s
