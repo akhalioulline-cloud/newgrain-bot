@@ -42,6 +42,15 @@ services:
     command: python -m bot.main
     restart: unless-stopped
     env_file: .env
+    # STOPGAP (2026-06-08): Roskomnadzor is IP-blocking most of Telegram's
+    # API ranges from Russian networks. api.telegram.org's DNS rotates across
+    # blocked IPs, so getUpdates + photo downloads time out. 149.154.167.220
+    # is currently reachable from the RU VM and serves valid TLS for the
+    # api.telegram.org SNI. Pinning to it restores service. FRAGILE — if this
+    # IP gets blocked too, rotate to another working Telegram IPv4 or move to
+    # an out-of-RU outbound proxy (the durable fix).
+    extra_hosts:
+      - "api.telegram.org:149.154.167.220"
     volumes:
       - whisper_cache:/root/.cache/huggingface
     depends_on:
