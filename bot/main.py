@@ -15,6 +15,8 @@ async def main() -> None:
             await asyncio.sleep(3600)
 
     from aiogram import Bot, Dispatcher
+    from aiogram.client.session.aiohttp import AiohttpSession
+    from aiogram.client.telegram import TelegramAPIServer
     from aiogram.fsm.storage.redis import RedisStorage
     from aiogram.types import BotCommand
 
@@ -24,7 +26,16 @@ async def main() -> None:
 
     await ensure_bucket()
 
-    bot = Bot(settings.bot_token)
+    # Route Telegram traffic through a Cloudflare-Worker relay when configured,
+    # so the RU VM never connects to api.telegram.org directly (which RKN
+    # blocks). The relay mirrors Telegram's URL layout, so from_base() works.
+    if settings.telegram_api_base:
+        api = TelegramAPIServer.from_base(settings.telegram_api_base.rstrip("/"))
+        session = AiohttpSession(api=api)
+        logger.info("Using Telegram API relay: %s", settings.telegram_api_base)
+        bot = Bot(settings.bot_token, session=session)
+    else:
+        bot = Bot(settings.bot_token)
     await bot.set_my_commands(
         [
             BotCommand(command="history", description="Последние снимки"),

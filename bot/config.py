@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # "small" = good Russian accuracy (~0.5 GB); "base" is lighter/faster.
     whisper_model: str = "small"
 
+    # Telegram API base override. Empty = use api.telegram.org directly.
+    # Set to a Cloudflare-Worker relay URL (e.g. https://xxx.workers.dev) to
+    # route around Roskomnadzor's IP-blocking of Telegram from RU networks.
+    # The relay must mirror Telegram's /bot<token>/<method> + /file/... paths.
+    telegram_api_base: str = ""
+
     # CVAT Cloud — used by labeling/export.py to auto-create labeling tasks.
     cvat_host: str = "https://app.cvat.ai"
     cvat_api_token: str = ""  # generated under Settings → Personal access tokens
