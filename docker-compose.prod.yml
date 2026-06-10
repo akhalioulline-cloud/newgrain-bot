@@ -51,8 +51,6 @@ services:
     # an out-of-RU outbound proxy (the durable fix).
     extra_hosts:
       - "api.telegram.org:149.154.167.220"
-    volumes:
-      - whisper_cache:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,4 +60,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  whisper_cache:

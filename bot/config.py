@@ -8,10 +8,6 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://redis:6379/0"
 
-    # Local faster-whisper model size for voice-note transcription.
-    # "small" = good Russian accuracy (~0.5 GB); "base" is lighter/faster.
-    whisper_model: str = "small"
-
     # YandexGPT (Foundation Models) — translates voice transcripts RU→EN,
     # grounded in the weed_species dictionary so colloquial/ASR-garbled weed
     # names map to the correct Latin name. Empty = translation disabled.
