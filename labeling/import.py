@@ -210,6 +210,21 @@ def _delete_task(base, headers, task_id):
     r.raise_for_status()
 
 
+def _task_is_completed(base, headers, task_id):
+    """True if the annotator finished the task. CVAT's 'Finish the job' button
+    sets the JOB *state* to 'completed' — but the TASK *status* stays
+    'annotation' in our single-stage workflow, so we must check the jobs, not
+    task.status (the original bug: 'Finish the job' was pressed but never
+    recognized as done)."""
+    import requests
+
+    r = requests.get(f"{base}/api/jobs", headers=headers,
+                     params={"task_id": task_id}, timeout=30)
+    r.raise_for_status()
+    jobs = [j for j in r.json().get("results", []) if j.get("type") != "ground_truth"]
+    return bool(jobs) and all(j.get("state") == "completed" for j in jobs)
+
+
 def _task_submission_ids(base, headers, task_id):
     """Submission UUIDs for a task, read from its frame filenames ({sid}.{ext})."""
     import requests
@@ -237,13 +252,13 @@ async def _count_in_labeling(sids):
 async def _run_auto() -> int:
     """Nightly: pull labels back and recycle CVAT task slots.
 
-    Per task:
-      • status == 'completed'  → (re)import its labels, then DELETE it to free
-        the slot. The annotator's 'Completed' click is the explicit done-signal;
-        deleting recycles the slot so the free-tier 3-task cap never jams.
-      • has annotations but NOT completed → import the labels anyway (so a
-        forgotten 'Completed' click can't strand work) but KEEP the task — the
-        annotator may still be labeling it.
+    Per task ('done' = job state 'completed', i.e. annotator pressed
+    'Finish the job' — NOT task.status, which stays 'annotation'):
+      • done → import any still-pending submissions, then DELETE the task to
+        free the slot (free-tier 3-task cap). If nothing is pending (already
+        imported), skip the re-import — so a manual de-dup/edit isn't clobbered.
+      • has annotations but NOT done → import the labels anyway (so a forgotten
+        'Finish the job' can't strand work) but KEEP the task — still being worked.
       • nothing to do → leave it.
     Import is idempotent (DELETE+INSERT of labels), so re-importing is safe.
     """
@@ -258,15 +273,15 @@ async def _run_auto() -> int:
     for t in tasks:
         tid = t["id"]
         name = t.get("name")
-        completed = t.get("status") == "completed"
         try:
+            completed = _task_is_completed(base, headers, tid)
             sids = _task_submission_ids(base, headers, tid)
             pending = await _count_in_labeling(sids)
             anno = _task_annotation_count(base, headers, tid)
 
             if completed:
                 ok_to_delete = True
-                if pending > 0 or anno > 0:
+                if pending > 0:   # only import what's not in yet — don't clobber edits/de-dup
                     zip_bytes = _fetch_zip_from_cvat(tid)
                     rc = await _import_zip(zip_bytes)
                     if rc == 0:
