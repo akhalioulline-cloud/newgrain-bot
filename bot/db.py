@@ -178,6 +178,8 @@ async def update_submission(submission_id: str, **fields) -> None:
         "subcategory",
         "comment_text",
         "comment_voice_url",
+        "comment_voice_text",      # was missing → transcripts were silently dropped
+        "comment_voice_text_en",   # English (Whisper translate) of the voice note
         "status",
     }
     sets = [f"{key} = :{key}" for key in fields if key in allowed]

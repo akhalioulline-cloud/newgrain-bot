@@ -51,7 +51,7 @@ async def _fetch(status):
         subs = (await conn.execute(text(
             """
             SELECT s.id, s.image_url, s.category, s.subcategory,
-                   s.comment_text, s.comment_voice_text,
+                   s.comment_text, s.comment_voice_text, s.comment_voice_text_en,
                    s.field_id, f.name AS field_name, f.crop
             FROM submissions s
             LEFT JOIN fields f ON f.id = s.field_id
@@ -69,6 +69,20 @@ def _norm(s: str) -> str:
     """Normalize a species string for matching: lowercase, trim surrounding
     whitespace and trailing punctuation (agronomists type 'Дурнишник.' etc.)."""
     return (s or "").strip().strip(" .,;:!").lower()
+
+
+def _scan_species(textval, lut):
+    """Find species the agronomist named in a voice/text note, by matching the
+    species dictionary against the transcript — exact, unlike a loose MT of a
+    weed name. Returns deduped (latin, russian, code) records."""
+    if not textval:
+        return []
+    t = " " + textval.lower() + " "
+    found = {}
+    for k, rec in lut.items():
+        if len(k) >= 4 and k in t:
+            found[rec[0]] = rec  # dedupe by Latin name
+    return list(found.values())
 
 
 def _species_lookup(species_rows):
@@ -133,13 +147,23 @@ def _render(subs, lut, status) -> str:
 
         cat = CATEGORY_RU.get(r["category"], r["category"] or "—")
         voice = (r["comment_voice_text"] or "").strip()
+        voice_en = (r["comment_voice_text_en"] or "").strip()
         comment = (r["comment_text"] or "").strip()
         meta = [f'<div class="row"><span class="k">Поле:</span> {field_html}</div>',
                 f'<div class="row"><span class="k">Категория:</span> {html.escape(cat)}</div>',
                 f'<div class="row"><span class="k">Вид (подсказка):</span> {sp_html}</div>']
         if voice:
-            meta.append(f'<div class="row voice"><span class="k">🎤 Голос:</span> '
-                        f'{html.escape(voice)}</div>')
+            block = f'<span class="k">🎤 Голос (RU):</span> {html.escape(voice)}'
+            if voice_en:
+                block += f'<br><span class="k">🇬🇧 Voice (EN):</span> {html.escape(voice_en)}'
+            # Exact species named in the voice note, matched against the dictionary.
+            named = _scan_species(voice, lut)
+            if named:
+                tags = ", ".join(
+                    f'<b>{html.escape(la)}</b>' + (f' <span class="code">{co}</span>' if co else '')
+                    for la, ru, co in named)
+                block += f'<br><span class="k">🔬 В голосе вид:</span> {tags}'
+            meta.append(f'<div class="row voice">{block}</div>')
         if comment:
             meta.append(f'<div class="row"><span class="k">💬 Текст:</span> '
                         f'{html.escape(comment)}</div>')

@@ -36,7 +36,7 @@ from bot.db import (
 )
 from bot.states import PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
-from bot.transcribe import transcribe
+from bot.transcribe import transcribe, translate_en
 
 router = Router()
 logger = logging.getLogger("bot.handlers")
@@ -631,6 +631,14 @@ async def on_voice_comment(message: Message, state: FSMContext, user) -> None:
     if recognized:
         await update_submission(data["submission_id"], comment_voice_text=recognized)
         await message.answer(f"Распознал: «{recognized}»")
+        # English translation for the (possibly non-Russian-speaking) annotator.
+        try:
+            english = await translate_en(audio)
+        except Exception:
+            logger.exception("voice translation failed for %s", data["submission_id"])
+            english = ""
+        if english:
+            await update_submission(data["submission_id"], comment_voice_text_en=english)
     else:
         await message.answer("Не удалось распознать речь — голосовое сохранил как есть.")
 

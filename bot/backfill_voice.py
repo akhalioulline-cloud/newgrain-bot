@@ -22,52 +22,65 @@ from sqlalchemy import text
 from bot.config import settings
 from bot.db import engine
 from bot.storage import _client
-from bot.transcribe import transcribe
+from bot.transcribe import transcribe, translate_en
 
 
 async def _run() -> int:
     async with engine.connect() as conn:
         rows = (await conn.execute(text(
-            "SELECT id, comment_voice_url FROM submissions "
+            "SELECT id, comment_voice_url, comment_voice_text, comment_voice_text_en "
+            "FROM submissions "
             "WHERE comment_voice_url IS NOT NULL "
-            "AND (comment_voice_text IS NULL OR comment_voice_text = '') "
+            "AND (comment_voice_text IS NULL OR comment_voice_text = '' "
+            "     OR comment_voice_text_en IS NULL OR comment_voice_text_en = '') "
             "ORDER BY created_at"
         ))).mappings().all()
 
     if not rows:
-        print("backfill_voice: no untranscribed voice notes.", file=sys.stderr)
+        print("backfill_voice: nothing to do (all voice notes transcribed + translated).",
+              file=sys.stderr)
         return 0
 
-    print(f"backfill_voice: {len(rows)} voice note(s) to transcribe.", file=sys.stderr)
-    done = empty = failed = 0
+    print(f"backfill_voice: {len(rows)} voice note(s) need RU and/or EN.", file=sys.stderr)
+    ru_done = en_done = empty = failed = 0
     for r in rows:
         sid = str(r["id"])
         try:
             key = r["comment_voice_url"].replace(f"s3://{settings.s3_bucket}/", "")
             audio = _client.get_object(Bucket=settings.s3_bucket, Key=key)["Body"].read()
-            txt = (await transcribe(audio)).strip()
-            if not txt:
+
+            sets, params = [], {"id": r["id"]}
+            if not (r["comment_voice_text"] or "").strip():
+                ru = (await transcribe(audio)).strip()
+                if ru:
+                    sets.append("comment_voice_text = :ru"); params["ru"] = ru; ru_done += 1
+            if not (r["comment_voice_text_en"] or "").strip():
+                en = (await translate_en(audio)).strip()
+                if en:
+                    sets.append("comment_voice_text_en = :en"); params["en"] = en; en_done += 1
+
+            if not sets:
                 empty += 1
                 print(f"  {sid[:8]}: empty result — will retry next run.", file=sys.stderr)
                 continue
             async with engine.begin() as conn:
                 await conn.execute(text(
-                    "UPDATE submissions SET comment_voice_text = :t, updated_at = NOW() "
+                    f"UPDATE submissions SET {', '.join(sets)}, updated_at = NOW() "
                     "WHERE id = :id"
-                ), {"t": txt, "id": r["id"]})
-            done += 1
-            print(f"  {sid[:8]}: {txt!r}", file=sys.stderr)
+                ), params)
+            print(f"  {sid[:8]}: {'+RU ' if 'ru' in params else ''}"
+                  f"{'+EN' if 'en' in params else ''}", file=sys.stderr)
         except Exception as exc:
             failed += 1
             print(f"  {sid[:8]}: ERROR {exc}", file=sys.stderr)
 
-    print(f"backfill_voice: {done} transcribed, {empty} still empty, {failed} failed.",
-          file=sys.stderr)
-    if done:
+    print(f"backfill_voice: {ru_done} transcribed, {en_done} translated, "
+          f"{empty} still empty, {failed} failed.", file=sys.stderr)
+    if ru_done or en_done:
         try:
             from labeling.alert import send
-            send(f"🎤 Flagleaf: дотранскрибировано голосовых заметок за ночь: {done}. "
-                 f"Текст добавлен в историю (/history).")
+            send(f"🎤 Flagleaf: голосовые заметки — расшифровано {ru_done}, "
+                 f"переведено на EN {en_done}. См. справочник/историю.")
         except Exception:
             pass
     return 0 if failed == 0 else 2
