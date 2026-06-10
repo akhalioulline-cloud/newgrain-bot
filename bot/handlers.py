@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import re
 from datetime import date
@@ -23,6 +24,7 @@ from bot.db import (
     create_submission,
     deactivate_user,
     delete_submission,
+    find_duplicate_submission,
     get_all_recent_submissions,
     get_pending_submission,
     get_pilot_fields,
@@ -541,13 +543,30 @@ async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
 
     file = await callback.bot.get_file(data["file_id"])
     buffer = await callback.bot.download_file(file.file_path)
+    img_bytes = buffer.read()
+    img_hash = hashlib.sha256(img_bytes).hexdigest()
+
+    # Dedup: a byte-identical photo this agronomist already sent (e.g. a
+    # re-send after the bot seemed unresponsive). Skip it — don't re-upload,
+    # don't ask the metadata questions again.
+    dup = await find_duplicate_submission(user["id"], img_hash)
+    if dup:
+        when = f"{dup['created_at']:%d.%m %H:%M}"
+        await state.clear()
+        await callback.message.answer(
+            f"📸 Это фото уже было загружено ранее ({when}). "
+            f"Повторно сохранять не нужно — можно отправлять следующее."
+        )
+        return
+
     submission_id = str(uuid4())
     mime = data.get("mime", "image/jpeg")
     key = f"raw/{user['farm_id']}/{path_seg}/{date.today():%Y-%m-%d}/{submission_id}.{_ext_for_mime(mime)}"
-    image_url = await upload_bytes(key, buffer.read(), mime)
+    image_url = await upload_bytes(key, img_bytes, mime)
 
     await create_submission(
-        submission_id, user["id"], field_id, image_url, data.get("width"), data.get("height")
+        submission_id, user["id"], field_id, image_url,
+        data.get("width"), data.get("height"), image_hash=img_hash,
     )
     await state.update_data(submission_id=submission_id)
     await state.set_state(PhotoForm.category)

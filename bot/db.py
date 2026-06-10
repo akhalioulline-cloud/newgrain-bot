@@ -149,14 +149,17 @@ async def create_submission(
     image_url: str,
     width: int | None,
     height: int | None,
+    image_hash: str | None = None,
 ) -> None:
     async with engine.begin() as conn:
         await conn.execute(
             text(
                 """
                 INSERT INTO submissions
-                    (id, user_id, field_id, image_url, image_width, image_height, status)
-                VALUES (:id, :user_id, :field_id, :image_url, :w, :h, 'awaiting_metadata')
+                    (id, user_id, field_id, image_url, image_width, image_height,
+                     image_hash, status)
+                VALUES (:id, :user_id, :field_id, :image_url, :w, :h, :hash,
+                        'awaiting_metadata')
                 """
             ),
             {
@@ -166,8 +169,24 @@ async def create_submission(
                 "image_url": image_url,
                 "w": width,
                 "h": height,
+                "hash": image_hash,
             },
         )
+
+
+async def find_duplicate_submission(user_id: int, image_hash: str):
+    """Return an existing (non-duplicate) submission by this user with the same
+    image bytes, or None. Used to skip byte-identical re-uploads at upload time."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT id, created_at FROM submissions "
+                "WHERE user_id = :u AND image_hash = :h AND status <> 'duplicate' "
+                "ORDER BY created_at LIMIT 1"
+            ),
+            {"u": user_id, "h": image_hash},
+        )
+        return result.mappings().first()
 
 
 async def update_submission(submission_id: str, **fields) -> None:
