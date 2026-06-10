@@ -51,7 +51,8 @@ async def _fetch(status):
         subs = (await conn.execute(text(
             """
             SELECT s.id, s.image_url, s.category, s.subcategory,
-                   s.comment_text, s.comment_voice_text, s.comment_voice_text_en,
+                   s.comment_text, s.comment_text_en,
+                   s.comment_voice_text, s.comment_voice_text_en,
                    s.field_id, f.name AS field_name, f.crop
             FROM submissions s
             LEFT JOIN fields f ON f.id = s.field_id
@@ -164,9 +165,12 @@ def _render(subs, lut, status) -> str:
                     for la, ru, co in named)
                 block += f'<br><span class="k">🔬 В голосе вид:</span> {tags}'
             meta.append(f'<div class="row voice">{block}</div>')
+        comment_en = (r["comment_text_en"] or "").strip()
         if comment:
-            meta.append(f'<div class="row"><span class="k">💬 Текст:</span> '
-                        f'{html.escape(comment)}</div>')
+            block = f'<span class="k">💬 Текст (RU):</span> {html.escape(comment)}'
+            if comment_en:
+                block += f'<br><span class="k">🇬🇧 Text (EN):</span> {html.escape(comment_en)}'
+            meta.append(f'<div class="row">{block}</div>')
 
         cards.append(f"""
         <div class="card">

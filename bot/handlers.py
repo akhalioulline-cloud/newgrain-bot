@@ -649,7 +649,17 @@ async def on_voice_comment(message: Message, state: FSMContext, user) -> None:
 
 @router.message(PhotoForm.comment, F.text)
 async def on_text_comment(message: Message, state: FSMContext, user) -> None:
-    await update_submission((await state.get_data())["submission_id"], comment_text=message.text)
+    sid = (await state.get_data())["submission_id"]
+    await update_submission(sid, comment_text=message.text)
+    # English translation for the annotator (same species-grounded YandexGPT
+    # as voice notes). Best-effort — backfill self-heals if this fails.
+    try:
+        english = await translate_ru_to_en(message.text)
+    except Exception:
+        logger.exception("text-comment translation failed for %s", sid)
+        english = ""
+    if english:
+        await update_submission(sid, comment_text_en=english)
     await _finalize(message, state, user)
 
 
