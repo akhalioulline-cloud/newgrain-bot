@@ -25,6 +25,7 @@ from sqlalchemy import text
 from bot.config import settings
 from bot.db import engine
 from bot.storage import _client
+from bot.taxonomy import DISEASES
 
 THUMB_PX = 480
 
@@ -70,6 +71,10 @@ def _norm(s: str) -> str:
     """Normalize a species string for matching: lowercase, trim surrounding
     whitespace and trailing punctuation (agronomists type 'Дурнишник.' etc.)."""
     return (s or "").strip().strip(" .,;:!").lower()
+
+
+# Disease name (RU, normalized) → CVAT code, for resolving disease hints.
+_DISEASE_LUT = {_norm(ru): code for code, ru in DISEASES}
 
 
 def _scan_species(textval, lut):
@@ -143,8 +148,19 @@ def _render(subs, lut, status) -> str:
                 sp_html = (f'<b>{html.escape(latin)}</b> '
                            f'<span class="muted">({html.escape(ru)})</span>{code_html}{orig}')
             else:
-                sp_html = (f'{html.escape(hint)} '
-                           f'<span class="warn">(не в словаре — уточнить/пропустить)</span>')
+                # Not a weed — try the disease list (also keyed RU → CVAT code).
+                dcode = _DISEASE_LUT.get(_norm(hint))
+                if not dcode:
+                    for part in re.split(r"\s*[/,;]\s*|\s+или\s+", hint):
+                        dcode = _DISEASE_LUT.get(_norm(part))
+                        if dcode:
+                            break
+                if dcode:
+                    sp_html = (f'<b>{html.escape(hint)}</b> '
+                               f'<span class="code">→ метка CVAT: {html.escape(dcode)}</span>')
+                else:
+                    sp_html = (f'{html.escape(hint)} '
+                               f'<span class="warn">(не в словаре — уточнить/пропустить)</span>')
 
         cat = CATEGORY_RU.get(r["category"], r["category"] or "—")
         voice = (r["comment_voice_text"] or "").strip()

@@ -38,6 +38,7 @@ from bot.states import PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
 from bot.transcribe import transcribe
 from bot.translate_llm import translate_ru_to_en
+from bot.taxonomy import DISEASES, DISEASE_RU_BY_CODE
 
 router = Router()
 logger = logging.getLogger("bot.handlers")
@@ -104,6 +105,16 @@ def _species_kb(species) -> InlineKeyboardMarkup:
     ]
     rows.append([InlineKeyboardButton(text="Другой", callback_data="sub:other")])
     rows.append([InlineKeyboardButton(text="Пропустить", callback_data="sub:skip")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _disease_kb() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=ru, callback_data=f"dis:{code}")]
+        for code, ru in DISEASES
+    ]
+    rows.append([InlineKeyboardButton(text="Другая болезнь", callback_data="dis:other")])
+    rows.append([InlineKeyboardButton(text="Пропустить", callback_data="dis:skip")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -294,6 +305,12 @@ async def cmd_finish(message: Message, state: FSMContext, user) -> None:
         await message.answer(
             f"{intro} Какой вид? (можно пропустить)",
             reply_markup=_species_kb(species),
+        )
+    elif pending["category"] == "disease" and pending["subcategory"] is None:
+        await state.set_state(PhotoForm.subcategory)
+        await message.answer(
+            f"{intro} Какая болезнь? (можно пропустить)",
+            reply_markup=_disease_kb(),
         )
     else:
         # Category set (and subcategory if weed) — only the comment remains.
@@ -550,9 +567,35 @@ async def on_category(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.answer(
             "Какой вид? (можно пропустить)", reply_markup=_species_kb(species)
         )
+    elif code == "disease":
+        await state.set_state(PhotoForm.subcategory)
+        await callback.message.answer(
+            "Какая болезнь? (можно пропустить)", reply_markup=_disease_kb()
+        )
     else:
         await state.set_state(PhotoForm.comment)
         await callback.message.answer("Комментарий? Текстом или голосом. Или /skip.")
+
+
+@router.callback_query(PhotoForm.subcategory, F.data.startswith("dis:"))
+async def on_disease(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    value = callback.data.split(":", 1)[1]
+
+    # "Другая болезнь" — branch to free-text input (reuses the subcategory_other
+    # flow, same as weeds' "Другой").
+    if value == "other":
+        await state.set_state(PhotoForm.subcategory_other)
+        await callback.message.answer("Введите название болезни (или /skip):")
+        return
+
+    data = await state.get_data()
+    if value != "skip":
+        ru = DISEASE_RU_BY_CODE.get(value)
+        if ru:
+            await update_submission(data["submission_id"], subcategory=ru)
+    await state.set_state(PhotoForm.comment)
+    await callback.message.answer("Комментарий? Текстом или голосом. Или /skip.")
 
 
 @router.callback_query(PhotoForm.subcategory, F.data.startswith("sub:"))
