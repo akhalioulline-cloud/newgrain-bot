@@ -30,4 +30,16 @@ if [ "$irc" -ne 0 ]; then
     "⚠️ Flagleaf labeling: ошибка импорта разметки из CVAT (rc=$irc). См. pipeline.log на сервере."
 fi
 
+# 3. VOICE BACKFILL — re-transcribe any voice notes whose inline transcription
+#    failed at upload (transient on the RAM-tight VM). Runs sequentially after
+#    labeling so the two Whisper/CVAT jobs never contend for memory.
+echo "--- voice backfill ---"
+$COMPOSE run --rm -T bot python -m bot.backfill_voice
+vrc=$?
+echo "voice backfill: rc=$vrc"
+if [ "$vrc" -ne 0 ]; then
+  $COMPOSE run --rm -T bot python -m labeling.alert \
+    "⚠️ Flagleaf: ошибка дотранскрибации голосовых заметок (rc=$vrc). См. pipeline.log на сервере."
+fi
+
 echo "===================== done $(date '+%F %T %Z') ====================="
