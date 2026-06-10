@@ -27,13 +27,14 @@ Use these label codes in CVAT. Weeds & diseases = bounding boxes; stresses = who
 - `equisetum` — Хвощ полевой (tier 2 — observed Jun 2026)
 - `polygonum_aviculare` — Спорыш / горец птичий (tier 2 — observed Jun 2026; distinct from `polygonum` = Горец вьюнковый)
 
-## Diseases (10) — bounding box
+## Diseases (11) — bounding box
 - `rust_brown` — Бурая ржавчина пшеницы
 - `rust_yellow` — Жёлтая ржавчина
 - `septoria_leaf` — Септориоз листьев
 - `septoria_glume` — Септориоз колоса
 - `powdery_mildew` — Мучнистая роса
 - `fusarium_head` — Фузариоз колоса
+- `fusarium_root` — Фузариозная корневая гниль
 - `helminthosporium` — Гельминтоспориоз
 - `sunflower_phomopsis` — Фомопсис подсолнечника
 - `sunflower_phoma` — Фомоз подсолнечника
