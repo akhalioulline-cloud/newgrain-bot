@@ -172,9 +172,8 @@ def _resolve_project(base, headers):
     return project["id"]
 
 
-def _list_completed_tasks(base, headers, project_id):
-    """All tasks in the project whose CVAT status == 'completed'
-    (i.e. the annotator finished and marked the job done)."""
+def _list_all_tasks(base, headers, project_id):
+    """Every task in the project, any status (we decide per-task what to do)."""
     import requests
 
     tasks = []
@@ -187,7 +186,28 @@ def _list_completed_tasks(base, headers, project_id):
         tasks.extend(data.get("results", []))
         url = data.get("next")   # full URL with params already baked in
         params = None
-    return [t for t in tasks if t.get("status") == "completed"]
+    return tasks
+
+
+def _task_annotation_count(base, headers, task_id):
+    """Total annotation shapes+tags on a task — lets us rescue labels even when
+    the annotator forgot to mark the task 'Completed' (the June-2 stranding bug)."""
+    import requests
+
+    r = requests.get(f"{base}/api/tasks/{task_id}/annotations",
+                     headers=headers, timeout=30)
+    if r.status_code != 200:
+        return 0
+    d = r.json()
+    return len(d.get("shapes", [])) + len(d.get("tags", []))
+
+
+def _delete_task(base, headers, task_id):
+    """Delete a CVAT task to recycle the slot (free tier caps the org at 3 tasks)."""
+    import requests
+
+    r = requests.delete(f"{base}/api/tasks/{task_id}", headers=headers, timeout=30)
+    r.raise_for_status()
 
 
 def _task_submission_ids(base, headers, task_id):
@@ -215,37 +235,70 @@ async def _count_in_labeling(sids):
 
 
 async def _run_auto() -> int:
+    """Nightly: pull labels back and recycle CVAT task slots.
+
+    Per task:
+      • status == 'completed'  → (re)import its labels, then DELETE it to free
+        the slot. The annotator's 'Completed' click is the explicit done-signal;
+        deleting recycles the slot so the free-tier 3-task cap never jams.
+      • has annotations but NOT completed → import the labels anyway (so a
+        forgotten 'Completed' click can't strand work) but KEEP the task — the
+        annotator may still be labeling it.
+      • nothing to do → leave it.
+    Import is idempotent (DELETE+INSERT of labels), so re-importing is safe.
+    """
     base, headers = _cvat_base_headers()
     project_id = _resolve_project(base, headers)
-    tasks = _list_completed_tasks(base, headers, project_id)
+    tasks = _list_all_tasks(base, headers, project_id)
     if not tasks:
-        print("No CVAT tasks at status='completed' — nothing to import.",
-              file=sys.stderr)
+        print("No CVAT tasks in the project — nothing to do.", file=sys.stderr)
         return 0
 
-    print(f"Found {len(tasks)} completed CVAT task(s) in "
-          f"{settings.cvat_project_name!r}.", file=sys.stderr)
-    imported = skipped = failed = 0
+    imported = recycled = rescued = skipped = failed = 0
     for t in tasks:
         tid = t["id"]
+        name = t.get("name")
+        completed = t.get("status") == "completed"
         try:
             sids = _task_submission_ids(base, headers, tid)
             pending = await _count_in_labeling(sids)
-            if pending == 0:
-                skipped += 1   # already imported on an earlier run — idempotent skip
-                continue
-            print(f"Task #{tid} ({t.get('name')}): {pending} submission(s) "
-                  f"still in_labeling — importing.", file=sys.stderr)
-            zip_bytes = _fetch_zip_from_cvat(tid)
-            rc = await _import_zip(zip_bytes)
-            if rc == 0:
-                imported += 1
+            anno = _task_annotation_count(base, headers, tid)
+
+            if completed:
+                ok_to_delete = True
+                if pending > 0 or anno > 0:
+                    zip_bytes = _fetch_zip_from_cvat(tid)
+                    rc = await _import_zip(zip_bytes)
+                    if rc == 0:
+                        imported += 1
+                    else:
+                        ok_to_delete = False  # import problem — keep, retry next run
+                if ok_to_delete:
+                    _delete_task(base, headers, tid)
+                    recycled += 1
+                    print(f"Task #{tid} ({name}): completed → imported + deleted "
+                          f"(slot freed).", file=sys.stderr)
+                else:
+                    print(f"Task #{tid} ({name}): import failed — NOT deleted, "
+                          f"will retry.", file=sys.stderr)
+            elif anno > 0 and pending > 0:
+                # Labeled but the annotator hasn't clicked 'Completed' — rescue
+                # the labels so nothing strands; leave the task for them to finish.
+                zip_bytes = _fetch_zip_from_cvat(tid)
+                rc = await _import_zip(zip_bytes)
+                if rc == 0:
+                    rescued += 1
+                print(f"Task #{tid} ({name}): {anno} annotation(s), not marked "
+                      f"Completed — labels rescued, task kept.", file=sys.stderr)
+            else:
+                skipped += 1
         except Exception as exc:
             failed += 1
-            print(f"ERROR importing task #{tid}: {exc}", file=sys.stderr)
+            print(f"ERROR processing task #{tid}: {exc}", file=sys.stderr)
 
-    print(f"Auto-import done: {imported} imported, {skipped} already "
-          f"up-to-date, {failed} failed.", file=sys.stderr)
+    print(f"Auto-import done: {imported} imported, {recycled} completed+recycled, "
+          f"{rescued} rescued (kept), {skipped} untouched, {failed} failed.",
+          file=sys.stderr)
     return 0 if failed == 0 else 2
 
 
