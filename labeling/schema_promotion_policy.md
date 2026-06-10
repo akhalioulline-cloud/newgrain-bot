@@ -103,6 +103,13 @@ promote to the inline keyboard (one-line UPDATE in a migration).
 | 29 May 2026 | Пастушья сумка | *Capsella bursa-pastoris* | unknown → tier 1 (dict) | Same. |
 | 29 May 2026 | Метлица обыкновенная | *Apera spica-venti* | unknown → tier 1 (dict) | Same — major wheat weed in CBE, atlas item. |
 | 29 May 2026 | Чина клубненосная | *Lathyrus tuberosus* | tier 1 → tier 2 (CVAT) | Observed 1× by Almas; promoted to tier 2 same day. NOT in CV training class set — awaiting ≥30 examples. |
+| 10 Jun 2026 | Молочай прутьевидный | *Euphorbia virgata* | unknown → tier 2 (`euphorbia`) | Observed; migration 0008. |
+| 10 Jun 2026 | Одуванчик | *Taraxacum officinale* | unknown → tier 2 (`taraxacum`) | Observed; migration 0008. |
+| 10 Jun 2026 | Полынь | *Artemisia vulgaris* | unknown → tier 2 (`artemisia`) | Observed; migration 0008. Genus-level; CAO to confirm exact species. |
+| 10 Jun 2026 | Хвощ полевой | *Equisetum arvense* | unknown → tier 2 (`equisetum`) | Observed; migration 0008. |
+| 10 Jun 2026 | Спорыш / горец птичий | *Polygonum aviculare* | unknown → tier 2 (`polygonum_aviculare`) | Observed; migration 0008. Distinct from existing `polygonum` (P. convolvulus). |
+| 10 Jun 2026 | Бодяк полевой | *Cirsium arvense* | alias added | Same species as Осот полевой; alias only, no new class. |
+| — | Молокан / молочай | *Lactuca tatarica?* / *Euphorbia?* | PENDING | Ambiguous hint — CAO to disambiguate before promotion. |
 
 ---
 
