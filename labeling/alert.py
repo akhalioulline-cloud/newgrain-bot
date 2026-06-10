@@ -15,19 +15,17 @@ import requests
 from bot.config import settings
 
 
-def main() -> int:
-    msg = " ".join(sys.argv[1:]).strip() or "(no message)"
-    if not settings.bot_token:
-        print("alert: BOT_TOKEN not set — cannot send.", file=sys.stderr)
-        return 1
+def send(msg: str) -> int:
+    """Send `msg` to every ADMIN_TG_IDS chat. Returns count delivered.
+    Best-effort and exception-safe — callers can ignore failures."""
+    msg = (msg or "(no message)").strip()
+    if not settings.bot_token or not settings.admin_ids:
+        print("alert: BOT_TOKEN or ADMIN_TG_IDS not set — cannot send.",
+              file=sys.stderr)
+        return 0
     base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
-    admins = settings.admin_ids
-    if not admins:
-        print("alert: ADMIN_TG_IDS empty — nobody to notify.", file=sys.stderr)
-        return 1
-
     sent = 0
-    for admin in admins:
+    for admin in settings.admin_ids:
         try:
             r = requests.post(
                 f"{base}/bot{settings.bot_token}/sendMessage",
@@ -40,7 +38,12 @@ def main() -> int:
                 print(f"alert: chat {admin} -> HTTP {r.status_code}", file=sys.stderr)
         except Exception as exc:
             print(f"alert: chat {admin} failed: {exc}", file=sys.stderr)
-    print(f"alert: delivered to {sent}/{len(admins)} admin(s).", file=sys.stderr)
+    return sent
+
+
+def main() -> int:
+    sent = send(" ".join(sys.argv[1:]))
+    print(f"alert: delivered to {sent} admin(s).", file=sys.stderr)
     return 0 if sent else 1
 
 

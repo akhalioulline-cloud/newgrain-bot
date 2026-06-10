@@ -299,6 +299,20 @@ async def _run_auto() -> int:
     print(f"Auto-import done: {imported} imported, {recycled} completed+recycled, "
           f"{rescued} rescued (kept), {skipped} untouched, {failed} failed.",
           file=sys.stderr)
+
+    # Surface meaningful activity to the admins so the pipeline is observable
+    # without reading logs (failures are alerted separately by pipeline.sh).
+    if imported or recycled or rescued:
+        try:
+            from labeling.alert import send
+            send(
+                f"✅ Flagleaf разметка: импортировано задач {imported}, "
+                f"освобождено слотов CVAT {recycled}, спасено незавершённых {rescued}. "
+                f"Метки сохранены в базе."
+            )
+        except Exception:
+            pass
+
     return 0 if failed == 0 else 2
 
 
