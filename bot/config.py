@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     # "small" = good Russian accuracy (~0.5 GB); "base" is lighter/faster.
     whisper_model: str = "small"
 
+    # YandexGPT (Foundation Models) — translates voice transcripts RU→EN,
+    # grounded in the weed_species dictionary so colloquial/ASR-garbled weed
+    # names map to the correct Latin name. Empty = translation disabled.
+    yc_api_key: str = ""
+    yc_folder_id: str = ""
+    yc_translate_model: str = "yandexgpt"  # 'yandexgpt' (pro) or 'yandexgpt-lite'
+
     # Telegram API base override. Empty = use api.telegram.org directly.
     # Set to a Cloudflare-Worker relay URL (e.g. https://xxx.workers.dev) to
     # route around Roskomnadzor's IP-blocking of Telegram from RU networks.

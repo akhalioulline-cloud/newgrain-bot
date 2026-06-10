@@ -22,7 +22,8 @@ from sqlalchemy import text
 from bot.config import settings
 from bot.db import engine
 from bot.storage import _client
-from bot.transcribe import transcribe, translate_en
+from bot.transcribe import transcribe
+from bot.translate_llm import translate_ru_to_en
 
 
 async def _run() -> int:
@@ -50,12 +51,13 @@ async def _run() -> int:
             audio = _client.get_object(Bucket=settings.s3_bucket, Key=key)["Body"].read()
 
             sets, params = [], {"id": r["id"]}
-            if not (r["comment_voice_text"] or "").strip():
-                ru = (await transcribe(audio)).strip()
-                if ru:
-                    sets.append("comment_voice_text = :ru"); params["ru"] = ru; ru_done += 1
-            if not (r["comment_voice_text_en"] or "").strip():
-                en = (await translate_en(audio)).strip()
+            ru_text = (r["comment_voice_text"] or "").strip()
+            if not ru_text:
+                ru_text = (await transcribe(audio)).strip()
+                if ru_text:
+                    sets.append("comment_voice_text = :ru"); params["ru"] = ru_text; ru_done += 1
+            if not (r["comment_voice_text_en"] or "").strip() and ru_text:
+                en = (await translate_ru_to_en(ru_text)).strip()
                 if en:
                     sets.append("comment_voice_text_en = :en"); params["en"] = en; en_done += 1
 

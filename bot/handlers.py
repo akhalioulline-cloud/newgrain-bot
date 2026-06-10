@@ -36,7 +36,8 @@ from bot.db import (
 )
 from bot.states import PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
-from bot.transcribe import transcribe, translate_en
+from bot.transcribe import transcribe
+from bot.translate_llm import translate_ru_to_en
 
 router = Router()
 logger = logging.getLogger("bot.handlers")
@@ -631,9 +632,10 @@ async def on_voice_comment(message: Message, state: FSMContext, user) -> None:
     if recognized:
         await update_submission(data["submission_id"], comment_voice_text=recognized)
         await message.answer(f"Распознал: «{recognized}»")
-        # English translation for the (possibly non-Russian-speaking) annotator.
+        # English translation for the (possibly non-Russian-speaking) annotator,
+        # via YandexGPT grounded in the species dictionary (accurate weed names).
         try:
-            english = await translate_en(audio)
+            english = await translate_ru_to_en(recognized)
         except Exception:
             logger.exception("voice translation failed for %s", data["submission_id"])
             english = ""

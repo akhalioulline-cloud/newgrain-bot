@@ -42,20 +42,9 @@ def _transcribe_sync(audio: bytes) -> str:
 
 async def transcribe(audio: bytes) -> str:
     """Transcribe Russian speech from raw audio bytes (ogg/opus). Returns the
-    recognized text, or an empty string if nothing could be made out."""
+    recognized text, or an empty string if nothing could be made out.
+
+    English translation is done separately from this Russian transcript by
+    bot.translate_llm (YandexGPT, grounded in the species dictionary) — Whisper's
+    own translate task rendered weed names too literally to be useful."""
     return await asyncio.to_thread(_transcribe_sync, audio)
-
-
-def _translate_sync(audio: bytes) -> str:
-    model = _get_model()
-    # task="translate" renders the (Russian) speech directly into English.
-    segments, _info = model.transcribe(io.BytesIO(audio), language="ru", task="translate")
-    return " ".join(segment.text.strip() for segment in segments).strip()
-
-
-async def translate_en(audio: bytes) -> str:
-    """English translation of the voice note (Whisper translate task). Best for
-    the descriptive gist; weed/disease names may render loosely, so the
-    reference sheet also scans the Russian transcript against the species
-    dictionary for an exact match."""
-    return await asyncio.to_thread(_translate_sync, audio)
