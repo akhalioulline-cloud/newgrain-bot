@@ -44,3 +44,24 @@ async def delete_object(key: str) -> None:
     """Delete one object by key. Used by /cancel to drop a photo whose upload
     the user aborted. Best-effort — caller handles exceptions."""
     await asyncio.to_thread(_delete_sync, key)
+
+
+def put_object_sync(key: str, data: bytes, content_type: str) -> str:
+    """Synchronous upload (for CLI scripts). Returns the s3:// URL."""
+    return _upload_sync(key, data, content_type)
+
+
+def presigned_url(key: str, expires: int = 7 * 24 * 3600) -> str:
+    """Time-limited GET URL for an object, served inline (so the annotation
+    reference HTML opens in the browser). Object Storage is in RU and reachable
+    directly from the annotator's browser, avoiding the Telegram relay."""
+    return _client.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": settings.s3_bucket,
+            "Key": key,
+            "ResponseContentType": "text/html; charset=utf-8",
+            "ResponseContentDisposition": "inline",
+        },
+        ExpiresIn=expires,
+    )

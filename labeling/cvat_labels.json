@@ -96,6 +96,36 @@
     "attributes": []
   },
   {
+    "name": "euphorbia",
+    "type": "rectangle",
+    "color": "#6fb98f",
+    "attributes": []
+  },
+  {
+    "name": "taraxacum",
+    "type": "rectangle",
+    "color": "#e6c84e",
+    "attributes": []
+  },
+  {
+    "name": "artemisia",
+    "type": "rectangle",
+    "color": "#9aa86b",
+    "attributes": []
+  },
+  {
+    "name": "equisetum",
+    "type": "rectangle",
+    "color": "#4e8f6f",
+    "attributes": []
+  },
+  {
+    "name": "polygonum_aviculare",
+    "type": "rectangle",
+    "color": "#54c4a0",
+    "attributes": []
+  },
+  {
     "name": "apera",
     "type": "rectangle",
     "color": "#54d98f",

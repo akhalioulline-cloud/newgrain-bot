@@ -2,9 +2,9 @@
 
 Use these label codes in CVAT. Weeds & diseases = bounding boxes; stresses = whole-image tags.
 
-## Weeds (15) — bounding box
+## Weeds (23) — bounding box
 - `ambrosia` — Амброзия полыннолистная (P0)
-- `cirsium` — Осот полевой (P0)
+- `cirsium` — Осот полевой / Бодяк полевой (P0)
 - `convolvulus` — Вьюнок полевой (P0)
 - `chenopodium` — Марь белая (P0)
 - `amaranthus` — Щирица запрокинутая (P0)
@@ -19,6 +19,13 @@ Use these label codes in CVAT. Weeds & diseases = bounding boxes; stresses = who
 - `galium` — Подмаренник цепкий (P2)
 - `polygonum` — Горец вьюнковый (P2)
 - `lathyrus_tuberosus` — Чина клубненосная (tier 2 — observed once on 29 May 2026, awaiting ≥30 examples before CV training; see [schema_promotion_policy.md](schema_promotion_policy.md))
+- `apera` — Метлица обыкновенная (P1)
+- `lamium` — Яснотка стеблеобъемлющая (P1)
+- `euphorbia` — Молочай прутьевидный (tier 2 — observed Jun 2026)
+- `taraxacum` — Одуванчик лекарственный (tier 2 — observed Jun 2026)
+- `artemisia` — Полынь обыкновенная (tier 2 — observed Jun 2026)
+- `equisetum` — Хвощ полевой (tier 2 — observed Jun 2026)
+- `polygonum_aviculare` — Спорыш / горец птичий (tier 2 — observed Jun 2026; distinct from `polygonum` = Горец вьюнковый)
 
 ## Diseases (10) — bounding box
 - `rust_brown` — Бурая ржавчина пшеницы

@@ -41,6 +41,32 @@ def send(msg: str) -> int:
     return sent
 
 
+def send_document(filename: str, content: bytes, caption: str = "") -> int:
+    """Send an in-memory file (e.g. the annotation reference HTML) to every
+    ADMIN_TG_IDS chat as a Telegram document. Returns count delivered."""
+    if not settings.bot_token or not settings.admin_ids:
+        print("alert: BOT_TOKEN or ADMIN_TG_IDS not set — cannot send.", file=sys.stderr)
+        return 0
+    base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
+    sent = 0
+    for admin in settings.admin_ids:
+        try:
+            r = requests.post(
+                f"{base}/bot{settings.bot_token}/sendDocument",
+                data={"chat_id": admin, "caption": caption[:1024]},
+                files={"document": (filename, content, "text/html")},
+                timeout=60,
+            )
+            if r.status_code == 200:
+                sent += 1
+            else:
+                print(f"alert: doc to {admin} -> HTTP {r.status_code} {r.text[:150]}",
+                      file=sys.stderr)
+        except Exception as exc:
+            print(f"alert: doc to {admin} failed: {exc}", file=sys.stderr)
+    return sent
+
+
 def main() -> int:
     sent = send(" ".join(sys.argv[1:]))
     print(f"alert: delivered to {sent} admin(s).", file=sys.stderr)

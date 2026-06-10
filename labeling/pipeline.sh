@@ -13,7 +13,12 @@ echo "--- export ---"
 $COMPOSE run --rm bot python -m labeling.export
 rc=$?
 case $rc in
-  0) echo "export: batch created." ;;
+  0) echo "export: batch created."
+     # Deliver the annotation reference sheet (thumbnails + Latin name + CVAT
+     # code + voice transcript + field/off-pilot) to the annotator via Telegram.
+     echo "--- reference sheet ---"
+     $COMPOSE run --rm -T bot python -m labeling.reference --status in_labeling --deliver
+     echo "reference: rc=$?" ;;
   1) echo "export: nothing pending — skipped." ;;
   *) echo "export: ERROR (rc=$rc)."
      $COMPOSE run --rm -T bot python -m labeling.alert \

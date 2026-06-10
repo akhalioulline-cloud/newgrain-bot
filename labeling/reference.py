@@ -17,6 +17,7 @@ import asyncio
 import base64
 import html
 import io
+import re
 import sys
 
 from sqlalchemy import text
@@ -59,7 +60,7 @@ async def _fetch(status):
             """
         ), {"st": status})).mappings().all()
         species = (await conn.execute(text(
-            "SELECT latin_name, russian_name, common_aliases FROM weed_species"
+            "SELECT latin_name, russian_name, common_aliases, cvat_code FROM weed_species"
         ))).mappings().all()
     return subs, species
 
@@ -74,11 +75,11 @@ def _species_lookup(species_rows):
     """Map any stored hint (Latin pick, Russian name, or alias) → (latin, russian)."""
     lut = {}
     for s in species_rows:
-        pair = (s["latin_name"], s["russian_name"])
-        lut[_norm(s["latin_name"])] = pair
-        lut[_norm(s["russian_name"])] = pair
+        rec = (s["latin_name"], s["russian_name"], s["cvat_code"])
+        lut[_norm(s["latin_name"])] = rec
+        lut[_norm(s["russian_name"])] = rec
         for a in (s["common_aliases"] or []):
-            lut[_norm(a)] = pair
+            lut[_norm(a)] = rec
     return lut
 
 
@@ -106,14 +107,29 @@ def _render(subs, lut, status) -> str:
         hint = (r["subcategory"] or "").strip()
         sp_html = '<span class="muted">— вид не указан —</span>'
         if hint:
-            pair = lut.get(_norm(hint))
-            if pair:
-                latin, ru = pair
+            rec = lut.get(_norm(hint))
+            if not rec:
+                # Compound hints ("Спорыш / горец птичий", "Молокан, или молочай")
+                # — try each part.
+                for part in re.split(r"\s*[/,;]\s*|\s+или\s+", hint):
+                    rec = lut.get(_norm(part))
+                    if rec:
+                        break
+            if rec:
+                latin, ru, code = rec
+                code_html = (f' <span class="code">→ метка CVAT: {html.escape(code)}</span>'
+                             if code else
+                             ' <span class="warn">(нет CVAT-класса — пропустить)</span>')
+                # If we interpreted/normalized the hint, show the agronomist's
+                # original wording so the annotator can sanity-check.
+                orig = ""
+                if _norm(hint) not in (_norm(ru), _norm(latin)):
+                    orig = f' <span class="muted">· агроном: «{html.escape(hint)}»</span>'
                 sp_html = (f'<b>{html.escape(latin)}</b> '
-                           f'<span class="muted">({html.escape(ru)})</span>')
+                           f'<span class="muted">({html.escape(ru)})</span>{code_html}{orig}')
             else:
                 sp_html = (f'{html.escape(hint)} '
-                           f'<span class="warn">(не в словаре — уточнить)</span>')
+                           f'<span class="warn">(не в словаре — уточнить/пропустить)</span>')
 
         cat = CATEGORY_RU.get(r["category"], r["category"] or "—")
         voice = (r["comment_voice_text"] or "").strip()
@@ -148,6 +164,7 @@ def _render(subs, lut, status) -> str:
     .badge{padding:2px 8px;border-radius:6px;font-weight:600;font-size:13px}
     .badge.field{background:#e6f0e6;color:#2e5e2e} .badge.off{background:#fde0e0;color:#a11}
     .muted{color:#888} .warn{color:#c0392b;font-weight:600}
+    .code{font-family:Menlo,monospace;background:#eef3ff;color:#1a4fa0;padding:1px 6px;border-radius:5px;font-size:13px;font-weight:600}
     """
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
     <title>Flagleaf — справочник разметки</title><style>{css}</style></head><body>
@@ -161,6 +178,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--status", default="in_labeling",
                     help="submission status to include (default: in_labeling)")
+    ap.add_argument("--deliver", action="store_true",
+                    help="send the HTML to ADMIN_TG_IDS via Telegram instead of stdout")
     args = ap.parse_args()
 
     subs, species = asyncio.run(_fetch(args.status))
@@ -170,7 +189,27 @@ def main() -> int:
     print(f"Building reference for {len(subs)} photo(s) at status={args.status!r}…",
           file=sys.stderr)
     lut = _species_lookup(species)
-    sys.stdout.write(_render(subs, lut, args.status))
+    html_doc = _render(subs, lut, args.status)
+
+    if args.deliver:
+        # Host the HTML in Object Storage (RU, reachable from the annotator's
+        # browser) and send a short download link via the text alert. Pushing
+        # the ~1 MB file itself through the Telegram relay fails (SSL reset on
+        # large uploads); a short URL goes through fine.
+        from bot.storage import put_object_sync, presigned_url
+        from labeling.alert import send
+
+        key = f"reference/flagleaf-reference-{args.status}.html"
+        put_object_sync(key, html_doc.encode("utf-8"), "text/html; charset=utf-8")
+        url = presigned_url(key)
+        n = send(
+            f"📋 Справочник для разметки готов: {len(subs)} фото (статус {args.status}).\n"
+            f"Откройте в браузере рядом с CVAT (ссылка действует 7 дней):\n{url}"
+        )
+        print(f"reference uploaded; link sent to {n} admin(s).", file=sys.stderr)
+        return 0 if n else 2
+
+    sys.stdout.write(html_doc)
     print("done.", file=sys.stderr)
     return 0
 
