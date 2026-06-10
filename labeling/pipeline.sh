@@ -15,12 +15,19 @@ rc=$?
 case $rc in
   0) echo "export: batch created." ;;
   1) echo "export: nothing pending — skipped." ;;
-  *) echo "export: ERROR (rc=$rc)." ;;
+  *) echo "export: ERROR (rc=$rc)."
+     $COMPOSE run --rm -T bot python -m labeling.alert \
+       "⚠️ Flagleaf labeling: ошибка экспорта фото в CVAT (rc=$rc). Вероятно, лимит задач CVAT или связь. См. pipeline.log на сервере." ;;
 esac
 
-# 2. IMPORT — pull back every CVAT task the annotator marked 'completed'.
+# 2. IMPORT — pull labels back + recycle task slots.
 echo "--- import (auto) ---"
 $COMPOSE run --rm bot python -m labeling.import --auto
-echo "import: rc=$?"
+irc=$?
+echo "import: rc=$irc"
+if [ "$irc" -ne 0 ]; then
+  $COMPOSE run --rm -T bot python -m labeling.alert \
+    "⚠️ Flagleaf labeling: ошибка импорта разметки из CVAT (rc=$irc). См. pipeline.log на сервере."
+fi
 
 echo "===================== done $(date '+%F %T %Z') ====================="
