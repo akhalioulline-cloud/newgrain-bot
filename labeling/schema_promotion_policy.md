@@ -109,7 +109,7 @@ promote to the inline keyboard (one-line UPDATE in a migration).
 | 10 Jun 2026 | Хвощ полевой | *Equisetum arvense* | unknown → tier 2 (`equisetum`) | Observed; migration 0008. |
 | 10 Jun 2026 | Спорыш / горец птичий | *Polygonum aviculare* | unknown → tier 2 (`polygonum_aviculare`) | Observed; migration 0008. Distinct from existing `polygonum` (P. convolvulus). |
 | 10 Jun 2026 | Бодяк полевой | *Cirsium arvense* | alias added | Same species as Осот полевой; alias only, no new class. |
-| — | Молокан / молочай | *Lactuca tatarica?* / *Euphorbia?* | PENDING | Ambiguous hint — CAO to disambiguate before promotion. |
+| 10 Jun 2026 | Молокан / молочай | *Euphorbia virgata* | resolved → `euphorbia` | CAO (Almas) confirmed he meant молочай, not молокан (Lactuca). Submission 50561ec9 hint corrected to "Молочай прутьевидный". NOT adding "молокан" as a Euphorbia alias — it botanically means Lactuca tatarica; a global alias would mis-tag a real Lactuca sighting later. |
 
 ---
 
