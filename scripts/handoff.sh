@@ -16,4 +16,6 @@ git add -A
 git commit -m "handoff: $(date '+%Y-%m-%d %H:%M')" || echo "  (no new code/context to commit)"
 git push origin main
 echo ""
-echo "✅ Handed off. On the OTHER machine, run:   ./scripts/pickup.sh"
+echo "✅ Handed off. On the OTHER machine, run:"
+echo "      cd ~/newgrain-bot && git pull origin main && ./scripts/pickup.sh"
+echo "   (the 'git pull' bootstraps the scripts if that machine's clone is stale)"
