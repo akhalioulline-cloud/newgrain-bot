@@ -28,6 +28,7 @@ HEADER_MAP = {
     "сезон": "season", "год": "season",
     "культура": "crop",
     "операция": "operation", "вид обработки": "operation",
+    "категория": "op_category", "op_category": "op_category",
     "препарат": "product", "продукт": "product",
     "действующее вещество": "active_substance", "дв": "active_substance",
     "объект": "target", "вредный объект": "target", "цель": "target",
