@@ -39,23 +39,30 @@ Confirm with: *"what are the open threads on Flagleaf?"*
 
 ---
 
-## 2. OPTIONAL — also carry the verbatim thread
+## 2. OPTIONAL — also carry the verbatim thread (one command each)
 
-**On the machine you're LEAVING** (send this session's transcript to the other Mac):
+**On the machine you're LEAVING** (after you've exited the Claude session):
 ```bash
-# leaving mac-mini → send to the Air:
-tailscale file cp "$(ls -t ~/.claude/projects/*newgrain*/*.jsonl | head -1)" alexeys-macbook-air:
-# leaving the Air → send to mac-mini:
-tailscale file cp "$(ls -t ~/.claude/projects/*newgrain*/*.jsonl | head -1)" mac-mini:
+cd ~/newgrain-bot && make thread-out     # auto-detects the other Mac + sends this session's transcript
 ```
 
 **On the machine you're ARRIVING at:**
 ```bash
-tailscale file get ~/Downloads/                       # 1. pull the Taildrop'd file
-cd ~/newgrain-bot && claude                           # 2. (first time only) open once, then /exit — creates the project folder
-mv ~/Downloads/*.jsonl "$(ls -dt ~/.claude/projects/*newgrain* | head -1)/"   # 3. file it
-cd ~/newgrain-bot && claude --resume                  # 4. pick the session → full scrollback, continue it
+cd ~/newgrain-bot && make thread-in       # pulls the transcript + files it for resume
+claude --resume                           # pick the session → full scrollback, continue it
 ```
+`make thread-in` creates the project folder if needed, so `claude --resume` finds the
+session even the first time on a machine. (Both need Tailscale **Connected**.)
+
+<details><summary>manual equivalent, if you ever need it</summary>
+
+```bash
+# leaving:  tailscale file cp "$(ls -t ~/.claude/projects/*newgrain*/*.jsonl | head -1)" <other-mac>:
+# arriving: tailscale file get ~/Downloads/
+#           mv ~/Downloads/*.jsonl "$(ls -dt ~/.claude/projects/*newgrain* | head -1)/"
+#           claude --resume
+```
+</details>
 
 ---
 
