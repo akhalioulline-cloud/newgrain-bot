@@ -105,6 +105,13 @@ git add docs/claude-context && git commit -m "update Claude context" && git push
 ```
 Then on another machine: `git pull && ./scripts/claude-memory.sh restore`.
 
+### Switching machines (the easy way)
+Two one-word helpers wrap all of the above. Treat **one machine as active at a time**:
+- **Leaving a machine:** `./scripts/handoff.sh` — saves Claude's context + commits & pushes all code/context.
+- **Arriving at the other:** `./scripts/pickup.sh` — pulls everything + restores Claude's context. Then run `claude`.
+
+So the whole switch is: `handoff.sh` here → walk to the other Mac → `pickup.sh` → `claude`.
+
 ---
 
 ## C. How to use the three pieces
