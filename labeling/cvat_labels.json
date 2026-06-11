@@ -238,5 +238,20 @@
     "type": "tag",
     "color": "#f25473",
     "attributes": []
-  }
+  },
+  { "name": "sunn_pest",       "type": "rectangle", "color": "#e8743b", "attributes": [] },
+  { "name": "oulema",          "type": "rectangle", "color": "#f2913d", "attributes": [] },
+  { "name": "anisoplia",       "type": "rectangle", "color": "#e0552b", "attributes": [] },
+  { "name": "sitobion",        "type": "rectangle", "color": "#f2b134", "attributes": [] },
+  { "name": "schizaphis",      "type": "rectangle", "color": "#d96c2c", "attributes": [] },
+  { "name": "rhopalosiphum",   "type": "rectangle", "color": "#e89c3c", "attributes": [] },
+  { "name": "haplothrips",     "type": "rectangle", "color": "#cf5b3a", "attributes": [] },
+  { "name": "oscinella_frit",  "type": "rectangle", "color": "#f2a65a", "attributes": [] },
+  { "name": "hessian_fly",     "type": "rectangle", "color": "#db7038", "attributes": [] },
+  { "name": "delia_winter",    "type": "rectangle", "color": "#e6883e", "attributes": [] },
+  { "name": "phyllotreta",     "type": "rectangle", "color": "#c9602e", "attributes": [] },
+  { "name": "cephus",          "type": "rectangle", "color": "#f0a83e", "attributes": [] },
+  { "name": "agrotis_segetum", "type": "rectangle", "color": "#d4673a", "attributes": [] },
+  { "name": "agriotes",        "type": "rectangle", "color": "#e87c4e", "attributes": [] },
+  { "name": "zabrus",          "type": "rectangle", "color": "#c4552c", "attributes": [] }
 ]

@@ -40,7 +40,7 @@ from bot.states import PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
 from bot.transcribe import transcribe
 from bot.translate_llm import translate_ru_to_en
-from bot.taxonomy import DISEASES, DISEASE_RU_BY_CODE
+from bot.taxonomy import DISEASES, DISEASE_RU_BY_CODE, PESTS_PICKER, PEST_RU_BY_CODE
 
 router = Router()
 logger = logging.getLogger("bot.handlers")
@@ -48,6 +48,7 @@ logger = logging.getLogger("bot.handlers")
 CATEGORIES = [
     ("Сорняк", "weed"),
     ("Болезнь", "disease"),
+    ("Вредитель", "pest"),
     ("Стресс", "stress"),
     ("Контроль", "control"),
     ("Результат обработки", "treatment_result"),
@@ -117,6 +118,16 @@ def _disease_kb() -> InlineKeyboardMarkup:
     ]
     rows.append([InlineKeyboardButton(text="Другая болезнь", callback_data="dis:other")])
     rows.append([InlineKeyboardButton(text="Пропустить", callback_data="dis:skip")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _pest_kb() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=ru, callback_data=f"pst:{code}")]
+        for code, ru in PESTS_PICKER
+    ]
+    rows.append([InlineKeyboardButton(text="Другой вредитель", callback_data="pst:other")])
+    rows.append([InlineKeyboardButton(text="Пропустить", callback_data="pst:skip")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -313,6 +324,12 @@ async def cmd_finish(message: Message, state: FSMContext, user) -> None:
         await message.answer(
             f"{intro} Какая болезнь? (можно пропустить)",
             reply_markup=_disease_kb(),
+        )
+    elif pending["category"] == "pest" and pending["subcategory"] is None:
+        await state.set_state(PhotoForm.subcategory)
+        await message.answer(
+            f"{intro} Какой вредитель? (можно пропустить)",
+            reply_markup=_pest_kb(),
         )
     else:
         # Category set (and subcategory if weed) — only the comment remains.
@@ -591,6 +608,11 @@ async def on_category(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.answer(
             "Какая болезнь? (можно пропустить)", reply_markup=_disease_kb()
         )
+    elif code == "pest":
+        await state.set_state(PhotoForm.subcategory)
+        await callback.message.answer(
+            "Какой вредитель? (можно пропустить)", reply_markup=_pest_kb()
+        )
     else:
         await state.set_state(PhotoForm.comment)
         await callback.message.answer("Комментарий? Текстом или голосом. Или /skip.")
@@ -611,6 +633,26 @@ async def on_disease(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     if value != "skip":
         ru = DISEASE_RU_BY_CODE.get(value)
+        if ru:
+            await update_submission(data["submission_id"], subcategory=ru)
+    await state.set_state(PhotoForm.comment)
+    await callback.message.answer("Комментарий? Текстом или голосом. Или /skip.")
+
+
+@router.callback_query(PhotoForm.subcategory, F.data.startswith("pst:"))
+async def on_pest(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    value = callback.data.split(":", 1)[1]
+
+    # "Другой вредитель" — free-text (reuses the subcategory_other flow).
+    if value == "other":
+        await state.set_state(PhotoForm.subcategory_other)
+        await callback.message.answer("Введите название вредителя (или /skip):")
+        return
+
+    data = await state.get_data()
+    if value != "skip":
+        ru = PEST_RU_BY_CODE.get(value)
         if ru:
             await update_submission(data["submission_id"], subcategory=ru)
     await state.set_state(PhotoForm.comment)

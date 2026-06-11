@@ -25,12 +25,12 @@ from sqlalchemy import text
 from bot.config import settings
 from bot.db import engine
 from bot.storage import _client
-from bot.taxonomy import DISEASES
+from bot.taxonomy import DISEASES, PESTS
 
 THUMB_PX = 480
 
 CATEGORY_RU = {
-    "weed": "Сорняк", "disease": "Болезнь", "stress": "Стресс",
+    "weed": "Сорняк", "disease": "Болезнь", "pest": "Вредитель", "stress": "Стресс",
     "control": "Контроль", "treatment_result": "Результат обработки",
 }
 
@@ -75,6 +75,15 @@ def _norm(s: str) -> str:
 
 # Disease name (RU, normalized) → CVAT code, for resolving disease hints.
 _DISEASE_LUT = {_norm(ru): code for code, ru in DISEASES}
+
+# Pest name (RU or Latin, normalized) → (latin, code, in_cvat). Priority pests
+# (in_cvat=True) have a CVAT class now; the rest are a candidate pool promoted
+# to a class on first sighting.
+_PEST_LUT = {}
+for _code, _ru, _latin, _pick in PESTS:
+    _rec = (_latin, _code, _pick)
+    _PEST_LUT[_norm(_ru)] = _rec
+    _PEST_LUT[_norm(_latin)] = _rec
 
 
 def _scan_species(textval, lut):
@@ -159,8 +168,23 @@ def _render(subs, lut, status) -> str:
                     sp_html = (f'<b>{html.escape(hint)}</b> '
                                f'<span class="code">→ метка CVAT: {html.escape(dcode)}</span>')
                 else:
-                    sp_html = (f'{html.escape(hint)} '
-                               f'<span class="warn">(не в словаре — уточнить/пропустить)</span>')
+                    # Not a weed or disease — try the pest list (RU/Latin → code).
+                    prec = _PEST_LUT.get(_norm(hint))
+                    if not prec:
+                        for part in re.split(r"\s*[/,;]\s*|\s+или\s+", hint):
+                            prec = _PEST_LUT.get(_norm(part))
+                            if prec:
+                                break
+                    if prec:
+                        platin, pcode, in_cvat = prec
+                        tail = (f'<span class="code">→ метка CVAT: {html.escape(pcode)}</span>'
+                                if in_cvat else
+                                '<span class="warn">(CVAT-класс по первому наблюдению)</span>')
+                        sp_html = (f'<b>{html.escape(hint)}</b> '
+                                   f'<span class="muted">· вредитель, {html.escape(platin)}</span> {tail}')
+                    else:
+                        sp_html = (f'{html.escape(hint)} '
+                                   f'<span class="warn">(не в словаре — уточнить/пропустить)</span>')
 
         cat = CATEGORY_RU.get(r["category"], r["category"] or "—")
         voice = (r["comment_voice_text"] or "").strip()

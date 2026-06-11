@@ -48,6 +48,28 @@ Use these label codes in CVAT. Weeds & diseases = bounding boxes; stresses = who
 - `herbicide_damage` — Гербицидное повреждение
 - `frost` — Заморозок
 
+## Pests / insects (15 priority) — bounding box
+Priority grain-crop pests (taxonomy from the grain-pest atlas TOC — names only,
+per [LICENSING.md](../LICENSING.md) §2.1). The full pest taxonomy (30 species) is
+in `bot/taxonomy.py`; the other 15 are a candidate pool, picked via "Другой
+вредитель" and promoted to a CVAT class on first sighting (data-driven, per
+[schema_promotion_policy.md](schema_promotion_policy.md)).
+- `sunn_pest` — Клоп вредная черепашка (*Eurygaster integriceps*)
+- `oulema` — Пьявица красногрудая (*Oulema melanopus*)
+- `anisoplia` — Хлебный жук-кузька (*Anisoplia austriaca*)
+- `sitobion` — Тля злаковая большая (*Sitobion avenae*)
+- `schizaphis` — Тля злаковая обыкновенная (*Schizaphis graminum*)
+- `rhopalosiphum` — Тля черёмухово-злаковая (*Rhopalosiphum padi*)
+- `haplothrips` — Трипс пшеничный (*Haplothrips tritici*)
+- `oscinella_frit` — Шведская муха овсяная (*Oscinella frit*)
+- `hessian_fly` — Гессенская муха (*Mayetiola destructor*)
+- `delia_winter` — Муха озимая (*Delia coarctata*)
+- `phyllotreta` — Блошка полосатая хлебная (*Phyllotreta vittula*)
+- `cephus` — Пилильщик хлебный обыкновенный (*Cephus pygmaeus*)
+- `agrotis_segetum` — Совка озимая (*Agrotis segetum*)
+- `agriotes` — Щелкун посевной / проволочник (*Agriotes lineatus*)
+- `zabrus` — Жужелица хлебная обыкновенная (*Zabrus tenebrioides*)
+
 ---
 
 ## Stage 2 MVP — manual export ↔ CVAT ↔ import loop

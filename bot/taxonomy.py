@@ -24,3 +24,49 @@ DISEASES = [
 ]
 
 DISEASE_RU_BY_CODE = {code: ru for code, ru in DISEASES}
+
+
+# Pests / insects of grain crops. Taxonomy signal (species names + Latin
+# nomenclature) taken from the grain-pest atlas table of contents per
+# LICENSING.md §2.1 — names only, NO atlas text/photos/recommendations used.
+# (code, Russian name, Latin name, in_picker). in_picker=True is the priority
+# set shown in the bot + promoted to a CVAT class now; the rest are a dictionary
+# candidate pool reachable via "Другой вредитель" and promoted to a CVAT class
+# on first sighting (data-driven, per labeling/schema_promotion_policy.md).
+# Latin names tagged "(уточнить)" are for the CAO (Almas) to confirm.
+PESTS = [
+    ("sunn_pest",         "Клоп вредная черепашка",           "Eurygaster integriceps",            True),
+    ("oulema",            "Пьявица красногрудая",             "Oulema melanopus",                  True),
+    ("anisoplia",         "Хлебный жук-кузька",               "Anisoplia austriaca",               True),
+    ("sitobion",          "Тля злаковая большая",             "Sitobion avenae",                   True),
+    ("schizaphis",        "Тля злаковая обыкновенная",        "Schizaphis graminum",               True),
+    ("rhopalosiphum",     "Тля черёмухово-злаковая",          "Rhopalosiphum padi",                True),
+    ("haplothrips",       "Трипс пшеничный",                  "Haplothrips tritici",               True),
+    ("oscinella_frit",    "Шведская муха овсяная",            "Oscinella frit",                    True),
+    ("hessian_fly",       "Гессенская муха (комарик)",        "Mayetiola destructor",              True),
+    ("delia_winter",      "Муха озимая",                      "Delia coarctata",                   True),
+    ("phyllotreta",       "Блошка полосатая хлебная",         "Phyllotreta vittula",               True),
+    ("cephus",            "Пилильщик хлебный обыкновенный",   "Cephus pygmaeus",                   True),
+    ("agrotis_segetum",   "Совка озимая",                     "Agrotis segetum",                   True),
+    ("agriotes",          "Щелкун посевной (проволочник)",    "Agriotes lineatus",                 True),
+    ("zabrus",            "Жужелица хлебная обыкновенная",     "Zabrus tenebrioides",              True),
+    # --- candidate pool (off-picker; via "Другой вредитель", CVAT class on first sighting) ---
+    ("flea_chaetocnema",  "Блошка стеблевая хлебная большая", "Chaetocnema aridula",               False),
+    ("chlorops",          "Зеленоглазка хлебная",             "Chlorops pumilionis",               False),
+    ("cnephasia",         "Злаковая листовёртка",             "Cnephasia spp.",                    False),
+    ("grain_mite",        "Клещ хлебный",                     "Acari (уточнить)",                  False),
+    ("phorbia",           "Муха пшеничная чёрная",            "Phorbia fumigata",                  False),
+    ("opomyza",           "Опомиза пшеничная",                "Opomyza florum",                    False),
+    ("trachelus",         "Пилильщик хлебный чёрный",         "Trachelus tabidus",                 False),
+    ("agrotis_excl",      "Совка восклицательная",            "Agrotis exclamationis",             False),
+    ("apamea",            "Совка зерновая обыкновенная",      "Apamea anceps",                     False),
+    ("spring_cutworm",    "Совка яровая",                     "Euxoa tritici (уточнить)",          False),
+    ("barley_aphid",      "Тля ячменная",                     "Brachycolus noxius (уточнить)",     False),
+    ("psammotettix",      "Цикадка полосатая",                "Psammotettix striatus",             False),
+    ("dark_leafhopper",   "Цикадка тёмная",                   "Laodelphax striatellus (уточнить)", False),
+    ("macrosteles",       "Цикадка шеститочечная",            "Macrosteles laevis",                False),
+    ("oscinella_pusilla", "Шведская муха ячменная",           "Oscinella pusilla",                 False),
+]
+
+PESTS_PICKER = [(code, ru) for code, ru, latin, pick in PESTS if pick]
+PEST_RU_BY_CODE = {code: ru for code, ru, latin, pick in PESTS}
