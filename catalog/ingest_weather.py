@@ -35,7 +35,7 @@ def _num(s):
 
 
 def _date(s):
-    s = str(s or "").strip()
+    s = str(s or "").strip().split(" ")[0]  # drop time if present (xlsx datetimes)
     for f in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
         try:
             return datetime.strptime(s, f).date()
