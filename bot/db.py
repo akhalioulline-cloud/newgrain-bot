@@ -428,10 +428,9 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         prot = (await conn.execute(text(
             "SELECT active_substance, season FROM field_treatments WHERE field_id=:i "
             "AND op_category='protection' AND active_substance IS NOT NULL"), {"i": fid})).all()
-        # cross-field data for the same-crop NDVI baseline
+        # cross-field data for the same-crop NDVI baseline (farm-wide rotation)
         cropc = (await conn.execute(text(
-            "SELECT field_id, season, crop, count(*) c FROM field_treatments "
-            "WHERE crop IS NOT NULL AND crop<>'' GROUP BY field_id, season, crop"))).all()
+            "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
         all_ndvi = (await conn.execute(text(
             "SELECT field_id, week_start, week_no, ndvi FROM vegetation_weekly "
             "WHERE ndvi IS NOT NULL"))).all()
@@ -481,12 +480,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
     if ml:
         lines.append("\n🧬 Режимы действия (повторы → риск резистентности):")
         lines.extend(ml)
-    crop_map = {}
-    best = {}
-    for f_id, season, crop, c in cropc:
-        if (f_id, season) not in best or c > best[(f_id, season)]:
-            best[(f_id, season)] = c
-            crop_map[(f_id, season)] = crop
+    crop_map = {(f_id, yr): crop for f_id, yr, crop in cropc}
     al, note = ndvi_anomaly_samecrop(fid, crop_map, all_ndvi)
     if al:
         lines.append(f"\n⚠️ NDVI-аномалии ({note}):")
