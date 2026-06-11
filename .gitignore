@@ -16,3 +16,6 @@ venv/
 # Labeling sample images (test artifacts, not source)
 labeling/samples/
 .claude/
+
+# local data drop-zone (field exports etc.) — never commit raw farm data
+_incoming/
