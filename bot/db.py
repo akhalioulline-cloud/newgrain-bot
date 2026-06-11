@@ -365,3 +365,97 @@ async def get_team_week_counts():
             )
         )
         return result.mappings().all()
+
+
+def _catalog_stem(crop: str | None) -> str:
+    t = (crop or "").lower()
+    if "пшениц" in t:
+        return "пшениц"
+    if "подсолнеч" in t:
+        return "подсолнеч"
+    if "соя" in t or "сои" in t:
+        return "соя"
+    return t.split()[0] if t else ""
+
+
+_OPCAT_RU = {"protection": "защита", "fertilizer": "удобрения",
+             "tillage": "обработка почвы", "sowing": "сев"}
+
+
+async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
+    """Integrated data-layer card for one field: operations by category, plant-
+    protection rotation per season×crop, recent treatments with active substances,
+    weather coverage, NDVI trend, and the catalog's candidate-product count for the
+    current crop. Shared by the /field bot command and the field_summary CLI.
+    farm_id scopes the field lookup (None = any field)."""
+    q = (field_query or "").strip()
+    async with engine.connect() as conn:
+        if farm_id:
+            cands = (await conn.execute(text(
+                "SELECT id, name, crop, area_ha FROM fields WHERE farm_id=:f ORDER BY id"),
+                {"f": farm_id})).mappings().all()
+        else:
+            cands = (await conn.execute(text(
+                "SELECT id, name, crop, area_ha FROM fields ORDER BY id"))).mappings().all()
+        field = next((c for c in cands if c["name"] == q or c["name"] == f"Поле {q}"
+                      or (q and q.lower() in c["name"].lower())), None)
+        if field is None:
+            avail = ", ".join(c["name"] for c in cands) or "—"
+            return f"Поле не найдено: «{q}».\nДоступные поля: {avail}"
+        fid = field["id"]
+
+        cats = (await conn.execute(text(
+            "SELECT op_category, count(*) c FROM field_treatments WHERE field_id=:i "
+            "GROUP BY op_category ORDER BY c DESC"), {"i": fid})).all()
+        span = (await conn.execute(text(
+            "SELECT min(season) lo, max(season) hi, count(*) c FROM field_treatments WHERE field_id=:i"),
+            {"i": fid})).first()
+        rot = (await conn.execute(text(
+            "SELECT season, crop, array_agg(DISTINCT product) prods FROM field_treatments "
+            "WHERE field_id=:i AND op_category='protection' AND product IS NOT NULL AND product<>'' "
+            "GROUP BY season, crop ORDER BY season, crop"), {"i": fid})).all()
+        recent = (await conn.execute(text(
+            "SELECT treatment_date, product, active_substance FROM field_treatments "
+            "WHERE field_id=:i AND op_category='protection' ORDER BY treatment_date DESC LIMIT 5"),
+            {"i": fid})).mappings().all()
+        w = (await conn.execute(text(
+            "SELECT count(*) c, min(date) lo, max(date) hi FROM weather_daily WHERE field_id=:i"),
+            {"i": fid})).first()
+        ndvi = (await conn.execute(text(
+            "SELECT round(ndvi,2) FROM vegetation_weekly WHERE field_id=:i AND ndvi IS NOT NULL "
+            "ORDER BY week_start DESC LIMIT 6"), {"i": fid})).scalars().all()
+        cur = (await conn.execute(text(
+            "SELECT crop FROM field_treatments WHERE field_id=:i AND crop IS NOT NULL AND crop<>'' "
+            "ORDER BY treatment_date DESC LIMIT 1"), {"i": fid})).scalar()
+        stem = _catalog_stem(cur)
+        ncat = (await conn.execute(text(
+            "SELECT count(*) FROM pesticide_applications WHERE lower(crop) LIKE :s AND status='Действует'"),
+            {"s": f"%{stem}%"})).scalar() if stem else 0
+
+    meta = []
+    if field["crop"]:
+        meta.append(field["crop"])
+    if field["area_ha"] is not None:
+        meta.append(f"{float(field['area_ha']):g} га")
+    lines = [f"📍 {field['name']}" + (f" ({', '.join(meta)})" if meta else ""), ""]
+    if span and span.c:
+        catstr = ", ".join(f"{_OPCAT_RU.get(c[0], c[0])} {c[1]}" for c in cats)
+        lines.append(f"🧪 Операции: {span.c} за {span.lo}–{span.hi} ({catstr})")
+        lines.append("\n🔄 Защита по сезонам:")
+        for r in rot:
+            shown, extra = r[2][:8], ("" if len(r[2]) <= 8 else f" +{len(r[2]) - 8}")
+            lines.append(f"  {r[0]} · {r[1] or '—'}: {'; '.join(shown)}{extra}")
+        if recent:
+            lines.append("\nпоследние обработки (с д.в.):")
+            for r in recent:
+                dv = f" — {r['active_substance']}" if r["active_substance"] else ""
+                lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}{dv}")
+    else:
+        lines.append("🧪 История обработок: нет данных")
+    if w and w.c:
+        lines.append(f"\n☁️ Погода: {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
+    if ndvi:
+        lines.append("🌱 NDVI (свежие→старые): " + ", ".join(f"{float(x):g}" for x in ndvi))
+    if ncat:
+        lines.append(f"📖 Каталог: ~{ncat} действующих препаратов для культуры «{cur}»")
+    return "\n".join(lines)

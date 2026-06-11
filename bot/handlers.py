@@ -24,6 +24,7 @@ from bot.db import (
     create_submission,
     deactivate_user,
     delete_submission,
+    field_card_text,
     find_duplicate_submission,
     get_all_recent_submissions,
     get_pending_submission,
@@ -262,6 +263,7 @@ HELP_TEXT = (
 ADMIN_HELP = (
     "\n\nКоманды администратора:\n"
     "/all — последние загрузки всех агрономов\n"
+    "/field <поле> — сводка по полю (обработки, погода, NDVI)\n"
     "/adduser <id> <имя> — добавить агронома\n"
     "/removeuser <id> — убрать доступ"
 )
@@ -275,6 +277,20 @@ async def cmd_help(message: Message, user) -> None:
 @router.message(Command("fields"))
 async def cmd_fields(message: Message, user) -> None:
     await _show_fields(message, user["farm_id"])
+
+
+@router.message(Command("field"))
+async def cmd_field(message: Message, command: CommandObject, user) -> None:
+    """Admin: integrated data-layer card for one field (treatment history with
+    active substances, protection rotation by season, weather, NDVI, catalog)."""
+    if not _is_admin(user):
+        await message.answer("Эта команда доступна администратору.")
+        return
+    q = (command.args or "").strip()
+    if not q:
+        await message.answer("Укажите поле, например: /field 76/108")
+        return
+    await message.answer(await field_card_text(q, user["farm_id"]))
 
 
 @router.message(Command("stats"))
