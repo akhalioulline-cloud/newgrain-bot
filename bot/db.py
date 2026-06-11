@@ -435,6 +435,9 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         all_ndvi = (await conn.execute(text(
             "SELECT field_id, week_start, week_no, ndvi FROM vegetation_weekly "
             "WHERE ndvi IS NOT NULL"))).all()
+        fcrops = (await conn.execute(text(
+            "SELECT year, crop, variety, yield_cwt FROM field_crops WHERE field_id=:i "
+            "ORDER BY year DESC"), {"i": fid})).all()
         cur = (await conn.execute(text(
             "SELECT crop FROM field_treatments WHERE field_id=:i AND crop IS NOT NULL AND crop<>'' "
             "ORDER BY treatment_date DESC LIMIT 1"), {"i": fid})).scalar()
@@ -463,6 +466,13 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
                 lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}{dv}")
     else:
         lines.append("🧪 История обработок: нет данных")
+    if fcrops:
+        lines.append("\n🌾 Севооборот (CropWise):")
+        for yr, crop, variety, yld in fcrops:
+            extra = f" · {variety}" if variety else ""
+            if yld:
+                extra += f" · {float(yld):g} ц/га"
+            lines.append(f"  {yr}: {crop}{extra}")
     if w and w.c:
         lines.append(f"\n☁️ Погода: {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
     if ndvi:
