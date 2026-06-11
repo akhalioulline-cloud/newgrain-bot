@@ -1,18 +1,28 @@
 ---
 name: newgrain-status-2026-05
-description: NewGrain build status and next-up work as of late May 2026
+description: NewGrain/Flagleaf build status, current state, and open threads (as of 2026-06-11)
 metadata: 
   node_type: memory
   type: project
   originSessionId: 88a17f24-0305-4186-87de-ccb72cc8bca8
 ---
 
-As of 2026-05-25: photo flow works end-to-end (photo → field → category → species → comment → saved to S3 + a `submissions` row with status `ready_for_labeling`). Bot runs in **polling mode** (no public webhook needed for dev), FSM state in Redis, bot talks **directly to Postgres** (separate API layer deferred to Phase 8). Whitelist via `ADMIN_TG_IDS` in `.env`.
+**Updated 2026-06-11.** (Earlier May-25 content was superseded — Whisper→Yandex, prod deployed, etc.)
 
-**Phase 7 done (2026-05-25):** commands /history, /stats, /fields, /help, /problem in `handlers.py`; Telegram command menu set via `set_my_commands` in `main.py`. /problem forwards a free-text report to `ADMIN_TG_IDS` over Telegram (no DB table for reports). New db.py helpers: `get_user_history`, `get_user_stats`.
+**Live in production** (Yandex Cloud VM 158.160.46.89, `docker-compose.prod.yml`): photo flow (photo → field → category → species/disease/pest → comment → S3 + `submissions` row), real pilot fields (New Grain Co), nightly backups, commands (/history /stats /fields /help /problem /finish /cancel /all /adduser /removeuser). Bot polls via the **Cloudflare relay** (`TELEGRAM_API_BASE`) to get around the RKN Telegram block.
 
-**Phase 6 done (2026-05-25):** voice transcription via local **faster-whisper** (`bot/transcribe.py`, lazy-loaded model, `WHISPER_MODEL` env default `small`, runs in bot container — no external API; chosen over OpenAI/Yandex for privacy + no Russia network issues). Voice comments transcribed inline → `submissions.comment_voice_text`, shown to user and in `/history`. Model cached in `whisper_cache` docker volume. New dep `faster-whisper` ⇒ bot image must be **rebuilt** (`docker compose build bot`), not just restarted.
+**Voice/text — both Yandex now** (migrated OFF faster-whisper 10 Jun): RU transcription = **Yandex SpeechKit** (`bot/transcribe.py`); RU→EN translation of voice AND typed comments = **YandexGPT** (`bot/translate_llm.py`), grounded in the species dict. Needs `YC_API_KEY`+`YC_FOLDER_ID`. `comment_voice_text(_en)`, `comment_text_en` columns. **Bug fixed:** `update_submission` allowed-set had dropped `comment_voice_text`.
 
-**Not done yet:** replace demo farm/fields (migration 0003: Поле №3/№7/№12) with real pilot fields; EXIF GPS + perceptual-hash dedup + thumbnails; albums (multi-photo sends handled one-at-a-time); production deploy to Yandex Cloud (rotate `POSTGRES_PASSWORD` / `S3_SECRET_KEY` off dev placeholders).
+**Labeling pipeline** ([[newgrain-labeling-pipeline]]): CVAT Cloud, **55 labels** (23 weeds + 11 diseases + 15 pests + 6 stresses). Categories incl. disease picker + **pest picker** (`bot/taxonomy.py`; pests from Syngenta atlas TOC, names only per LICENSING.md). Nightly cron (03:30): voice backfill → export → reference-sheet deliver → import+recycle. Slot recycling fixed to detect **job state** (not task status). Annotation **reference sheet** (`labeling/reference.py`, `--deliver` → Object Storage link). Photo **dedup** at upload (`image_hash`). Dataset: ~22 labeled / 37 boxes; 3 marked `duplicate`.
+
+**⚠️ Operational gotcha — the relay is flaky for long-poll.** getUpdates through the Cloudflare worker intermittently resets/times-out → dropped button taps → Almas's uploads stall mid-flow. Mitigations applied (10 Jun): `start_polling(polling_timeout=10)` + non-fatal `_ack()` so a stale tap still saves. **Durable fix if it recurs:** a sturdier outbound path (proxy/VPN), not the Cloudflare worker. Also: avoid rebuilding the bot while Almas is actively uploading.
+
+**Portability kit (11 Jun):** `SETUP.md` (new-machine + workflow), `scripts/claude-memory.sh` (save/restore this memory snapshot under `docs/claude-context/`), `docs/SECRETS_LOCKBOX.md` (plan to move secrets off hand-copied `.env`).
+
+**Open threads (pending):**
+- Almas has ~6 incomplete drafts (`awaiting_metadata`) — he completes via `/finish`; `/cancel` discards. (2 complete ones were finalized 11 Jun.)
+- Almas to confirm the **15-priority pest** list; note *Diuraphis noxia* (Тля ячменная = Russian wheat aphid) is in the candidate pool — maybe promote.
+- **Grant docs (iCloud `Flagleaf/`): taxonomy update ON HOLD per user** until more info arrives — they should eventually say "23 сорняка, 11 болезней, **15 вредителей**, 6 стрессов". Docs already synced Whisper→Yandex SpeechKit/YandexGPT.
+- **v0 bootstrap:** smoke test done 11 Jun → leans LOW end (domain gap = camera angle/lighting/framing; soil matches MFWD). v0 not worth prioritizing; **collection is the priority** (~800-frame season target; at ~22). Optional lever: a light shooting protocol for Almas.
 
 Serves [[newgrain-goal-and-principle]].
