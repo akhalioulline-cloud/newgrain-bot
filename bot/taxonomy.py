@@ -33,7 +33,8 @@ DISEASE_RU_BY_CODE = {code: ru for code, ru in DISEASES}
 # set shown in the bot + promoted to a CVAT class now; the rest are a dictionary
 # candidate pool reachable via "Другой вредитель" and promoted to a CVAT class
 # on first sighting (data-driven, per labeling/schema_promotion_policy.md).
-# Latin names tagged "(уточнить)" are for the CAO (Almas) to confirm.
+# Latin names are from the grain-pest atlas nomenclature; the CAO (Almas) can
+# still adjust any if field reality differs.
 PESTS = [
     ("sunn_pest",         "Клоп вредная черепашка",           "Eurygaster integriceps",            True),
     ("oulema",            "Пьявица красногрудая",             "Oulema melanopus",                  True),
