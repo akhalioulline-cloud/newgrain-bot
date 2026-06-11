@@ -45,6 +45,18 @@ from bot.taxonomy import DISEASES, DISEASE_RU_BY_CODE, PESTS_PICKER, PEST_RU_BY_
 router = Router()
 logger = logging.getLogger("bot.handlers")
 
+
+async def _ack(callback: CallbackQuery) -> None:
+    """Acknowledge a callback, but never let it abort the handler. Through the
+    Telegram relay an update can arrive late and the callback go stale; a raw
+    `callback.answer()` would then throw and we'd lose the user's tap (the
+    field/category/species selection). Swallowing it keeps the actual DB write
+    running — the next prompt is a fresh message and reaches the user anyway."""
+    try:
+        await callback.answer()
+    except Exception:
+        logger.debug("callback.answer() failed (stale query) — continuing")
+
 CATEGORIES = [
     ("Сорняк", "weed"),
     ("Болезнь", "disease"),
@@ -545,7 +557,7 @@ async def on_photo_document(message: Message, state: FSMContext, user) -> None:
 
 @router.callback_query(PhotoForm.field, F.data.startswith("field:"))
 async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
-    await callback.answer()
+    await _ack(callback)
     token = callback.data.split(":")[1]
     # "other" = off-pilot training photo: field_id stays NULL so it never
     # pollutes the 3 pilot fields' per-field records, but still flows through
@@ -592,7 +604,7 @@ async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
 
 @router.callback_query(PhotoForm.category, F.data.startswith("cat:"))
 async def on_category(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
+    await _ack(callback)
     code = callback.data.split(":")[1]
     data = await state.get_data()
     await update_submission(data["submission_id"], category=code)
@@ -620,7 +632,7 @@ async def on_category(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(PhotoForm.subcategory, F.data.startswith("dis:"))
 async def on_disease(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
+    await _ack(callback)
     value = callback.data.split(":", 1)[1]
 
     # "Другая болезнь" — branch to free-text input (reuses the subcategory_other
@@ -641,7 +653,7 @@ async def on_disease(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(PhotoForm.subcategory, F.data.startswith("pst:"))
 async def on_pest(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
+    await _ack(callback)
     value = callback.data.split(":", 1)[1]
 
     # "Другой вредитель" — free-text (reuses the subcategory_other flow).
@@ -661,7 +673,7 @@ async def on_pest(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(PhotoForm.subcategory, F.data.startswith("sub:"))
 async def on_subcategory(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
+    await _ack(callback)
     value = callback.data.split(":")[1]
 
     # "Другой" — branch to free-text input.

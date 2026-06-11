@@ -53,7 +53,12 @@ async def main() -> None:
     dp.include_router(router)
 
     logger.info("Bot starting (polling mode).")
-    await dp.start_polling(bot)
+    # Short long-poll window: getUpdates through the Cloudflare relay gets its
+    # connection reset/timed-out when held open ~30s (Workers don't like long
+    # connections), which intermittently drops the agronomist's button taps.
+    # Short requests through the relay are reliable (getMe ~0.15s), so keep the
+    # poll window small.
+    await dp.start_polling(bot, polling_timeout=10)
 
 
 if __name__ == "__main__":
