@@ -2,6 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from bot.config import settings
+from bot.moa import moa_lines, ndvi_anomaly_lines
 
 engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 
@@ -424,6 +425,12 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         ndvi = (await conn.execute(text(
             "SELECT round(ndvi,2) FROM vegetation_weekly WHERE field_id=:i AND ndvi IS NOT NULL "
             "ORDER BY week_start DESC LIMIT 6"), {"i": fid})).scalars().all()
+        prot = (await conn.execute(text(
+            "SELECT active_substance, season FROM field_treatments WHERE field_id=:i "
+            "AND op_category='protection' AND active_substance IS NOT NULL"), {"i": fid})).all()
+        ndvi_series = (await conn.execute(text(
+            "SELECT week_start, week_no, ndvi FROM vegetation_weekly WHERE field_id=:i "
+            "AND ndvi IS NOT NULL ORDER BY week_start"), {"i": fid})).all()
         cur = (await conn.execute(text(
             "SELECT crop FROM field_treatments WHERE field_id=:i AND crop IS NOT NULL AND crop<>'' "
             "ORDER BY treatment_date DESC LIMIT 1"), {"i": fid})).scalar()
@@ -456,6 +463,14 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         lines.append(f"\n☁️ Погода: {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
     if ndvi:
         lines.append("🌱 NDVI (свежие→старые): " + ", ".join(f"{float(x):g}" for x in ndvi))
+    ml = moa_lines([(r[0], r[1]) for r in prot])
+    if ml:
+        lines.append("\n🧬 Режимы действия (повторы → риск резистентности):")
+        lines.extend(ml)
+    al = ndvi_anomaly_lines([(r[0], r[1], r[2]) for r in ndvi_series])
+    if al:
+        lines.append("\n⚠️ NDVI-аномалии (эвристика):")
+        lines.extend(al)
     if ncat:
         lines.append(f"📖 Каталог: ~{ncat} действующих препаратов для культуры «{cur}»")
     return "\n".join(lines)
