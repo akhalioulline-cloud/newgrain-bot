@@ -2,7 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from bot.config import settings
-from bot.moa import moa_lines, ndvi_anomaly_lines
+from bot.moa import moa_lines, ndvi_anomaly_samecrop
 
 engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 
@@ -428,9 +428,13 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         prot = (await conn.execute(text(
             "SELECT active_substance, season FROM field_treatments WHERE field_id=:i "
             "AND op_category='protection' AND active_substance IS NOT NULL"), {"i": fid})).all()
-        ndvi_series = (await conn.execute(text(
-            "SELECT week_start, week_no, ndvi FROM vegetation_weekly WHERE field_id=:i "
-            "AND ndvi IS NOT NULL ORDER BY week_start"), {"i": fid})).all()
+        # cross-field data for the same-crop NDVI baseline
+        cropc = (await conn.execute(text(
+            "SELECT field_id, season, crop, count(*) c FROM field_treatments "
+            "WHERE crop IS NOT NULL AND crop<>'' GROUP BY field_id, season, crop"))).all()
+        all_ndvi = (await conn.execute(text(
+            "SELECT field_id, week_start, week_no, ndvi FROM vegetation_weekly "
+            "WHERE ndvi IS NOT NULL"))).all()
         cur = (await conn.execute(text(
             "SELECT crop FROM field_treatments WHERE field_id=:i AND crop IS NOT NULL AND crop<>'' "
             "ORDER BY treatment_date DESC LIMIT 1"), {"i": fid})).scalar()
@@ -467,10 +471,20 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
     if ml:
         lines.append("\n🧬 Режимы действия (повторы → риск резистентности):")
         lines.extend(ml)
-    al = ndvi_anomaly_lines([(r[0], r[1], r[2]) for r in ndvi_series])
+    crop_map = {}
+    best = {}
+    for f_id, season, crop, c in cropc:
+        if (f_id, season) not in best or c > best[(f_id, season)]:
+            best[(f_id, season)] = c
+            crop_map[(f_id, season)] = crop
+    al, note = ndvi_anomaly_samecrop(fid, crop_map, all_ndvi)
     if al:
-        lines.append("\n⚠️ NDVI-аномалии (эвристика):")
+        lines.append(f"\n⚠️ NDVI-аномалии ({note}):")
         lines.extend(al)
+    elif note.startswith("база"):
+        lines.append(f"\n✓ NDVI в пределах нормы ({note})")
+    elif note:
+        lines.append(f"\nℹ️ NDVI: {note}")
     if ncat:
         lines.append(f"📖 Каталог: ~{ncat} действующих препаратов для культуры «{cur}»")
     return "\n".join(lines)
