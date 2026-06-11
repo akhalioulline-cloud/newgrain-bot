@@ -147,3 +147,4 @@ a RU cloud dev box can't reach Anthropic.)
 - **Prod:** `ssh newgrain@158.160.46.89` · `docker-compose.prod.yml` (postgres + redis + bot)
 - **Object Storage:** Yandex, bucket `newgrain-data-prod`
 - **Grant docs:** iCloud `Flagleaf/` (Apple devices); move to Drive/Yandex Disk for cross-platform
+- **Tailscale (optional):** secure server access (`ssh flagleaf` / `ssh flagleaf-pub`) + Taildrop file transfer — see [docs/TAILSCALE.md](docs/TAILSCALE.md)
