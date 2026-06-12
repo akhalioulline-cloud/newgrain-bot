@@ -26,6 +26,7 @@ async def main() -> None:
 
     from bot.handlers import router
     from bot.middlewares import AuthMiddleware
+    from bot.net import RelayRetryMiddleware
     from bot.storage import ensure_bucket
 
     await ensure_bucket()
@@ -40,6 +41,9 @@ async def main() -> None:
         bot = Bot(settings.bot_token, session=session)
     else:
         bot = Bot(settings.bot_token)
+    # Retry transient transport failures (the relay resets connections mid-
+    # request) so one dropped send doesn't stall the photo flow.
+    bot.session.middleware(RelayRetryMiddleware())
     # Tappable command menu. Telegram forbids Cyrillic in command *names*
     # (only a-z0-9_), so the names stay Latin but every description is Russian.
     # Everyone (incl. agronomists) sees the common set via the default scope;
