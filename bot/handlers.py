@@ -5,7 +5,7 @@ from datetime import date
 from uuid import uuid4
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
@@ -254,16 +254,19 @@ HELP_TEXT = (
     "/history — последние сохранённые снимки\n"
     "/stats — сколько фото за сегодня, неделю и всего\n"
     "/fields — ваши пилотные поля\n"
+    "/field <поле> — сводка по полю (обработки, погода, NDVI)\n"
+    "/all — последние загрузки всех агрономов\n"
     "/finish — закончить незавершённое фото\n"
     "/problem — сообщить о проблеме или задать вопрос\n"
     "/cancel — отменить текущий шаг\n"
-    "/help — это сообщение"
+    "/help — это сообщение\n\n"
+    "Можно не набирать «/» — просто напишите слово: "
+    "история, статистика, поля, помощь. "
+    "Для сводки по полю — «поле 76/108»."
 )
 
 ADMIN_HELP = (
     "\n\nКоманды администратора:\n"
-    "/all — последние загрузки всех агрономов\n"
-    "/field <поле> — сводка по полю (обработки, погода, NDVI)\n"
     "/adduser <id> <имя> — добавить агронома\n"
     "/removeuser <id> — убрать доступ"
 )
@@ -281,11 +284,9 @@ async def cmd_fields(message: Message, user) -> None:
 
 @router.message(Command("field"))
 async def cmd_field(message: Message, command: CommandObject, user) -> None:
-    """Admin: integrated data-layer card for one field (treatment history with
-    active substances, protection rotation by season, weather, NDVI, catalog)."""
-    if not _is_admin(user):
-        await message.answer("Эта команда доступна администратору.")
-        return
+    """Integrated data-layer card for one field (treatment history with
+    active substances, protection rotation by season, weather, NDVI, catalog).
+    Available to everyone (read-only)."""
     q = (command.args or "").strip()
     if not q:
         await message.answer("Укажите поле, например: /field 76/108")
@@ -373,13 +374,9 @@ def _is_admin(user) -> bool:
 
 @router.message(Command("all"))
 async def cmd_all(message: Message, user) -> None:
-    """Admin-only: recent uploads from EVERY agronomist. /history and /stats are
-    per-user (each person sees only their own), so this is the admin's window
-    into what the rest of the team has sent."""
-    if not _is_admin(user):
-        await message.answer("Эта команда доступна только администратору.")
-        return
-
+    """Recent uploads from EVERY agronomist. /history and /stats are per-user
+    (each person sees only their own), so this is the shared window into what
+    the whole team has sent. Available to everyone (read-only)."""
     rows = await get_all_recent_submissions()
     if not rows:
         await message.answer("Пока нет ни одной загрузки.")
@@ -793,6 +790,73 @@ async def on_text_comment(message: Message, state: FSMContext, user) -> None:
     if english:
         await update_submission(sid, comment_text_en=english)
     await _finalize(message, state, user)
+
+
+# ---------- Russian free-text aliases for the slash commands ----------
+# Telegram forbids Cyrillic in real /commands (names are a-z0-9_ only), so a
+# Russian-speaking agronomist can instead just TYPE the word — «история»,
+# «статистика», «помощь» — and get the same action. Scoped to StateFilter(None)
+# so it NEVER hijacks text typed inside the photo/problem flows (a comment like
+# "поле сухое" or a free-text species name stays what it is).
+
+_TEXT_ALIASES = {
+    "история": "history",
+    "статистика": "stats",
+    "стата": "stats",
+    "поля": "fields",
+    "поле": "fields",
+    "закончить": "finish",
+    "продолжить": "finish",
+    "отмена": "cancel",
+    "отменить": "cancel",
+    "проблема": "problem",
+    "вопрос": "problem",
+    "помощь": "help",
+    "справка": "help",
+    "меню": "help",
+    "все": "all",  # «всё» normalises to «все» below
+}
+
+
+def _alias_target(text: str | None) -> str | None:
+    """Map the first word of a message to a command name, or None."""
+    if not text:
+        return None
+    word = text.strip().split()[0].lower().replace("ё", "е").lstrip("/")
+    return _TEXT_ALIASES.get(word)
+
+
+async def _alias_filter(message: Message) -> dict | bool:
+    target = _alias_target(message.text)
+    return {"alias_target": target} if target else False
+
+
+@router.message(StateFilter(None), F.text, _alias_filter)
+async def on_text_alias(
+    message: Message, state: FSMContext, user, alias_target: str
+) -> None:
+    if alias_target == "history":
+        await cmd_history(message, user)
+    elif alias_target == "stats":
+        await cmd_stats(message, user)
+    elif alias_target == "fields":
+        # «поле 76/108» → that field's card (= /field). A bare «поле»/«поля»
+        # → the pilot-field list (= /fields). Available to everyone.
+        rest = message.text.strip().split(maxsplit=1)
+        if len(rest) > 1:
+            await cmd_field(message, CommandObject(command="field", args=rest[1]), user)
+        else:
+            await cmd_fields(message, user)
+    elif alias_target == "finish":
+        await cmd_finish(message, state, user)
+    elif alias_target == "cancel":
+        await cmd_cancel(message, state)
+    elif alias_target == "problem":
+        await cmd_problem(message, state)
+    elif alias_target == "help":
+        await cmd_help(message, user)
+    elif alias_target == "all":
+        await cmd_all(message, user)
 
 
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never

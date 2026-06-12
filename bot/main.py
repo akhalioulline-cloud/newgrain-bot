@@ -18,7 +18,11 @@ async def main() -> None:
     from aiogram.client.session.aiohttp import AiohttpSession
     from aiogram.client.telegram import TelegramAPIServer
     from aiogram.fsm.storage.redis import RedisStorage
-    from aiogram.types import BotCommand
+    from aiogram.types import (
+        BotCommand,
+        BotCommandScopeChat,
+        BotCommandScopeDefault,
+    )
 
     from bot.handlers import router
     from bot.middlewares import AuthMiddleware
@@ -36,17 +40,34 @@ async def main() -> None:
         bot = Bot(settings.bot_token, session=session)
     else:
         bot = Bot(settings.bot_token)
-    await bot.set_my_commands(
-        [
-            BotCommand(command="history", description="Последние снимки"),
-            BotCommand(command="stats", description="Статистика за неделю"),
-            BotCommand(command="fields", description="Ваши пилотные поля"),
-            BotCommand(command="finish", description="Закончить незавершённое фото"),
-            BotCommand(command="cancel", description="Отменить текущую загрузку"),
-            BotCommand(command="problem", description="Сообщить о проблеме"),
-            BotCommand(command="help", description="Справка"),
-        ]
-    )
+    # Tappable command menu. Telegram forbids Cyrillic in command *names*
+    # (only a-z0-9_), so the names stay Latin but every description is Russian.
+    # Everyone (incl. agronomists) sees the common set via the default scope;
+    # the access-management commands (/adduser, /removeuser) are added ON TOP
+    # for admins via a per-chat scope, so they never show in an agronomist's menu.
+    common_commands = [
+        BotCommand(command="history", description="Последние снимки"),
+        BotCommand(command="stats", description="Статистика за неделю"),
+        BotCommand(command="fields", description="Ваши пилотные поля"),
+        BotCommand(command="field", description="Сводка по полю: /field 76/108"),
+        BotCommand(command="all", description="Загрузки всех агрономов"),
+        BotCommand(command="finish", description="Закончить незавершённое фото"),
+        BotCommand(command="cancel", description="Отменить текущую загрузку"),
+        BotCommand(command="problem", description="Сообщить о проблеме"),
+        BotCommand(command="help", description="Справка"),
+    ]
+    admin_commands = common_commands + [
+        BotCommand(command="adduser", description="Добавить агронома: /adduser id имя"),
+        BotCommand(command="removeuser", description="Убрать доступ: /removeuser id"),
+    ]
+    await bot.set_my_commands(common_commands, scope=BotCommandScopeDefault())
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.set_my_commands(
+                admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+        except Exception:
+            logger.warning("Could not set admin command menu for %s", admin_id)
     dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())
