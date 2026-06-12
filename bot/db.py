@@ -530,6 +530,12 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         fcrops = (await conn.execute(text(
             "SELECT year, crop, variety, yield_cwt FROM field_crops WHERE field_id=:i "
             "ORDER BY year DESC"), {"i": fid})).all()
+        # Per-season crop from the treatments (field_crops only covers 2025-26),
+        # so the rotation can span the full 5 years of history.
+        rotation = (await conn.execute(text(
+            "SELECT season, mode() WITHIN GROUP (ORDER BY crop) AS crop FROM field_treatments "
+            "WHERE field_id=:i AND season IS NOT NULL AND crop IS NOT NULL AND crop<>'' "
+            "GROUP BY season ORDER BY season DESC"), {"i": fid})).all()
         cur = (await conn.execute(text(
             "SELECT crop FROM field_treatments WHERE field_id=:i AND crop IS NOT NULL AND crop<>'' "
             "ORDER BY treatment_date DESC LIMIT 1"), {"i": fid})).scalar()
@@ -543,23 +549,27 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         meta.append(field["crop"])
     if field["area_ha"] is not None:
         meta.append(f"{float(field['area_ha']):g} га")
-    lines = [f"📍 {field['name']}" + (f" ({', '.join(meta)})" if meta else ""), ""]
-    if span and span.c:
-        catstr = ", ".join(f"{_OPCAT_RU.get(c[0], c[0])} {c[1]}" for c in cats)
-        lines.append(f"🧪 Операции: {span.c} за {span.lo}–{span.hi} ({catstr})")
-        lines.append("\n🔄 Защита по сезонам:")
-        for r in rot:
-            shown, extra = r[2][:8], ("" if len(r[2]) <= 8 else f" +{len(r[2]) - 8}")
-            lines.append(f"  {r[0]} · {r[1] or '—'}: {'; '.join(shown)}{extra}")
-        if recent:
-            lines.append("\nпоследние обработки (с д.в.):")
-            for r in recent:
-                dv = f" — {r['active_substance']}" if r["active_substance"] else ""
-                lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}{dv}")
-    else:
-        lines.append("🧪 История обработок: нет данных")
+    lines = [f"📍 {field['name']}" + (f" ({', '.join(meta)})" if meta else "")]
+
+    # (2) Севооборот — last 5 years, treatment seasons enriched with
+    # field_crops variety/yield (field_crops alone only covers 2025-26).
+    fc = {yr: (crop, variety, yld) for yr, crop, variety, yld in fcrops}
+    tr = {season: crop for season, crop in rotation}
+    years = sorted(set(fc) | set(tr), reverse=True)[:5]
+    if years:
+        lines.append("\n🌾 Севооборот (CropWise):")
+        for yr in years:
+            crop, variety, yld = fc.get(yr, (tr.get(yr), None, None))
+            extra = f" · {variety}" if variety else ""
+            if yld:
+                extra += f" · {float(yld):g} ц/га"
+            lines.append(f"  {yr}: {crop or '—'}{extra}")
+
+    # (3) Семена
     if seed:
         lines.append(f"\n🫘 Семена ({seed[0]} · {seed[1] or '—'}): {seed[2]}")
+
+    # (4) Удобрения по сезонам
     if fert_rot:
         lines.append("\n🧴 Удобрения по сезонам:")
         for r in fert_rot:
@@ -569,21 +579,35 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
             lines.append("\nпоследние внесения:")
             for r in fert_recent:
                 lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}")
-    if fcrops:
-        lines.append("\n🌾 Севооборот (CropWise):")
-        for yr, crop, variety, yld in fcrops:
-            extra = f" · {variety}" if variety else ""
-            if yld:
-                extra += f" · {float(yld):g} ц/га"
-            lines.append(f"  {yr}: {crop}{extra}")
-    if w and w.c:
-        lines.append(f"\n☁️ Погода: {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
-    if ndvi:
-        lines.append("🌱 NDVI (свежие→старые): " + ", ".join(f"{float(x):g}" for x in ndvi))
+
+    # (5) Защита по сезонам
+    if rot:
+        lines.append("\n🔄 Защита по сезонам:")
+        for r in rot:
+            shown, extra = r[2][:8], ("" if len(r[2]) <= 8 else f" +{len(r[2]) - 8}")
+            lines.append(f"  {r[0]} · {r[1] or '—'}: {'; '.join(shown)}{extra}")
+        if recent:
+            lines.append("\nпоследние обработки (с д.в.):")
+            for r in recent:
+                dv = f" — {r['active_substance']}" if r["active_substance"] else ""
+                lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}{dv}")
+
+    # (6) Режимы действия (резистентность)
     ml = moa_lines([(r[0], r[1]) for r in prot])
     if ml:
         lines.append("\n🧬 Режимы действия (повторы → риск резистентности):")
         lines.extend(ml)
+
+    # (7) remaining bits
+    if span and span.c:
+        catstr = ", ".join(f"{_OPCAT_RU.get(c[0], c[0])} {c[1]}" for c in cats)
+        lines.append(f"\n🧪 Операции: {span.c} за {span.lo}–{span.hi} ({catstr})")
+    else:
+        lines.append("\n🧪 История обработок: нет данных")
+    if w and w.c:
+        lines.append(f"\n☁️ Погода: {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
+    if ndvi:
+        lines.append("🌱 NDVI (свежие→старые): " + ", ".join(f"{float(x):g}" for x in ndvi))
     crop_map = {(f_id, yr): crop for f_id, yr, crop in cropc}
     al, note = ndvi_anomaly_samecrop(fid, crop_map, all_ndvi)
     if al:
