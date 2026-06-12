@@ -302,27 +302,27 @@ async def cmd_field(message: Message, command: CommandObject, user) -> None:
     if not q:
         await message.answer("Укажите поле, например: /field 76/108")
         return
-    await message.answer(await field_card_text(q, user["farm_id"]))
-    # Outline maps (close-up + farm overview). Best-effort: a render/send failure
-    # must never break the text card above.
+    # Order: farm overview → close-up → info card. Maps are best-effort — a
+    # render/send failure must never stop the info card below.
     try:
         fid = await resolve_field_id(q, user["farm_id"])
         if fid is not None:
             polys = fieldmap.build_polys(await get_field_polygons())
             if any(p["id"] == fid for p in polys):
-                closeup = fieldmap.render_closeup(polys, fid)
                 overview = fieldmap.render_overview(polys, fid)
+                closeup = fieldmap.render_closeup(polys, fid)
+                await message.answer_photo(
+                    BufferedInputFile(overview, "field_overview.png"),
+                    caption="🗺️ Поле на карте хозяйства",
+                )
                 if closeup:
                     await message.answer_photo(
                         BufferedInputFile(closeup, "field_closeup.png"),
                         caption="📍 Поле крупно (с соседями)",
                     )
-                await message.answer_photo(
-                    BufferedInputFile(overview, "field_overview.png"),
-                    caption="🗺️ Поле на карте хозяйства",
-                )
     except Exception:
         logger.exception("field map render failed for %s", q)
+    await message.answer(await field_card_text(q, user["farm_id"]))
 
 
 @router.message(Command("stats"))
