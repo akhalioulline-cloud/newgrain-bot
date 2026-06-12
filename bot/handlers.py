@@ -8,6 +8,7 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -29,9 +30,11 @@ from bot.db import (
     find_fields_by_number,
     get_all_recent_submissions,
     get_pending_submission,
+    get_field_polygons,
     get_pilot_fields,
     get_recent_treatments,
     get_species,
+    resolve_field_id,
     get_team_week_counts,
     get_top_species,
     get_user_history,
@@ -39,6 +42,7 @@ from bot.db import (
     set_user_phone,
     update_submission,
 )
+from bot import fieldmap
 from bot.states import PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
 from bot.transcribe import transcribe
@@ -299,6 +303,26 @@ async def cmd_field(message: Message, command: CommandObject, user) -> None:
         await message.answer("Укажите поле, например: /field 76/108")
         return
     await message.answer(await field_card_text(q, user["farm_id"]))
+    # Outline maps (close-up + farm overview). Best-effort: a render/send failure
+    # must never break the text card above.
+    try:
+        fid = await resolve_field_id(q, user["farm_id"])
+        if fid is not None:
+            polys = fieldmap.build_polys(await get_field_polygons())
+            if any(p["id"] == fid for p in polys):
+                closeup = fieldmap.render_closeup(polys, fid)
+                overview = fieldmap.render_overview(polys, fid)
+                if closeup:
+                    await message.answer_photo(
+                        BufferedInputFile(closeup, "field_closeup.png"),
+                        caption="📍 Поле крупно (с соседями)",
+                    )
+                await message.answer_photo(
+                    BufferedInputFile(overview, "field_overview.png"),
+                    caption="🗺️ Поле на карте хозяйства",
+                )
+    except Exception:
+        logger.exception("field map render failed for %s", q)
 
 
 @router.message(Command("stats"))

@@ -98,6 +98,41 @@ async def get_pilot_fields(farm_id: int | None):
         return result.mappings().all()
 
 
+async def resolve_field_id(field_query: str, farm_id: int | None = None):
+    """Resolve a /field query to a field id using the SAME matching as
+    field_card_text (exact name, 'Поле <q>', or substring), so the map and the
+    text card always refer to the same field. Returns the id or None."""
+    q = (field_query or "").strip()
+    async with engine.connect() as conn:
+        sql = "SELECT id, name FROM fields"
+        params = {}
+        if farm_id:
+            sql += " WHERE farm_id = :f"
+            params["f"] = farm_id
+        sql += " ORDER BY id"
+        cands = (await conn.execute(text(sql), params)).mappings().all()
+    field = next(
+        (c for c in cands if c["name"] == q or c["name"] == f"Поле {q}"
+         or (q and q.lower() in c["name"].lower())),
+        None,
+    )
+    return field["id"] if field else None
+
+
+async def get_field_polygons(simplify: float = 0.00005):
+    """All fields' geometry as GeoJSON (lightly simplified to cut vertex count),
+    for drawing outline maps. Skips fields without geometry."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT id, is_pilot, ST_AsGeoJSON(ST_Simplify(geom, :t)) AS gj "
+                "FROM fields WHERE geom IS NOT NULL"
+            ),
+            {"t": simplify},
+        )
+        return result.mappings().all()
+
+
 async def find_fields_by_number(farm_id: int | None, number: str):
     """Resolve a typed field number ('125', '76/108', '31-1') to field rows.
     Fields are named 'Поле <номер> · <группа>' (or 'Поле <номер>' for pilots),

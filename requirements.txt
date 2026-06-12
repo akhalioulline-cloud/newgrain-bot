@@ -13,3 +13,4 @@ redis==5.0.8
 requests==2.32.3
 cvat-sdk==2.18.0
 openpyxl==3.1.5
+Pillow==10.4.0
