@@ -103,7 +103,12 @@ def _ext_for_mime(mime: str) -> str:
 # ---------- keyboards ----------
 
 def _fields_kb(fields) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text=f["name"], callback_data=f"field:{f['id']}")] for f in fields]
+    rows = [
+        [InlineKeyboardButton(
+            text=f["name"] + (f" — {f['crop']}" if f["crop"] else ""),
+            callback_data=f"field:{f['id']}")]
+        for f in fields
+    ]
     # Off-pilot training photos (margins, other parcels of the farm): valuable
     # for the CV model, but kept out of the 3 pilot fields' records so the
     # day-90 economic proof + per-field weed maps stay clean.
