@@ -98,6 +98,29 @@ async def get_pilot_fields(farm_id: int | None):
         return result.mappings().all()
 
 
+async def find_fields_by_number(farm_id: int | None, number: str):
+    """Resolve a typed field number ('125', '76/108', '31-1') to field rows.
+    Fields are named 'Поле <номер> · <группа>' (or 'Поле <номер>' for pilots),
+    so we compare the typed value to the number part. Usually one match; can be
+    several when the same number exists in more than one field group."""
+    if not farm_id or not number:
+        return []
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                r"""
+                SELECT id, name, crop, area_ha FROM fields
+                WHERE farm_id = :farm
+                  AND btrim(regexp_replace(
+                        split_part(name, ' · ', 1), '^Поле\s+', '')) = :n
+                ORDER BY is_pilot DESC, id
+                """
+            ),
+            {"farm": farm_id, "n": number},
+        )
+        return result.mappings().all()
+
+
 async def get_pending_submission(user_id: int):
     """Most recent of the user's submissions stuck at awaiting_metadata.
 

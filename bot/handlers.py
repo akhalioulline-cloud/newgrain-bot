@@ -26,6 +26,7 @@ from bot.db import (
     delete_submission,
     field_card_text,
     find_duplicate_submission,
+    find_fields_by_number,
     get_all_recent_submissions,
     get_pending_submission,
     get_pilot_fields,
@@ -106,7 +107,7 @@ def _fields_kb(fields) -> InlineKeyboardMarkup:
     # Off-pilot training photos (margins, other parcels of the farm): valuable
     # for the CV model, but kept out of the 3 pilot fields' records so the
     # day-90 economic proof + per-field weed maps stay clean.
-    rows.append([InlineKeyboardButton(text="Другое поле / вне пилота", callback_data="field:other")])
+    rows.append([InlineKeyboardButton(text="Другое поле (по номеру)", callback_data="field:other")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -571,23 +572,16 @@ async def on_photo_document(message: Message, state: FSMContext, user) -> None:
     )
 
 
-@router.callback_query(PhotoForm.field, F.data.startswith("field:"))
-async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
-    await _ack(callback)
-    token = callback.data.split(":")[1]
-    # "other" = off-pilot training photo: field_id stays NULL so it never
-    # pollutes the 3 pilot fields' per-field records, but still flows through
-    # labeling as training data.
-    if token == "other":
-        field_id = None
-        path_seg = "other"
-    else:
-        field_id = int(token)
-        path_seg = str(field_id)
+async def _save_photo_for_field(msg: Message, state: FSMContext, user, field_id) -> None:
+    """Download the cached photo, dedup, store it against `field_id` (None =
+    off-pilot training photo, kept out of any field's records), then move on to
+    the category question. Shared by the pilot-button, typed-number, and
+    skip-off-pilot paths."""
     data = await state.get_data()
+    path_seg = str(field_id) if field_id else "other"
 
-    file = await callback.bot.get_file(data["file_id"])
-    buffer = await callback.bot.download_file(file.file_path)
+    file = await msg.bot.get_file(data["file_id"])
+    buffer = await msg.bot.download_file(file.file_path)
     img_bytes = buffer.read()
     img_hash = hashlib.sha256(img_bytes).hexdigest()
 
@@ -598,7 +592,7 @@ async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
     if dup:
         when = f"{dup['created_at']:%d.%m %H:%M}"
         await state.clear()
-        await callback.message.answer(
+        await msg.answer(
             f"📸 Это фото уже было загружено ранее ({when}). "
             f"Повторно сохранять не нужно — можно отправлять следующее."
         )
@@ -615,7 +609,56 @@ async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
     )
     await state.update_data(submission_id=submission_id, field_id=field_id)
     await state.set_state(PhotoForm.category)
-    await callback.message.answer("Что на фото?", reply_markup=_category_kb())
+    await msg.answer("Что на фото?", reply_markup=_category_kb())
+
+
+@router.callback_query(PhotoForm.field, F.data.startswith("field:"))
+async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
+    await _ack(callback)
+    token = callback.data.split(":")[1]
+    # "other" → ask for a field number so ANY of the farm's fields can be tagged
+    # (not just the pilots shown as buttons); /skip there keeps it off-pilot.
+    if token == "other":
+        await state.set_state(PhotoForm.field_number)
+        await callback.message.answer(
+            "Введите номер поля — например 125 или 76/108.\n"
+            "Или /skip, чтобы сохранить фото без привязки к полю."
+        )
+        return
+    await _save_photo_for_field(callback.message, state, user, int(token))
+
+
+@router.message(PhotoForm.field_number, Command("skip"))
+async def on_field_number_skip(message: Message, state: FSMContext, user) -> None:
+    # No field — off-pilot training photo (field_id NULL).
+    await _save_photo_for_field(message, state, user, None)
+
+
+@router.message(PhotoForm.field_number, F.text)
+async def on_field_number(message: Message, state: FSMContext, user) -> None:
+    typed = re.sub(r"^\s*(поле|field)\s*", "", message.text.strip(), flags=re.I).strip()
+    matches = await find_fields_by_number(user["farm_id"], typed)
+    if not matches:
+        await message.answer(
+            f"Поле «{typed}» не найдено. Проверьте номер (например 125 или 76/108) "
+            "и пришлите ещё раз, или /skip — сохранить без поля."
+        )
+        return
+    if len(matches) == 1:
+        f = matches[0]
+        await message.answer(f"Поле: {f['name']}")
+        await _save_photo_for_field(message, state, user, f["id"])
+        return
+    # Same number in several field groups — let the agronomist pick which.
+    rows = [
+        [InlineKeyboardButton(text=f["name"], callback_data=f"field:{f['id']}")]
+        for f in matches
+    ]
+    await state.set_state(PhotoForm.field)
+    await message.answer(
+        "Несколько полей с таким номером — выберите:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
 
 
 @router.callback_query(PhotoForm.category, F.data.startswith("cat:"))
