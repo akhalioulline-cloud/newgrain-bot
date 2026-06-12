@@ -955,13 +955,24 @@ async def on_text_alias(
 # The photo is already saved before these run (_ask_treatment_or_finalize
 # finalizes first), so they only attach the optional link and clear state.
 
+async def _drop_kb(callback: CallbackQuery) -> None:
+    """Remove the inline keyboard so the buttons can't be re-tapped into a
+    cleared state (which would hang the client spinner). Best-effort."""
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
 @router.callback_query(PhotoForm.treatment, F.data.startswith("trt:"))
 async def on_treatment(callback: CallbackQuery, state: FSMContext) -> None:
     await _ack(callback)
+    await _drop_kb(callback)
     value = callback.data.split(":", 1)[1]
 
     if value == "skip":
         await state.clear()
+        await callback.message.answer("Готово ✓ Без привязки к обработке.")
         return
     if value == "other":
         await state.set_state(PhotoForm.treatment_note)
@@ -975,6 +986,7 @@ async def on_treatment(callback: CallbackQuery, state: FSMContext) -> None:
     await update_submission(data["submission_id"], treatment_id=int(value))
     await state.clear()
 
+    msg = "🧪 Отмечено."
     if info:
         prod = info.get("p") or "обработка"
         msg = f"🧪 Связано с обработкой «{prod}»."
@@ -984,12 +996,21 @@ async def on_treatment(callback: CallbackQuery, state: FSMContext) -> None:
                 msg = f"🧪 Отмечено: фото через {days} дн. после обработки «{prod}»."
             except ValueError:
                 pass
-        await callback.message.answer(msg)
+    await callback.message.answer(msg)
+
+
+@router.callback_query(F.data.startswith("trt:"))
+async def on_treatment_stale(callback: CallbackQuery) -> None:
+    """A treatment button tapped after the step already finished (state cleared,
+    e.g. a double-tap). Just acknowledge so the client spinner doesn't hang."""
+    await _ack(callback)
+    await _drop_kb(callback)
 
 
 @router.message(PhotoForm.treatment_note, Command("skip"))
 async def on_skip_treatment_note(message: Message, state: FSMContext) -> None:
     await state.clear()
+    await message.answer("Готово ✓ Без привязки к обработке.")
 
 
 @router.message(PhotoForm.treatment_note, F.voice)
