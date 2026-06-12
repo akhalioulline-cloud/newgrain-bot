@@ -41,6 +41,7 @@ HEADER_MAP = {
     "исполнитель": "operator", "агроном": "operator",
     "примечание": "note", "комментарий": "note",
     "источник": "source", "source": "source",
+    "площадь_поля": "field_area",  # transient: for number+area field matching
 }
 
 # Natural key for dedup — must mirror the unique index in migration 0018.
@@ -49,6 +50,12 @@ NATKEY = ("field_name", "treatment_date", "operation", "product", "dose", "area_
 
 def _norm(h):
     return (h or "").strip().lower().replace("ё", "е")
+
+
+def _lead_int(name):
+    """Leading integer of a field name ('Поле 125 · Хлевище' -> 125)."""
+    m = re.match(r"\D*(\d+)", name or "")
+    return int(m.group(1)) if m else None
 
 
 def _date(s):
@@ -95,13 +102,22 @@ def _read(path):
 async def _load(records, replace):
     inserted = skipped = unmatched = 0
     async with engine.begin() as conn:
-        fields = (await conn.execute(text("SELECT id, name FROM fields"))).all()
-        fmap = {_norm(n): i for i, n in fields}
+        fields = (await conn.execute(text("SELECT id, name, area_ha FROM fields"))).all()
+        fmap = {_norm(n): i for i, n, _a in fields}
+        # Fallback key: leading field number + rounded area (mirrors
+        # ingest_fields' pilot matching), so a treatment file still links to
+        # its field even when the source name doesn't string-match exactly.
+        by_numarea = {}
+        for fid, n, a in fields:
+            li = _lead_int(n)
+            if li is not None and a is not None:
+                by_numarea[(li, round(float(a)))] = fid
         if replace:
             await conn.execute(text("TRUNCATE field_treatments RESTART IDENTITY"))
         conflict = ", ".join(NATKEY)
         for r in records:
             r = dict(r)
+            field_area = _num(r.pop("field_area", None))
             if "treatment_date" in r:
                 r["treatment_date"] = _date(r["treatment_date"])
             if "area_ha" in r:
@@ -111,8 +127,15 @@ async def _load(records, replace):
                 r["season"] = int(digits) if digits else None
             elif r.get("treatment_date"):
                 r["season"] = r["treatment_date"].year
-            r["field_id"] = fmap.get(_norm(r.get("field_name")))
-            if r.get("field_name") and r["field_id"] is None:
+            name = r.get("field_name")
+            fid = fmap.get(_norm(name))
+            if fid is None and name:  # fall back to number + area
+                area = field_area if field_area is not None else r.get("area_ha")
+                li = _lead_int(name)
+                if li is not None and area is not None:
+                    fid = by_numarea.get((li, round(float(area))))
+            r["field_id"] = fid
+            if name and fid is None:
                 unmatched += 1
             r.setdefault("source", "import")
             cols = list(r.keys())

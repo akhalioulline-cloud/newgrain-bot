@@ -11,8 +11,9 @@ ingest_treatments.py on the server.
 
 Single file:
     python catalog/parse_cropwise.py <multiprotocol.xlsx> <out.csv> --field "Поле 76/108"
-Whole folder (one combined CSV for all fields at once) — the field is detected
-per file from the workbook/filename, or pinned with --field-map:
+Whole folder (one combined CSV for all fields at once) — the field is read per
+file from its 'Паспорт поля' sheet (number + group + area), or pinned with
+--field-map:
     python catalog/parse_cropwise.py <folder/> <out.csv> [--field-map map.csv]
 Every row is tagged source='cropwise_multiprotocol'; ingest_treatments dedups on
 the natural key, so re-runs and a later CropWise-API sync never double-count.
@@ -35,7 +36,7 @@ SECTIONS = {  # section header label -> (category, material-column candidates)
     "Внесение СЗР": ("protection", ["СЗР"]),
 }
 OUT_COLS = ["поле", "дата", "культура", "операция", "категория", "препарат",
-            "норма", "площадь_га", "примечание", "источник"]
+            "норма", "площадь_га", "примечание", "источник", "площадь_поля"]
 DEFAULT_SOURCE = "cropwise_multiprotocol"
 
 
@@ -80,7 +81,7 @@ def _sheet_default_crop(ops):
     return ""
 
 
-def parse(path, field_name, source=DEFAULT_SOURCE):
+def parse(path, field_name, source=DEFAULT_SOURCE, field_area=None):
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     out = []
     for sh in wb.sheetnames:
@@ -137,40 +138,58 @@ def parse(path, field_name, source=DEFAULT_SOURCE):
                 "площадь_га": area,
                 "примечание": "; ".join(note_bits),
                 "источник": source,
+                "площадь_поля": field_area,
             })
     wb.close()
     return out
 
 
-def _field_token(s):
-    """Pull a «76/108»-style field number out of a string (filename or cell)."""
-    m = re.search(r"(\d+)\s*[/\-_]\s*(\d+)", str(s or ""))
-    return f"Поле {m.group(1)}/{m.group(2)}" if m else None
+def _cell_str(v):
+    """Stringify a passport value; render integer-valued floats without '.0'."""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
 
 
-def _scan_field(path):
-    """Best-effort: read a field name out of the workbook's top rows. CropWise
-    multiprotocol exports usually print the field name in the first cells."""
+def _passport(path):
+    """Read the field's number, group and official area from the 'Паспорт поля'
+    sheet that CropWise puts first in every multiprotocol export. Returns the
+    fields-table display name ('Поле <номер> · <группа>', matching
+    ingest_fields) plus the area for number+area fallback matching."""
     try:
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     except Exception:
-        return None
-    name = None
-    for sh in wb.sheetnames:
-        for i, row in enumerate(wb[sh].iter_rows(values_only=True)):
-            if i > 15:
-                break
-            for cell in row:
-                tok = _field_token(cell)
-                if tok:
-                    name = tok
-                    break
-            if name:
-                break
-        if name:
+        return None, None
+    if "Паспорт поля" not in wb.sheetnames:
+        wb.close()
+        return None, None
+    num = group = area = None
+    for row in wb["Паспорт поля"].iter_rows(values_only=True):
+        cells = list(row)
+        for i, c in enumerate(cells):
+            label = str(c).strip() if c is not None else ""
+            nxt = cells[i + 1] if i + 1 < len(cells) else None
+            if nxt in (None, ""):
+                continue
+            if label == "Поле" and num is None:
+                num = _cell_str(nxt)
+            elif label == "Группа полей" and group is None:
+                group = _cell_str(nxt)
+            elif label.startswith("Площадь") and area is None:
+                area = _cell_str(nxt)
+        if num and group and area:
             break
     wb.close()
-    return name
+    if not num:
+        return None, None
+    name = f"Поле {num}" + (f" · {group}" if group else "")
+    return name, area
+
+
+def _field_token(s):
+    """Last resort: pull a «76/108»-style field number out of a string."""
+    m = re.search(r"(\d+)\s*[/\-]\s*(\d+)", str(s or ""))
+    return f"Поле {m.group(1)}/{m.group(2)}" if m else None
 
 
 def _load_field_map(path):
@@ -192,16 +211,21 @@ def _load_field_map(path):
 
 
 def _resolve_field(path, explicit, field_map):
+    """Return (field_name, field_area). Priority: --field-map override →
+    explicit --field → the 'Паспорт поля' sheet → a token in the filename."""
     base = os.path.basename(path)
     if field_map:
         if base in field_map:
-            return field_map[base]
+            return field_map[base], None
         tok = re.search(r"\d+", base)  # match by a bare id in the filename
         if tok and tok.group(0) in field_map:
-            return field_map[tok.group(0)]
+            return field_map[tok.group(0)], None
     if explicit:
-        return explicit
-    return _scan_field(path) or _field_token(base)
+        return explicit, None
+    name, area = _passport(path)
+    if name:
+        return name, area
+    return _field_token(base), None
 
 
 def main():
@@ -232,15 +256,16 @@ def main():
 
     rows, unresolved = [], []
     for path in files:
-        field = _resolve_field(path, args.field, field_map)
+        field, area = _resolve_field(path, args.field, field_map)
         if not field:
             unresolved.append(os.path.basename(path))
             print(f"  ⚠ could not resolve field for {os.path.basename(path)} — "
                   f"skipped (use --field-map)", file=sys.stderr)
             continue
-        frows = [r for r in parse(path, field, args.source) if r["дата"]]
+        frows = [r for r in parse(path, field, args.source, area) if r["дата"]]
         rows.extend(frows)
-        print(f"  {os.path.basename(path)} -> {field}: {len(frows)} ops",
+        ha = f" ({area} га)" if area else ""
+        print(f"  {os.path.basename(path)} -> {field}{ha}: {len(frows)} ops",
               file=sys.stderr)
 
     if not rows:
