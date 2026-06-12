@@ -494,7 +494,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         rot = (await conn.execute(text(
             "SELECT season, crop, array_agg(DISTINCT product) prods FROM field_treatments "
             "WHERE field_id=:i AND op_category='protection' AND product IS NOT NULL AND product<>'' "
-            "GROUP BY season, crop ORDER BY season, crop"), {"i": fid})).all()
+            "GROUP BY season, crop ORDER BY season DESC, crop"), {"i": fid})).all()
         recent = (await conn.execute(text(
             "SELECT treatment_date, product, active_substance FROM field_treatments "
             "WHERE field_id=:i AND op_category='protection' ORDER BY treatment_date DESC LIMIT 5"),
@@ -507,7 +507,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         fert_rot = (await conn.execute(text(
             "SELECT season, crop, array_agg(DISTINCT product) prods FROM field_treatments "
             "WHERE field_id=:i AND op_category='fertilizer' AND product IS NOT NULL AND product<>'' "
-            "GROUP BY season, crop ORDER BY season, crop"), {"i": fid})).all()
+            "GROUP BY season, crop ORDER BY season DESC, crop"), {"i": fid})).all()
         fert_recent = (await conn.execute(text(
             "SELECT treatment_date, product FROM field_treatments WHERE field_id=:i "
             "AND op_category='fertilizer' AND product IS NOT NULL AND product<>'' "
