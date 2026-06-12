@@ -512,9 +512,11 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
             "SELECT treatment_date, product FROM field_treatments WHERE field_id=:i "
             "AND op_category='fertilizer' AND product IS NOT NULL AND product<>'' "
             "ORDER BY treatment_date DESC LIMIT 5"), {"i": fid})).mappings().all()
+        # Weather is regional — the same Valujki station / meteoblue series for
+        # the whole farm (fields share the area), loaded once against the pilots.
+        # Show it for ANY field by reading the distinct-day series, not per field_id.
         w = (await conn.execute(text(
-            "SELECT count(*) c, min(date) lo, max(date) hi FROM weather_daily WHERE field_id=:i"),
-            {"i": fid})).first()
+            "SELECT count(DISTINCT date) c, min(date) lo, max(date) hi FROM weather_daily"))).first()
         ndvi = (await conn.execute(text(
             "SELECT round(ndvi,2) FROM vegetation_weekly WHERE field_id=:i AND ndvi IS NOT NULL "
             "ORDER BY week_start DESC LIMIT 6"), {"i": fid})).scalars().all()
@@ -605,7 +607,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
     else:
         lines.append("\n🧪 История обработок: нет данных")
     if w and w.c:
-        lines.append(f"\n☁️ Погода: {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
+        lines.append(f"\n☁️ Погода (регион): {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
     if ndvi:
         lines.append("🌱 NDVI (свежие→старые): " + ", ".join(f"{float(x):g}" for x in ndvi))
     crop_map = {(f_id, yr): crop for f_id, yr, crop in cropc}
