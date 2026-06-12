@@ -109,7 +109,7 @@ async def get_pending_submission(user_id: int):
         result = await conn.execute(
             text(
                 """
-                SELECT s.id, s.category, s.subcategory, s.created_at,
+                SELECT s.id, s.category, s.subcategory, s.field_id, s.created_at,
                        COALESCE(f.name, 'вне пилота') AS field_name
                 FROM submissions s
                 LEFT JOIN fields f ON f.id = s.field_id
@@ -121,6 +121,26 @@ async def get_pending_submission(user_id: int):
             {"user_id": user_id},
         )
         return result.mappings().first()
+
+
+async def get_recent_treatments(field_id: int, limit: int = 5):
+    """Most recent operations on a field that applied a product — the buttons
+    the agronomist taps to link a photo to its spray context. Newest first."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT id, product, treatment_date
+                FROM field_treatments
+                WHERE field_id = :fid
+                  AND product IS NOT NULL AND btrim(product) <> ''
+                ORDER BY treatment_date DESC NULLS LAST
+                LIMIT :lim
+                """
+            ),
+            {"fid": field_id, "lim": limit},
+        )
+        return result.mappings().all()
 
 
 async def get_top_species():
@@ -201,6 +221,8 @@ async def update_submission(submission_id: str, **fields) -> None:
         "comment_voice_url",
         "comment_voice_text",      # was missing → transcripts were silently dropped
         "comment_voice_text_en",   # English (YandexGPT) of the voice note
+        "treatment_id",            # FK → field_treatments (photo ↔ spray link)
+        "treatment_note",          # free-text/voice treatment ("Другое")
         "status",
     }
     sets = [f"{key} = :{key}" for key in fields if key in allowed]

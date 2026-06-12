@@ -29,6 +29,7 @@ from bot.db import (
     get_all_recent_submissions,
     get_pending_submission,
     get_pilot_fields,
+    get_recent_treatments,
     get_species,
     get_team_week_counts,
     get_top_species,
@@ -332,7 +333,9 @@ async def cmd_finish(message: Message, state: FSMContext, user) -> None:
         await message.answer("Незавершённых фото нет — всё сохранено ✓")
         return
 
-    await state.update_data(submission_id=str(pending["id"]))
+    await state.update_data(
+        submission_id=str(pending["id"]), field_id=pending["field_id"]
+    )
     field_label = pending["field_name"] or "неизвестное поле"
     when = f"{pending['created_at']:%d.%m %H:%M}"
     intro = f"Продолжаем фото с поля {field_label} от {when}."
@@ -610,7 +613,7 @@ async def on_field(callback: CallbackQuery, state: FSMContext, user) -> None:
         submission_id, user["id"], field_id, image_url,
         data.get("width"), data.get("height"), image_hash=img_hash,
     )
-    await state.update_data(submission_id=submission_id)
+    await state.update_data(submission_id=submission_id, field_id=field_id)
     await state.set_state(PhotoForm.category)
     await callback.message.answer("Что на фото?", reply_markup=_category_kb())
 
@@ -736,9 +739,55 @@ async def _finalize(message: Message, state: FSMContext, user) -> None:
     )
 
 
+def _treatment_kb(treatments) -> InlineKeyboardMarkup:
+    rows = []
+    for t in treatments:
+        prod = (t["product"] or "").strip()
+        if len(prod) > 24:
+            prod = prod[:23] + "…"
+        when = f"{t['treatment_date']:%d.%m}" if t["treatment_date"] else "—"
+        rows.append([InlineKeyboardButton(
+            text=f"{prod} · {when}", callback_data=f"trt:{t['id']}")])
+    rows.append([InlineKeyboardButton(
+        text="Другое — напишу/наговорю", callback_data="trt:other")])
+    rows.append([InlineKeyboardButton(
+        text="Не связано / пропустить", callback_data="trt:skip")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _ask_treatment_or_finalize(message: Message, state: FSMContext, user) -> None:
+    """After the comment step the photo is FINALIZED (saved + counted) first, so
+    the core metric is never at risk. Then — only for a real field with recorded
+    treatments — we ask, as optional enrichment, which recent operation it relates
+    to. If the agronomist ignores it, the photo is already banked."""
+    data = await state.get_data()
+    field_id = data.get("field_id")
+    submission_id = data["submission_id"]
+    treatments = await get_recent_treatments(field_id) if field_id else []
+    await _finalize(message, state, user)  # save, count, "Сохранено ✓", clear state
+    if not treatments:
+        return
+    # Re-seed a minimal state purely for the optional treatment link. Dates as
+    # ISO strings → Redis-JSON-safe; the map lets the callback confirm
+    # days-since without another DB round-trip.
+    tmap = {
+        str(t["id"]): {
+            "p": t["product"],
+            "d": t["treatment_date"].isoformat() if t["treatment_date"] else None,
+        }
+        for t in treatments
+    }
+    await state.set_state(PhotoForm.treatment)
+    await state.update_data(submission_id=submission_id, treatments=tmap)
+    await message.answer(
+        "Это фото связано с недавней обработкой поля? (по желанию)",
+        reply_markup=_treatment_kb(treatments),
+    )
+
+
 @router.message(PhotoForm.comment, Command("skip"))
 async def on_skip_comment(message: Message, state: FSMContext, user) -> None:
-    await _finalize(message, state, user)
+    await _ask_treatment_or_finalize(message, state, user)
 
 
 @router.message(PhotoForm.comment, F.voice)
@@ -773,7 +822,7 @@ async def on_voice_comment(message: Message, state: FSMContext, user) -> None:
     else:
         await message.answer("Не удалось распознать речь — голосовое сохранил как есть.")
 
-    await _finalize(message, state, user)
+    await _ask_treatment_or_finalize(message, state, user)
 
 
 @router.message(PhotoForm.comment, F.text)
@@ -789,7 +838,7 @@ async def on_text_comment(message: Message, state: FSMContext, user) -> None:
         english = ""
     if english:
         await update_submission(sid, comment_text_en=english)
-    await _finalize(message, state, user)
+    await _ask_treatment_or_finalize(message, state, user)
 
 
 # ---------- Russian free-text aliases for the slash commands ----------
@@ -857,6 +906,76 @@ async def on_text_alias(
         await cmd_help(message, user)
     elif alias_target == "all":
         await cmd_all(message, user)
+
+
+# ---------- treatment link: tie the photo to a recent field operation ----------
+# The photo is already saved before these run (_ask_treatment_or_finalize
+# finalizes first), so they only attach the optional link and clear state.
+
+@router.callback_query(PhotoForm.treatment, F.data.startswith("trt:"))
+async def on_treatment(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    value = callback.data.split(":", 1)[1]
+
+    if value == "skip":
+        await state.clear()
+        return
+    if value == "other":
+        await state.set_state(PhotoForm.treatment_note)
+        await callback.message.answer(
+            "Что применяли и когда? Текстом или голосом. Или /skip."
+        )
+        return
+
+    data = await state.get_data()
+    info = (data.get("treatments") or {}).get(value)
+    await update_submission(data["submission_id"], treatment_id=int(value))
+    await state.clear()
+
+    if info:
+        prod = info.get("p") or "обработка"
+        msg = f"🧪 Связано с обработкой «{prod}»."
+        if info.get("d"):
+            try:
+                days = (date.today() - date.fromisoformat(info["d"])).days
+                msg = f"🧪 Отмечено: фото через {days} дн. после обработки «{prod}»."
+            except ValueError:
+                pass
+        await callback.message.answer(msg)
+
+
+@router.message(PhotoForm.treatment_note, Command("skip"))
+async def on_skip_treatment_note(message: Message, state: FSMContext) -> None:
+    await state.clear()
+
+
+@router.message(PhotoForm.treatment_note, F.voice)
+async def on_treatment_note_voice(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    file = await message.bot.get_file(message.voice.file_id)
+    buffer = await message.bot.download_file(file.file_path)
+    audio = buffer.read()
+    await message.answer("Расшифровываю голосовое…")
+    try:
+        recognized = await transcribe(audio)
+    except Exception:
+        logger.exception("treatment-note transcription failed for %s", data["submission_id"])
+        recognized = ""
+    await state.clear()
+    if recognized:
+        await update_submission(data["submission_id"], treatment_note=recognized)
+        await message.answer(f"🧪 Записал: «{recognized}»")
+    else:
+        await message.answer("Не удалось распознать речь — обработку не записал.")
+
+
+@router.message(PhotoForm.treatment_note, F.text)
+async def on_treatment_note_text(message: Message, state: FSMContext) -> None:
+    await update_submission(
+        (await state.get_data())["submission_id"], treatment_note=message.text.strip()
+    )
+    await state.clear()
+    await message.answer("🧪 Записал.")
 
 
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never
