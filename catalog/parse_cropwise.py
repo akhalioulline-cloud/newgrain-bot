@@ -244,12 +244,14 @@ def main():
     field_map = _load_field_map(args.field_map) if args.field_map else None
 
     if os.path.isdir(args.xlsx):
-        files = sorted(
-            os.path.join(args.xlsx, f) for f in os.listdir(args.xlsx)
-            if f.lower().endswith(".xlsx") and not f.startswith("~$")
-        )
+        files = []
+        for root, _dirs, names in os.walk(args.xlsx):  # recurse subfolders
+            for f in names:
+                if f.lower().endswith(".xlsx") and not f.startswith("~$"):
+                    files.append(os.path.join(root, f))
+        files.sort()
         if not files:
-            print(f"no .xlsx files in {args.xlsx}", file=sys.stderr)
+            print(f"no .xlsx files under {args.xlsx}", file=sys.stderr)
             return 1
     else:
         files = [args.xlsx]
