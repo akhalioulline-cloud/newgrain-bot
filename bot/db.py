@@ -499,6 +499,19 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
             "SELECT treatment_date, product, active_substance FROM field_treatments "
             "WHERE field_id=:i AND op_category='protection' ORDER BY treatment_date DESC LIMIT 5"),
             {"i": fid})).mappings().all()
+        # Seed (latest sowing op) + fertilizer history — same shape as protection.
+        seed = (await conn.execute(text(
+            "SELECT season, crop, product FROM field_treatments WHERE field_id=:i "
+            "AND op_category='sowing' AND product IS NOT NULL AND product<>'' "
+            "ORDER BY treatment_date DESC LIMIT 1"), {"i": fid})).first()
+        fert_rot = (await conn.execute(text(
+            "SELECT season, crop, array_agg(DISTINCT product) prods FROM field_treatments "
+            "WHERE field_id=:i AND op_category='fertilizer' AND product IS NOT NULL AND product<>'' "
+            "GROUP BY season, crop ORDER BY season, crop"), {"i": fid})).all()
+        fert_recent = (await conn.execute(text(
+            "SELECT treatment_date, product FROM field_treatments WHERE field_id=:i "
+            "AND op_category='fertilizer' AND product IS NOT NULL AND product<>'' "
+            "ORDER BY treatment_date DESC LIMIT 5"), {"i": fid})).mappings().all()
         w = (await conn.execute(text(
             "SELECT count(*) c, min(date) lo, max(date) hi FROM weather_daily WHERE field_id=:i"),
             {"i": fid})).first()
@@ -545,6 +558,17 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
                 lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}{dv}")
     else:
         lines.append("🧪 История обработок: нет данных")
+    if seed:
+        lines.append(f"\n🫘 Семена ({seed[0]} · {seed[1] or '—'}): {seed[2]}")
+    if fert_rot:
+        lines.append("\n🧴 Удобрения по сезонам:")
+        for r in fert_rot:
+            shown, extra = r[2][:8], ("" if len(r[2]) <= 8 else f" +{len(r[2]) - 8}")
+            lines.append(f"  {r[0]} · {r[1] or '—'}: {'; '.join(shown)}{extra}")
+        if fert_recent:
+            lines.append("\nпоследние внесения:")
+            for r in fert_recent:
+                lines.append(f"  {r['treatment_date']:%d.%m.%Y} {r['product']}")
     if fcrops:
         lines.append("\n🌾 Севооборот (CropWise):")
         for yr, crop, variety, yld in fcrops:
