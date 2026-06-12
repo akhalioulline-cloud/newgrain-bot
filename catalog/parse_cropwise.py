@@ -9,10 +9,18 @@ header-driven (robust to column order) and emit one normalized row per operation
 Runs LOCALLY (needs openpyxl); produces a ';'-delimited CSV. Then load with
 ingest_treatments.py on the server.
 
-Usage: python catalog/parse_cropwise.py <multiprotocol.xlsx> <out.csv> --field "Поле 76/108"
+Single file:
+    python catalog/parse_cropwise.py <multiprotocol.xlsx> <out.csv> --field "Поле 76/108"
+Whole folder (one combined CSV for all fields at once) — the field is detected
+per file from the workbook/filename, or pinned with --field-map:
+    python catalog/parse_cropwise.py <folder/> <out.csv> [--field-map map.csv]
+Every row is tagged source='cropwise_multiprotocol'; ingest_treatments dedups on
+the natural key, so re-runs and a later CropWise-API sync never double-count.
 """
 import argparse
 import csv
+import io
+import os
 import re
 import sys
 
@@ -27,7 +35,8 @@ SECTIONS = {  # section header label -> (category, material-column candidates)
     "Внесение СЗР": ("protection", ["СЗР"]),
 }
 OUT_COLS = ["поле", "дата", "культура", "операция", "категория", "препарат",
-            "норма", "площадь_га", "примечание"]
+            "норма", "площадь_га", "примечание", "источник"]
+DEFAULT_SOURCE = "cropwise_multiprotocol"
 
 
 def _round(s):
@@ -71,7 +80,7 @@ def _sheet_default_crop(ops):
     return ""
 
 
-def parse(path, field_name):
+def parse(path, field_name, source=DEFAULT_SOURCE):
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     out = []
     for sh in wb.sheetnames:
@@ -127,28 +136,132 @@ def parse(path, field_name):
                 "норма": norma,
                 "площадь_га": area,
                 "примечание": "; ".join(note_bits),
+                "источник": source,
             })
     wb.close()
     return out
 
 
+def _field_token(s):
+    """Pull a «76/108»-style field number out of a string (filename or cell)."""
+    m = re.search(r"(\d+)\s*[/\-_]\s*(\d+)", str(s or ""))
+    return f"Поле {m.group(1)}/{m.group(2)}" if m else None
+
+
+def _scan_field(path):
+    """Best-effort: read a field name out of the workbook's top rows. CropWise
+    multiprotocol exports usually print the field name in the first cells."""
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except Exception:
+        return None
+    name = None
+    for sh in wb.sheetnames:
+        for i, row in enumerate(wb[sh].iter_rows(values_only=True)):
+            if i > 15:
+                break
+            for cell in row:
+                tok = _field_token(cell)
+                if tok:
+                    name = tok
+                    break
+            if name:
+                break
+        if name:
+            break
+    wb.close()
+    return name
+
+
+def _load_field_map(path):
+    """CSV of `filename,field_name` (or `cropwise_id,field_name`) — the
+    deterministic override for batch runs when auto-detection isn't reliable."""
+    out = {}
+    raw = open(path, "rb").read()
+    for enc in ("utf-8-sig", "cp1251", "utf-8"):
+        try:
+            data = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    delim = ";" if data[:2000].count(";") > data[:2000].count(",") else ","
+    for row in csv.reader(io.StringIO(data), delimiter=delim):
+        if len(row) >= 2 and row[0].strip():
+            out[row[0].strip()] = row[1].strip()
+    return out
+
+
+def _resolve_field(path, explicit, field_map):
+    base = os.path.basename(path)
+    if field_map:
+        if base in field_map:
+            return field_map[base]
+        tok = re.search(r"\d+", base)  # match by a bare id in the filename
+        if tok and tok.group(0) in field_map:
+            return field_map[tok.group(0)]
+    if explicit:
+        return explicit
+    return _scan_field(path) or _field_token(base)
+
+
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("xlsx")
-    ap.add_argument("out_csv")
-    ap.add_argument("--field", default="Поле 76/108")
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("xlsx", help="a multiprotocol .xlsx OR a folder of them")
+    ap.add_argument("out_csv", help="combined output CSV")
+    ap.add_argument("--field", default=None,
+                    help="field name (single file). Omit in folder mode — "
+                         "the field is auto-detected per file or via --field-map.")
+    ap.add_argument("--field-map", default=None,
+                    help="CSV filename,field_name to pin each file's field")
+    ap.add_argument("--source", default=DEFAULT_SOURCE,
+                    help=f"source tag stored on every row (default {DEFAULT_SOURCE})")
     args = ap.parse_args()
-    rows = parse(args.xlsx, args.field)
-    rows = [r for r in rows if r["дата"]]  # drop rows we couldn't date
+
+    field_map = _load_field_map(args.field_map) if args.field_map else None
+
+    if os.path.isdir(args.xlsx):
+        files = sorted(
+            os.path.join(args.xlsx, f) for f in os.listdir(args.xlsx)
+            if f.lower().endswith(".xlsx") and not f.startswith("~$")
+        )
+        if not files:
+            print(f"no .xlsx files in {args.xlsx}", file=sys.stderr)
+            return 1
+    else:
+        files = [args.xlsx]
+
+    rows, unresolved = [], []
+    for path in files:
+        field = _resolve_field(path, args.field, field_map)
+        if not field:
+            unresolved.append(os.path.basename(path))
+            print(f"  ⚠ could not resolve field for {os.path.basename(path)} — "
+                  f"skipped (use --field-map)", file=sys.stderr)
+            continue
+        frows = [r for r in parse(path, field, args.source) if r["дата"]]
+        rows.extend(frows)
+        print(f"  {os.path.basename(path)} -> {field}: {len(frows)} ops",
+              file=sys.stderr)
+
+    if not rows:
+        print("no datable ops parsed.", file=sys.stderr)
+        return 1
+
     with open(args.out_csv, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=OUT_COLS, delimiter=";")
         w.writeheader()
         w.writerows(rows)
-    cats = {}
+
+    cats, fields = {}, set()
     for r in rows:
         cats[r["категория"]] = cats.get(r["категория"], 0) + 1
-    print(f"wrote {len(rows)} ops -> {args.out_csv}", file=sys.stderr)
+        fields.add(r["поле"])
+    print(f"wrote {len(rows)} ops across {len(fields)} field(s) -> {args.out_csv}",
+          file=sys.stderr)
     print(f"by category: {cats}", file=sys.stderr)
+    if unresolved:
+        print(f"{len(unresolved)} file(s) skipped (unresolved field): "
+              f"{', '.join(unresolved)}", file=sys.stderr)
     return 0
 
 

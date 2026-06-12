@@ -40,7 +40,11 @@ HEADER_MAP = {
     "результат": "result",
     "исполнитель": "operator", "агроном": "operator",
     "примечание": "note", "комментарий": "note",
+    "источник": "source", "source": "source",
 }
+
+# Natural key for dedup — must mirror the unique index in migration 0018.
+NATKEY = ("field_name", "treatment_date", "operation", "product", "dose", "area_ha")
 
 
 def _norm(h):
@@ -89,12 +93,13 @@ def _read(path):
 
 
 async def _load(records, replace):
-    inserted = unmatched = 0
+    inserted = skipped = unmatched = 0
     async with engine.begin() as conn:
         fields = (await conn.execute(text("SELECT id, name FROM fields"))).all()
         fmap = {_norm(n): i for i, n in fields}
         if replace:
             await conn.execute(text("TRUNCATE field_treatments RESTART IDENTITY"))
+        conflict = ", ".join(NATKEY)
         for r in records:
             r = dict(r)
             if "treatment_date" in r:
@@ -111,13 +116,20 @@ async def _load(records, replace):
                 unmatched += 1
             r.setdefault("source", "import")
             cols = list(r.keys())
-            await conn.execute(
+            # ON CONFLICT DO NOTHING against the natural-key index (migration
+            # 0018) makes re-runs idempotent and an API sync collision-free —
+            # an identical operation already present is skipped, not duplicated.
+            res = await conn.execute(
                 text(f"INSERT INTO field_treatments ({', '.join(cols)}) "
-                     f"VALUES ({', '.join(':' + c for c in cols)})"),
+                     f"VALUES ({', '.join(':' + c for c in cols)}) "
+                     f"ON CONFLICT ({conflict}) DO NOTHING"),
                 r,
             )
-            inserted += 1
-    return inserted, unmatched
+            if res.rowcount:
+                inserted += 1
+            else:
+                skipped += 1
+    return inserted, skipped, unmatched
 
 
 def main() -> int:
@@ -131,9 +143,10 @@ def main() -> int:
         print("no rows parsed — check headers/delimiter.", file=sys.stderr)
         return 1
     print(f"parsed {len(records)} record(s); loading…", file=sys.stderr)
-    inserted, unmatched = asyncio.run(_load(records, args.replace))
-    print(f"inserted {inserted}; {unmatched} had a field name not matching the "
-          f"fields table (kept as text, field_id=NULL).", file=sys.stderr)
+    inserted, skipped, unmatched = asyncio.run(_load(records, args.replace))
+    print(f"inserted {inserted}; skipped {skipped} already-present duplicate(s); "
+          f"{unmatched} had a field name not matching the fields table "
+          f"(kept as text, field_id=NULL).", file=sys.stderr)
     return 0
 
 
