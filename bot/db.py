@@ -246,14 +246,30 @@ async def lookup_active_substance(product: str):
             {"pat": f"%{core}%"})).scalar()
 
 
+async def find_similar_treatment(field_id, treatment_date, op_category, product):
+    """Existing op(s) on the same field + date + category with the same product —
+    used to warn an agronomist about a likely duplicate (e.g. a colleague already
+    logged it) before saving. Only meaningful when a product is named."""
+    if not (field_id and treatment_date and product):
+        return []
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT operation, product, dose, operator, source FROM field_treatments "
+            "WHERE field_id=:fid AND treatment_date=:td AND op_category=:oc "
+            "AND lower(coalesce(product,''))=lower(:pr) ORDER BY id LIMIT 3"),
+            {"fid": field_id, "td": treatment_date, "oc": op_category, "pr": product},
+        )).mappings().all()
+
+
 async def insert_bot_treatment(*, field_id, field_name, treatment_date, crop, operation,
                                op_category, product, active_substance, target, dose,
-                               area_ha, operator):
+                               area_ha, operator) -> bool:
     """Insert one agronomist-logged operation (source='bot'). Idempotent via the
-    natural-key index (migration 0018) — re-saving the same op is a no-op."""
+    natural-key index (migration 0018). Returns True if a row was inserted, False
+    if it was an exact duplicate (ON CONFLICT DO NOTHING)."""
     season = treatment_date.year if treatment_date else None
     async with engine.begin() as conn:
-        await conn.execute(text(
+        res = await conn.execute(text(
             "INSERT INTO field_treatments (field_id, field_name, treatment_date, season, "
             "crop, operation, op_category, product, active_substance, target, dose, "
             "area_ha, operator, source) VALUES "
@@ -264,6 +280,7 @@ async def insert_bot_treatment(*, field_id, field_name, treatment_date, crop, op
              "cr": crop, "op": operation, "oc": op_category, "pr": product,
              "asb": active_substance, "tg": target, "do": dose, "ar": area_ha,
              "opr": operator})
+        return bool(res.rowcount)
 
 
 async def get_active_users():

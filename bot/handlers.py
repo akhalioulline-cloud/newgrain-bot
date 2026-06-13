@@ -37,6 +37,7 @@ from bot.db import (
     resolve_field_id,
     get_team_week_counts,
     get_top_species,
+    find_similar_treatment,
     get_user_history,
     get_user_stats,
     insert_bot_treatment,
@@ -1202,7 +1203,19 @@ async def _handle_op_note(message: Message, state: FSMContext, user, note: str) 
     }
     await state.update_data(op=op)
     await state.set_state(OpLogForm.confirm)
-    await message.answer(_op_summary(op), reply_markup=_oplog_confirm_kb())
+    # Conflict check: warn if a colleague (or earlier entry) already logged the
+    # same product on this field today, so the agronomist can avoid a duplicate.
+    summary = _op_summary(op)
+    dups = await find_similar_treatment(
+        field["id"], _op_date(parsed.get("date")), cat, product)
+    if dups:
+        who = ", ".join(sorted({d["operator"] for d in dups if d["operator"]})) or "кто-то"
+        summary = (
+            f"⚠️ На этом поле за {date.fromisoformat(op['date']):%d.%m} уже записана "
+            f"обработка «{product}» (записал: {who}).\n"
+            f"Если это та же операция — нажмите «Отмена».\n\n" + summary
+        )
+    await message.answer(summary, reply_markup=_oplog_confirm_kb())
 
 
 @router.message(OpLogForm.awaiting, F.voice)
@@ -1235,14 +1248,17 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
     if not op:
         await callback.message.answer("Нечего сохранять.")
         return
-    await insert_bot_treatment(
+    inserted = await insert_bot_treatment(
         field_id=op["field_id"], field_name=op["field_name"],
         treatment_date=date.fromisoformat(op["date"]), crop=op["crop"],
         operation=op["operation"], op_category=op["category"], product=op["product"],
         active_substance=op["dv"], target=op["target"], dose=op["dose"],
         area_ha=op["area"], operator=op["operator"],
     )
-    await callback.message.answer("✅ Записано в историю поля.")
+    if inserted:
+        await callback.message.answer("✅ Записано в историю поля.")
+    else:
+        await callback.message.answer("ℹ️ Такая операция уже была записана — дубликат пропущен.")
 
 
 @router.callback_query(OpLogForm.confirm, F.data == "oplog:cancel")
