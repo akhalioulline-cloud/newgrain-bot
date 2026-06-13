@@ -1,11 +1,12 @@
-# Secrets via Yandex Lockbox — migration sketch (PLAN, not yet implemented)
+# Secrets via Yandex Lockbox — runbook
 
-**Status:** proposed. Today secrets live in a gitignored `.env`, copied by hand
-between machines (CLAUDE.md: *".env — secrets … must be copied manually"*). This
-sketch replaces hand-copying with **Yandex Lockbox** as the single source of
-truth, so any authorized machine or deploy pulls secrets securely. Do this when
-a second machine or a teammate enters the picture; for a strictly solo single-
-machine setup it's optional.
+**Status (2026-06-13):** the deploy-time fetch script is **implemented**
+(`deploy/fetch-secrets.sh`, Pattern A — it refreshes only the secret keys in
+`.env`, leaving non-secret config untouched). What remains is **three
+Yandex-console actions only you can do** (create the secret, grant the service
+account, attach it to the VM) — see "Steps to implement". Until those are done,
+secrets still live in a gitignored `.env` copied by hand. This replaces
+hand-copying with **Yandex Lockbox** as the single source of truth.
 
 ## What moves to Lockbox vs stays in plain config
 
