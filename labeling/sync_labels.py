@@ -5,12 +5,12 @@ deletes or edits existing labels — only new ones (sent without an id) are
 created — so annotations already in progress are safe.
 
     # see the diff without changing anything
-    ssh newgrain@158.160.46.89 \\
+    ssh newgrain@111.88.248.159 \\
         'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \\
          python -m labeling.sync_labels --dry-run'
 
     # apply (add the missing labels)
-    ssh newgrain@158.160.46.89 \\
+    ssh newgrain@111.88.248.159 \\
         'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \\
          python -m labeling.sync_labels'
 

@@ -82,7 +82,7 @@ handle it. Both run as one-off commands streamed over SSH; no cron yet
 ### Exporting a batch — default: auto-upload to CVAT
 
 ```bash
-ssh newgrain@158.160.46.89 \
+ssh newgrain@111.88.248.159 \
   'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \
    python -m labeling.export'
 ```
@@ -101,7 +101,7 @@ On upload failure: status NOT flipped, retry is safe.
 ### Exporting a batch — fallback: zip-only (CVAT unreachable / local backup)
 
 ```bash
-ssh newgrain@158.160.46.89 \
+ssh newgrain@111.88.248.159 \
   'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \
    python -m labeling.export --zip-only' > batch-$(date +%Y%m%d).zip
 ```
@@ -130,7 +130,7 @@ Re-importing back (next section).
 ### Importing labels back — default: auto-fetch from CVAT
 
 ```bash
-ssh newgrain@158.160.46.89 \
+ssh newgrain@111.88.248.159 \
   'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \
    python -m labeling.import --task <TASK_ID>'
 ```
@@ -152,7 +152,7 @@ What it does:
 When you already have an export zip (e.g. someone else exported via the UI and sent it to you):
 
 ```bash
-cat task_batch-YYYYMMDD_xxx.zip | ssh newgrain@158.160.46.89 \
+cat task_batch-YYYYMMDD_xxx.zip | ssh newgrain@111.88.248.159 \
   'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \
    python -m labeling.import'
 ```
@@ -161,7 +161,7 @@ Same semantics, same idempotency. Just reads the zip from stdin instead of fetch
 
 Verify with:
 ```bash
-ssh newgrain@158.160.46.89 \
+ssh newgrain@111.88.248.159 \
   'cd newgrain-bot && docker compose -f docker-compose.prod.yml exec -T postgres \
    psql -U newgrain -d newgrain -c "SELECT submission_id, class_label, bbox_x, bbox_y, bbox_w, bbox_h FROM labels;"'
 ```

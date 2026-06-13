@@ -1,7 +1,7 @@
 """Export ready_for_labeling submissions to CVAT (default) or as a zip (--zip-only).
 
 Default mode — auto-upload to CVAT:
-    ssh newgrain@158.160.46.89 \\
+    ssh newgrain@111.88.248.159 \\
         'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \\
          python -m labeling.export'
 
@@ -14,7 +14,7 @@ Default mode — auto-upload to CVAT:
     5. Prints the task URL on stderr; click through to annotate.
 
 Zip-only mode (manual fallback / offline backup):
-    ssh newgrain@158.160.46.89 \\
+    ssh newgrain@111.88.248.159 \\
         'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \\
          python -m labeling.export --zip-only' > batch.zip
 

@@ -8,7 +8,7 @@ order* — so the move is deliberate, not reactive.
 ## Where things run today (pilot)
 - **Source of truth:** GitHub `akhalioulline-cloud/newgrain-bot`.
 - **Edit:** founder's Mac(s) (`~/newgrain-bot`); not where the bot runs.
-- **Runs:** one Yandex Cloud VM (`158.160.46.89`), Docker compose — `bot` +
+- **Runs:** one Yandex Cloud VM (`111.88.248.159`), Docker compose — `bot` +
   `postgres` + `redis` in containers, code baked into the image.
 - **Data:** Postgres on the VM; photos in Yandex Object Storage; nightly
   `pg_dump` → local 7-day rotation + Object Storage (`backup.sh`, cron 03:00).
@@ -63,6 +63,10 @@ committed customer justifies it — not to serve one pilot farm.
 - ✅ Backups verified to restore (done 2026-06-13; also fixed a silent 2-week
   backup outage + added failure alerting in `backup.sh`).
 - ✅ Roadmap + triggers documented (this file).
-- ◻ Move secrets to Lockbox (`docs/SECRETS_LOCKBOX.md`) — small, do when a 2nd
-  machine/teammate appears.
-- ◻ Keep a sealed offline copy of `.env` (password manager) as break-glass.
+- ✅ Secrets in **Yandex Lockbox** (done 2026-06-13). The VM's attached service
+  account reads the `flagleaf-prod` secret via instance metadata (no key on disk);
+  `deploy/fetch-secrets.sh` refreshes `.env` from Lockbox and is wired into the
+  deploy. Rotate = edit the Lockbox entry → re-deploy.
+- ◻ Keep a sealed offline copy of the secrets (password manager) as break-glass.
+- ◻ **Reserve a static public IP** for the VM — it's currently ephemeral and
+  changed (→ `111.88.248.159`) on the A3 restart; a static IP stops it moving.

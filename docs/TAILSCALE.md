@@ -23,7 +23,7 @@ Host flagleaf
     IdentityFile ~/.ssh/id_ed25519
 
 Host flagleaf-pub
-    HostName 158.160.46.89
+    HostName 111.88.248.159
     User newgrain
     IdentityFile ~/.ssh/id_ed25519
 ```

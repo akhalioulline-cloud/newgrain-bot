@@ -49,7 +49,7 @@ Copy your prod key into place and lock its permissions:
 # copy the key file you use for the server into ~/.ssh/id_ed25519, then:
 chmod 600 ~/.ssh/id_ed25519
 ```
-✅ *Verify:* `ssh newgrain@158.160.46.89 'echo ok'` prints `ok`.
+✅ *Verify:* `ssh newgrain@111.88.248.159 'echo ok'` prints `ok`.
 
 ### Step 4 — restore Claude's project context
 ```bash
@@ -85,12 +85,12 @@ worker) with MinIO standing in for Object Storage.
   dev-bot token in your local `.env` if you want to exercise the bot locally.
 
 ### Deploying to production
-Production is the Yandex Cloud VM `158.160.46.89` running `docker-compose.prod.yml`.
+Production is the Yandex Cloud VM `111.88.248.159` running `docker-compose.prod.yml`.
 Code is **baked into the image**, so a rebuild is mandatory (a plain restart keeps
 the old code):
 ```bash
-rsync -az --exclude '.git' --exclude '.env' --exclude '__pycache__' ./ newgrain@158.160.46.89:/home/newgrain/newgrain-bot/
-ssh newgrain@158.160.46.89 'cd newgrain-bot && docker compose -f docker-compose.prod.yml up -d --build bot'
+rsync -az --exclude '.git' --exclude '.env' --exclude '__pycache__' ./ newgrain@111.88.248.159:/home/newgrain/newgrain-bot/
+ssh newgrain@111.88.248.159 'cd newgrain-bot && docker compose -f docker-compose.prod.yml up -d --build bot'
 ```
 For DB migrations: `ssh … 'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot alembic upgrade head'`.
 - ⚠️ Avoid rebuilding the bot **while the agronomist is actively uploading** — a
@@ -144,7 +144,7 @@ a RU cloud dev box can't reach Anthropic.)
 
 ## Quick reference
 - **Repo:** https://github.com/akhalioulline-cloud/newgrain-bot (private)
-- **Prod:** `ssh newgrain@158.160.46.89` · `docker-compose.prod.yml` (postgres + redis + bot)
+- **Prod:** `ssh newgrain@111.88.248.159` · `docker-compose.prod.yml` (postgres + redis + bot)
 - **Object Storage:** Yandex, bucket `newgrain-data-prod`
 - **Grant docs:** iCloud `Flagleaf/` (Apple devices); move to Drive/Yandex Disk for cross-platform
 - **Tailscale (optional):** secure server access (`ssh flagleaf` / `ssh flagleaf-pub`) + Taildrop file transfer — see [docs/TAILSCALE.md](docs/TAILSCALE.md)

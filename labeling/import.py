@@ -4,7 +4,7 @@ Two ways to invoke:
 
   A. Auto-fetch from CVAT (recommended — no browser involvement):
 
-      ssh newgrain@158.160.46.89 \\
+      ssh newgrain@111.88.248.159 \\
           'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm bot \\
            python -m labeling.import --task 2291559'
 
@@ -15,7 +15,7 @@ Two ways to invoke:
 
   B. Pipe a zip on stdin (fallback — when you already have the zip):
 
-      cat cvat-export.zip | ssh newgrain@158.160.46.89 \\
+      cat cvat-export.zip | ssh newgrain@111.88.248.159 \\
           'cd newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot \\
            python -m labeling.import'
 
