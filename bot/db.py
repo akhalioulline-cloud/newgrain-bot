@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -209,6 +211,66 @@ async def ndvi_scan(farm_id: int | None = None):
         results.append({"name": p["name"], "crop": p["crop"],
                         "lines": lines, "note": note})
     return as_of, results
+
+
+async def resolve_field(field_query: str, farm_id: int | None = None):
+    """Resolve a field query to its full row (id, name, crop, area_ha) using the
+    same matching as field_card_text. Returns the mapping or None."""
+    fid = await resolve_field_id(field_query, farm_id)
+    if fid is None:
+        return None
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT id, name, crop, area_ha FROM fields WHERE id = :i"),
+            {"i": fid})).mappings().first()
+
+
+def _norm_product(p: str) -> str:
+    s = (p or "").lower().replace("ё", "е")
+    s = re.sub(r"\(.*?\)", "", s)      # drop (900 г/л) / (архив)
+    return s.split(",")[0].strip()     # drop ", ВРК" etc.
+
+
+async def lookup_active_substance(product: str):
+    """Best-effort active substance (д.в.) for a trade name, from the Госкаталог.
+    Picks the most common active_substances for products whose name contains the
+    normalized core. None if no match (adjuvant/biostimulant/typo)."""
+    core = _norm_product(product)
+    if not core:
+        return None
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT active_substances FROM pesticide_applications "
+            "WHERE active_substances IS NOT NULL AND lower(product_name) LIKE :pat "
+            "GROUP BY active_substances ORDER BY count(*) DESC LIMIT 1"),
+            {"pat": f"%{core}%"})).scalar()
+
+
+async def insert_bot_treatment(*, field_id, field_name, treatment_date, crop, operation,
+                               op_category, product, active_substance, target, dose,
+                               area_ha, operator):
+    """Insert one agronomist-logged operation (source='bot'). Idempotent via the
+    natural-key index (migration 0018) — re-saving the same op is a no-op."""
+    season = treatment_date.year if treatment_date else None
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO field_treatments (field_id, field_name, treatment_date, season, "
+            "crop, operation, op_category, product, active_substance, target, dose, "
+            "area_ha, operator, source) VALUES "
+            "(:fid,:fn,:td,:se,:cr,:op,:oc,:pr,:asb,:tg,:do,:ar,:opr,'bot') "
+            "ON CONFLICT (field_name, treatment_date, operation, product, dose, area_ha) "
+            "DO NOTHING"),
+            {"fid": field_id, "fn": field_name, "td": treatment_date, "se": season,
+             "cr": crop, "op": operation, "oc": op_category, "pr": product,
+             "asb": active_substance, "tg": target, "do": dose, "ar": area_ha,
+             "opr": operator})
+
+
+async def get_active_users():
+    """Active whitelisted users (for the daily operation-logging nudge)."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT tg_user_id, full_name FROM users WHERE is_active"))).mappings().all()
 
 
 async def get_recent_treatments(field_id: int, limit: int = 5):

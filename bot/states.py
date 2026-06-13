@@ -14,3 +14,8 @@ class PhotoForm(StatesGroup):
 
 class ProblemForm(StatesGroup):
     waiting = State()
+
+
+class OpLogForm(StatesGroup):
+    awaiting = State()   # waiting for a free-form/voice operation note
+    confirm = State()    # parsed op shown, waiting for ✓/✗

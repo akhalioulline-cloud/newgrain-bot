@@ -1,7 +1,7 @@
 import hashlib
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
 from aiogram import F, Router
@@ -39,13 +39,17 @@ from bot.db import (
     get_top_species,
     get_user_history,
     get_user_stats,
+    insert_bot_treatment,
+    lookup_active_substance,
     ndvi_scan,
+    resolve_field,
     set_user_phone,
     update_submission,
 )
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
-from bot.states import PhotoForm, ProblemForm
+from bot.parse_op import parse_operation
+from bot.states import OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
 from bot.transcribe import transcribe
 from bot.translate_llm import translate_ru_to_en
@@ -269,6 +273,7 @@ HELP_TEXT = (
     "/fields — ваши пилотные поля\n"
     "/field <поле> — сводка по полю (обработки, погода, NDVI)\n"
     "/scan — проверка полей по NDVI (что требует внимания)\n"
+    "/log — записать обработку (голосом или текстом)\n"
     "/all — последние загрузки всех агрономов\n"
     "/finish — закончить незавершённое фото\n"
     "/problem — сообщить о проблеме или задать вопрос\n"
@@ -951,6 +956,9 @@ _TEXT_ALIASES = {
     "осмотр": "scan",
     "проверка": "scan",
     "проверить": "scan",
+    "запись": "log",
+    "записать": "log",
+    "журнал": "log",
 }
 
 
@@ -995,6 +1003,8 @@ async def on_text_alias(
         await cmd_all(message, user)
     elif alias_target == "scan":
         await cmd_scan(message, user)
+    elif alias_target == "log":
+        await cmd_log(message, state)
 
 
 # ---------- treatment link: tie the photo to a recent field operation ----------
@@ -1086,6 +1096,161 @@ async def on_treatment_note_text(message: Message, state: FSMContext) -> None:
     )
     await state.clear()
     await message.answer("🧪 Записал.")
+
+
+# ---------- operation logging: log a field operation by voice/free text --------
+# The agronomist describes what was done («опрыскал 119 Корсаром 1.5 л/га»);
+# YandexGPT parses it, we resolve the field + active substance, show a one-line
+# confirmation, and on ✓ it lands in field_treatments (source='bot'). The daily
+# nudge (bot/op_nudge.py) drops the agronomist straight into this flow.
+
+_OP_CAT_RU = {
+    "tillage": "обработка почвы", "sowing": "сев",
+    "fertilizer": "внесение удобрений", "protection": "опрыскивание/СЗР",
+    "other": "операция",
+}
+
+
+def _op_date(s: str) -> date:
+    s = (s or "today").strip().lower()
+    if s in ("today", "сегодня", ""):
+        return date.today()
+    if s in ("yesterday", "вчера"):
+        return date.today() - timedelta(days=1)
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    return date.today()
+
+
+def _op_summary(op: dict) -> str:
+    lines = ["Записать операцию?",
+             f"📍 {op['field_name']}" + (f" · {op['crop']}" if op["crop"] else ""),
+             f"🛠 {op['operation']}"]
+    if op["product"]:
+        lines.append(f"📦 {op['product']}" + (f" ({op['dv']})" if op["dv"] else ""))
+    bits = [b for b in (op["dose"], op["target"]) if b]
+    if bits:
+        lines.append("• " + " · ".join(bits))
+    if op["area"]:
+        lines.append(f"📐 {op['area']:g} га")
+    lines.append(f"📅 {date.fromisoformat(op['date']):%d.%m.%Y}")
+    return "\n".join(lines)
+
+
+def _oplog_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✓ Сохранить", callback_data="oplog:save"),
+        InlineKeyboardButton(text="✗ Отмена", callback_data="oplog:cancel"),
+    ]])
+
+
+async def _start_oplog(target, state: FSMContext) -> None:
+    await state.set_state(OpLogForm.awaiting)
+    await target.answer(
+        "Опишите операцию — текстом или голосом.\n"
+        "Например: «опрыскал 119 Корсаром 1.5 л/га от сорняков». Или /cancel."
+    )
+
+
+@router.message(Command("log"))
+async def cmd_log(message: Message, state: FSMContext) -> None:
+    await _start_oplog(message, state)
+
+
+@router.callback_query(F.data == "oplog:start")
+async def on_oplog_start(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    await _start_oplog(callback.message, state)
+
+
+@router.callback_query(F.data == "oplog:none")
+async def on_oplog_none(callback: CallbackQuery) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+
+
+async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
+    parsed = await parse_operation(note)
+    if not parsed:
+        await message.answer(
+            "Не понял. Повторите, например: «опрыскал 119 Корсаром 1.5 л/га от сорняков»."
+        )
+        return
+    fq = parsed.get("field")
+    field = await resolve_field(str(fq), user["farm_id"]) if fq else None
+    if not field:
+        await message.answer("Не понял, какое поле. Укажите номер, например «119».")
+        return
+    cat = (parsed.get("category") or "other").lower()
+    product = parsed.get("product")
+    dv = await lookup_active_substance(product) if (product and cat == "protection") else None
+    raw_area = parsed.get("area_ha")
+    if raw_area is None and field["area_ha"] is not None:
+        raw_area = float(field["area_ha"])
+    op = {
+        "field_id": field["id"], "field_name": field["name"], "crop": field["crop"],
+        "date": _op_date(parsed.get("date")).isoformat(), "category": cat,
+        "operation": parsed.get("operation") or _OP_CAT_RU.get(cat, "операция"),
+        "product": product, "dv": dv, "target": parsed.get("target"),
+        "dose": parsed.get("dose"),
+        "area": float(raw_area) if raw_area is not None else None,
+        "operator": user["full_name"],
+    }
+    await state.update_data(op=op)
+    await state.set_state(OpLogForm.confirm)
+    await message.answer(_op_summary(op), reply_markup=_oplog_confirm_kb())
+
+
+@router.message(OpLogForm.awaiting, F.voice)
+async def on_oplog_voice(message: Message, state: FSMContext, user) -> None:
+    file = await message.bot.get_file(message.voice.file_id)
+    buffer = await message.bot.download_file(file.file_path)
+    await message.answer("Распознаю…")
+    try:
+        note = await transcribe(buffer.read())
+    except Exception:
+        logger.exception("oplog voice transcription failed")
+        note = ""
+    if not note:
+        await message.answer("Не разобрал голос — повторите ещё раз или текстом.")
+        return
+    await _handle_op_note(message, state, user, note)
+
+
+@router.message(OpLogForm.awaiting, F.text)
+async def on_oplog_text(message: Message, state: FSMContext, user) -> None:
+    await _handle_op_note(message, state, user, message.text)
+
+
+@router.callback_query(OpLogForm.confirm, F.data == "oplog:save")
+async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    op = (await state.get_data()).get("op")
+    await state.clear()
+    if not op:
+        await callback.message.answer("Нечего сохранять.")
+        return
+    await insert_bot_treatment(
+        field_id=op["field_id"], field_name=op["field_name"],
+        treatment_date=date.fromisoformat(op["date"]), crop=op["crop"],
+        operation=op["operation"], op_category=op["category"], product=op["product"],
+        active_substance=op["dv"], target=op["target"], dose=op["dose"],
+        area_ha=op["area"], operator=op["operator"],
+    )
+    await callback.message.answer("✅ Записано в историю поля.")
+
+
+@router.callback_query(OpLogForm.confirm, F.data == "oplog:cancel")
+async def on_oplog_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    await state.clear()
+    await callback.message.answer("Отменено.")
 
 
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never
