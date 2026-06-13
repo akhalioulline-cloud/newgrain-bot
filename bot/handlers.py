@@ -39,10 +39,12 @@ from bot.db import (
     get_top_species,
     get_user_history,
     get_user_stats,
+    ndvi_scan,
     set_user_phone,
     update_submission,
 )
 from bot import fieldmap
+from bot.ndvi_watch import format_digest
 from bot.states import PhotoForm, ProblemForm
 from bot.storage import delete_object, upload_bytes
 from bot.transcribe import transcribe
@@ -266,6 +268,7 @@ HELP_TEXT = (
     "/stats — сколько фото за сегодня, неделю и всего\n"
     "/fields — ваши пилотные поля\n"
     "/field <поле> — сводка по полю (обработки, погода, NDVI)\n"
+    "/scan — проверка полей по NDVI (что требует внимания)\n"
     "/all — последние загрузки всех агрономов\n"
     "/finish — закончить незавершённое фото\n"
     "/problem — сообщить о проблеме или задать вопрос\n"
@@ -323,6 +326,15 @@ async def cmd_field(message: Message, command: CommandObject, user) -> None:
     except Exception:
         logger.exception("field map render failed for %s", q)
     await message.answer(await field_card_text(q, user["farm_id"]))
+
+
+@router.message(Command("scan"))
+async def cmd_scan(message: Message, user) -> None:
+    """On-demand proactive NDVI check across the pilot fields — interprets each
+    field's recent NDVI vs the same-crop norm and names only those needing a
+    look. Always replies (unlike the weekly cron, which stays silent if normal)."""
+    as_of, results = await ndvi_scan(user["farm_id"])
+    await message.answer(format_digest(as_of, results))
 
 
 @router.message(Command("stats"))
@@ -936,6 +948,9 @@ _TEXT_ALIASES = {
     "справка": "help",
     "меню": "help",
     "все": "all",  # «всё» normalises to «все» below
+    "осмотр": "scan",
+    "проверка": "scan",
+    "проверить": "scan",
 }
 
 
@@ -978,6 +993,8 @@ async def on_text_alias(
         await cmd_help(message, user)
     elif alias_target == "all":
         await cmd_all(message, user)
+    elif alias_target == "scan":
+        await cmd_scan(message, user)
 
 
 # ---------- treatment link: tie the photo to a recent field operation ----------

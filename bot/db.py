@@ -181,6 +181,36 @@ async def get_pending_submission(user_id: int):
         return result.mappings().first()
 
 
+async def ndvi_scan(farm_id: int | None = None):
+    """Proactive NDVI check across pilot fields. Reuses the same-crop anomaly
+    engine the /field card uses, run over every pilot field at once. Returns
+    (as_of_week, results) where results = [{name, crop, lines, note}] — `lines`
+    is non-empty only for fields whose recent NDVI deviates from the same-crop
+    norm. The digest layer decides what to say."""
+    async with engine.connect() as conn:
+        sql = "SELECT id, name, crop FROM fields WHERE is_pilot"
+        params = {}
+        if farm_id:
+            sql += " AND farm_id = :f"
+            params["f"] = farm_id
+        sql += " ORDER BY id"
+        pilots = (await conn.execute(text(sql), params)).mappings().all()
+        cropc = (await conn.execute(text(
+            "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
+        all_ndvi = (await conn.execute(text(
+            "SELECT field_id, week_start, week_no, ndvi FROM vegetation_weekly "
+            "WHERE ndvi IS NOT NULL"))).all()
+        as_of = (await conn.execute(text(
+            "SELECT max(week_start) FROM vegetation_weekly"))).scalar()
+    crop_map = {(f, y): c for f, y, c in cropc}
+    results = []
+    for p in pilots:
+        lines, note = ndvi_anomaly_samecrop(p["id"], crop_map, all_ndvi)
+        results.append({"name": p["name"], "crop": p["crop"],
+                        "lines": lines, "note": note})
+    return as_of, results
+
+
 async def get_recent_treatments(field_id: int, limit: int = 5):
     """Most recent operations on a field that applied a product — the buttons
     the agronomist taps to link a photo to its spray context. Newest first."""
