@@ -41,9 +41,11 @@ COLLECTION = "sentinel-2-l2a"
 # 1 saturated, 2 dark, 3 cloud shadow, 6 water, 7 unclassified, 8/9/10 cloud,
 # 11 snow) is dropped so clouds/shadows don't poison the field mean.
 KEEP_SCL = {4, 5}
-# Sentinel-2 L2A (processing baseline ≥ 04.00, i.e. all scenes since Jan 2022):
-# surface reflectance = (DN - 1000) / 10000.
-DN_OFFSET, DN_SCALE = 1000.0, 10000.0
+# The earth-search / sentinel-cogs COGs store reflectance directly as DN/10000
+# (NO +1000 baseline offset — verified empirically: red DN ~370, and applying a
+# -1000 offset drove reflectance negative, NDVI ~ -0.4; no offset → NDVI ~0.47,
+# matching CropWise). NDVI is scale-invariant anyway, so DN_SCALE is cosmetic.
+DN_OFFSET, DN_SCALE = 0.0, 10000.0
 
 
 def _bbox_intersects(a, b):
