@@ -6,6 +6,11 @@ cd "$(dirname "$0")"
 COMPOSE="docker compose -f docker-compose.prod.yml"
 BACKUP_DIR=/home/newgrain/backups
 mkdir -p "$BACKUP_DIR"
+
+# Alert admins on ANY failure — a silent backup outage (the exec-bit was stripped
+# by a deploy, May–Jun 2026) went unnoticed for 2 weeks. Never again.
+trap '$COMPOSE run --rm -T bot python -m labeling.alert \
+  "⚠️ Flagleaf: НОЧНОЙ БЭКАП БД НЕ ВЫПОЛНЕН. См. backup.log на сервере." || true' ERR
 STAMP=$(date +%Y%m%d-%H%M)
 FILE="$BACKUP_DIR/newgrain-$STAMP.sql.gz"
 
