@@ -10,8 +10,9 @@ the three portability pieces in this repo:
 | **Context snapshot** | Carries Claude Code's project memory across machines | `docs/claude-context/` + `scripts/claude-memory.sh` |
 | **Secrets plan** | Move secrets to Yandex Lockbox (so they're not hand-copied) | `docs/SECRETS_LOCKBOX.md` |
 
-**Mental model:** the **code** lives on GitHub (clone it anywhere). The **secrets**
-(`.env`) and the **prod SSH key** are the only things you carry by hand for now.
+**Mental model:** the **code** lives on GitHub (clone it anywhere); the **secrets**
+live in **Yandex Lockbox** (pull them with `yc`, no hand-copying). The only thing
+you still carry by hand is the **prod SSH key** (`~/.ssh/id_ed25519`).
 The **context** (what Claude already knows about the project) travels via the
 snapshot in this repo. Production already runs in Yandex Cloud — you don't move it.
 
@@ -32,16 +33,23 @@ cd newgrain-bot
 ```
 ✅ *Verify:* `ls` shows `bot/  labeling/  db/  docker-compose.yml  SETUP.md`.
 
-### Step 2 — secrets (`.env`)
-The repo ships `.env.example` (all keys, no values). Copy it and fill in the real
-values from your password manager / secure note (or, once set up, from Lockbox —
-see `docs/SECRETS_LOCKBOX.md`):
+### Step 2 — secrets (`.env`) — pull from Lockbox, don't hand-copy
+Secrets live in **Yandex Lockbox** (`flagleaf-prod`). Bootstrap the non-secret
+config from `.env.example`, then pull the secrets:
 ```bash
-cp .env.example .env
-# then edit .env and paste the real values
+cp .env.example .env                 # non-secret config (endpoints, etc.)
+# one-time per machine: install yc, then log in
+curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -a
+exec -l $SHELL                       # reload PATH so `yc` is found
+yc init                              # OAuth: open the URL, paste the token, pick cloud=newgrain-cloud / folder=default
+# then pull the secrets into .env (run from the repo root):
+./deploy/fetch-secrets.sh            # uses yc on a laptop, VM metadata on prod
 ```
-⚠️ `.env` is gitignored — never commit it. ✅ *Verify:* `grep -c '=' .env` ≈ the
-number of keys in `.env.example`, with no empty critical values.
+`fetch-secrets.sh` replaces only the secret keys, leaving your non-secret config
+untouched (backup saved as `.env.bak`). **Rotate** a secret by editing the
+Lockbox entry → re-run the script (or re-deploy). ⚠️ `.env` is gitignored — never
+commit it; keep a sealed offline copy of the secrets as break-glass.
+✅ *Verify:* `yc lockbox payload get --id e6qavh2hnlj0fr9b73sh --format json | jq '.entries|length'` prints `7`.
 
 ### Step 3 — prod SSH key (only if you deploy/operate prod from this machine)
 Copy your prod key into place and lock its permissions:
