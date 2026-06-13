@@ -37,10 +37,10 @@ from bot.db import engine  # noqa: E402
 
 STAC = "https://earth-search.aws.element84.com/v1/search"
 COLLECTION = "sentinel-2-l2a"
-# SCL classes to KEEP: 4 vegetation, 5 bare soil, 7 unclassified. Everything else
-# (0 nodata, 1 saturated, 2 dark, 3 cloud shadow, 6 water, 8/9/10 cloud, 11 snow)
-# is dropped so clouds don't poison the field mean.
-KEEP_SCL = {4, 5, 7}
+# SCL classes to KEEP: 4 vegetation, 5 bare soil. Everything else (0 nodata,
+# 1 saturated, 2 dark, 3 cloud shadow, 6 water, 7 unclassified, 8/9/10 cloud,
+# 11 snow) is dropped so clouds/shadows don't poison the field mean.
+KEEP_SCL = {4, 5}
 # Sentinel-2 L2A (processing baseline ≥ 04.00, i.e. all scenes since Jan 2022):
 # surface reflectance = (DN - 1000) / 10000.
 DN_OFFSET, DN_SCALE = 1000.0, 10000.0
@@ -113,17 +113,21 @@ def _field_ndvi(geom4326, fbbox, scenes, max_try=4):
             sh = np.zeros_like(red, dtype=scl_up.dtype)
             sh[: scl_up.shape[0], : scl_up.shape[1]] = scl_up
             scl_up = sh
-        keep = np.isin(scl_up, list(KEEP_SCL)) & (red > 0) & (nir > 0)
+        # L2A surface reflectance, clipped to a sane range.
+        r_refl = np.clip((red - DN_OFFSET) / DN_SCALE, 0.0, 1.5)
+        n_refl = np.clip((nir - DN_OFFSET) / DN_SCALE, 0.0, 1.5)
+        # Keep clear land pixels with real reflectance — the >0.1 sum drops
+        # near-zero-denominator pixels (shadow/edge) that would explode the ratio.
+        keep = (np.isin(scl_up, list(KEEP_SCL)) & (red > 0) & (nir > 0)
+                & ((n_refl + r_refl) > 0.1))
         field_px = int((red > 0).sum()) or 1
         if keep.sum() < max(10, 0.20 * field_px):
             if tried >= max_try:
                 break
             continue  # too cloudy over this field — older scene
-        r_refl = (red[keep] - DN_OFFSET) / DN_SCALE
-        n_refl = (nir[keep] - DN_OFFSET) / DN_SCALE
-        denom = n_refl + r_refl
-        ok = denom != 0
-        ndvi = float(np.mean((n_refl[ok] - r_refl[ok]) / denom[ok]))
+        denom = n_refl[keep] + r_refl[keep]
+        ndvi_px = np.clip((n_refl[keep] - r_refl[keep]) / denom, -1.0, 1.0)
+        ndvi = float(np.mean(ndvi_px))
         sdate = datetime.fromisoformat(
             feat["properties"]["datetime"].replace("Z", "+00:00")).date()
         return round(ndvi, 3), sdate
@@ -179,7 +183,8 @@ async def run(only_field, dry, days):
                 await conn.execute(text(
                     "DELETE FROM vegetation_weekly WHERE source='cropwise_bulk' "
                     "AND field_id=:i AND week_start=:ws"), {"i": r["id"], "ws": ws})
-    print(f"done: {done} field(s) updated, {miss} without a clear scene.", file=sys.stderr)
+    verb = "computed" if dry else "updated"
+    print(f"done: {done} field(s) {verb}, {miss} without a clear scene.", file=sys.stderr)
     return 0
 
 
