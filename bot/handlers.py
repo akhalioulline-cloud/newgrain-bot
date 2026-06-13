@@ -275,6 +275,7 @@ HELP_TEXT = (
     "/field <поле> — сводка по полю (обработки, погода, NDVI)\n"
     "/scan — проверка полей по NDVI (что требует внимания)\n"
     "/log — записать обработку (голосом или текстом)\n"
+    "/export <поле> — выгрузить операции по полю (Excel)\n"
     "/all — последние загрузки всех агрономов\n"
     "/finish — закончить незавершённое фото\n"
     "/problem — сообщить о проблеме или задать вопрос\n"
@@ -332,6 +333,26 @@ async def cmd_field(message: Message, command: CommandObject, user) -> None:
     except Exception:
         logger.exception("field map render failed for %s", q)
     await message.answer(await field_card_text(q, user["farm_id"]))
+
+
+@router.message(Command("export"))
+async def cmd_export(message: Message, command: CommandObject, user) -> None:
+    """Export a field's operations as a CropWise-style multiprotocol .xlsx and
+    send it as a Telegram document — the inverse of the import pipeline."""
+    q = (command.args or "").strip()
+    if not q:
+        await message.answer("Укажите поле, например: /export 119")
+        return
+    from catalog.export_multiprotocol import build_multiprotocol  # openpyxl — lazy
+    res = await build_multiprotocol(q, user["farm_id"])
+    if not res:
+        await message.answer(f"Поле не найдено: «{q}».")
+        return
+    fname, data = res
+    await message.answer_document(
+        BufferedInputFile(data, fname),
+        caption="📑 Операции по полю (multiprotocol)",
+    )
 
 
 @router.message(Command("scan"))
@@ -960,6 +981,8 @@ _TEXT_ALIASES = {
     "запись": "log",
     "записать": "log",
     "журнал": "log",
+    "экспорт": "export",
+    "выгрузка": "export",
 }
 
 
@@ -1006,6 +1029,10 @@ async def on_text_alias(
         await cmd_scan(message, user)
     elif alias_target == "log":
         await cmd_log(message, state)
+    elif alias_target == "export":
+        rest = message.text.strip().split(maxsplit=1)
+        await cmd_export(
+            message, CommandObject(command="export", args=rest[1] if len(rest) > 1 else ""), user)
 
 
 # ---------- treatment link: tie the photo to a recent field operation ----------

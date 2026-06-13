@@ -56,6 +56,7 @@ async def main() -> None:
         BotCommand(command="field", description="Сводка по полю: /field 76/108"),
         BotCommand(command="scan", description="Проверка полей по NDVI"),
         BotCommand(command="log", description="Записать обработку (голосом/текстом)"),
+        BotCommand(command="export", description="Выгрузить операции по полю: /export 119"),
         BotCommand(command="all", description="Загрузки всех агрономов"),
         BotCommand(command="finish", description="Закончить незавершённое фото"),
         BotCommand(command="cancel", description="Отменить текущую загрузку"),
