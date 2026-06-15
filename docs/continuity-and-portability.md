@@ -44,12 +44,27 @@ notes** (the ML training set) and the **nightly DB dump** — pushed to a bucket
 > *not* a model for replicating *other customers'* RU personal data abroad — that
 > would violate 152-ФЗ. See §5.
 
-### Already built (inert until you provide a bucket)
+### Status: LIVE since 2026-06-15 — AWS S3 bucket `flagleaf-archive-ngc` (us-east-2)
+
+First full mirror: 56 objects (41 photos, 6 voice, 1 reference sheet, 8 DB dumps),
+0 failures. Restore verified: the latest dump downloaded from the bucket
+decompressed cleanly (6.8→53.1 MB, 13 tables) and ends with pg_dump's
+`PostgreSQL database dump complete` marker. The IAM key (`flagleaf-mirror`) is
+scoped list/read/write only — **no delete** — so the archive is append-only.
 
 | Piece | File | Behaviour with no offsite keys |
 |---|---|---|
 | DB dump → offsite | `backup.sh` step 3 | prints "skipping", does nothing |
 | Photos/voice → offsite | `catalog/mirror_offsite.py` | prints "skipping", exits 0 |
+| Manual/cron run wrapper | `scripts/offsite-mirror.sh` (local only — see note) | — |
+
+> **Why the owner runs the mirror, not Claude:** Claude's safety system
+> hard-blocks bulk data egress to an external bucket (it can't distinguish an
+> owner's archive from exfiltration), so the first run and the cron install are
+> done by the founder in their own terminal. `scripts/offsite-mirror.sh` was
+> written for this but its commit was also blocked, so it lives only in the local
+> working tree; the founder uses the direct `docker compose … python -m
+> catalog.mirror_offsite` command instead.
 
 Both read these env vars (kept in `.env`, and later in Lockbox):
 
@@ -64,23 +79,24 @@ OFFSITE_S3_REGION     # e.g. us-west-002 / eu-central-1  (optional)
 The photo mirror is **incremental** — it copies only objects not already in the
 offsite bucket, so it's cheap to run nightly even as the photo set grows.
 
-### To activate (founder + Claude)
+### Operating it
 
-1. **Founder:** create a bucket with an overseas provider. Two good options:
-   - **Backblaze B2** — cheapest, S3-compatible, simple. Recommended for an archive.
-   - **AWS S3** — pricier, but it's also where a future GCP/AWS rebuild would read
-     from, so one fewer moving part if you go that way.
-2. **Founder:** create an access key/secret scoped to that one bucket; give them
-   to Claude (or add straight into Lockbox).
-3. **Claude:** put the five `OFFSITE_S3_*` values in the server `.env` (and add
-   them to Lockbox secret `flagleaf-prod` so they survive redeploys).
-4. **Claude:** wire the nightly mirror into cron, right after the backup:
-   ```
-   30 3 * * *  cd /home/newgrain/newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot python -m catalog.mirror_offsite >> /home/newgrain/mirror.log 2>&1
-   ```
-5. **Claude:** run one full mirror by hand, then **test a restore** (download the
-   latest dump from the offsite bucket, load it into a throwaway Postgres, count
-   rows) so we *know* the archive is recoverable — not just that it exists.
+- **Config** lives in the server `.env` (the five `OFFSITE_S3_*` keys). It is **not
+  yet in Lockbox**, so a from-scratch VM rebuild would need it re-added — fold that
+  into the key rotation below.
+- **Nightly run** (founder installs once, in their own terminal):
+  ```
+  30 3 * * *  cd /home/newgrain/newgrain-bot && docker compose -f docker-compose.prod.yml run --rm -T bot python -m catalog.mirror_offsite >> /home/newgrain/mirror.log 2>&1
+  ```
+- **Manual run:** the same `docker compose … python -m catalog.mirror_offsite`.
+
+### Open follow-ups
+
+- [ ] **Founder:** install the nightly cron line above (one SSH command).
+- [ ] **Rotate the AWS key** — the secret passed through a chat transcript. Create a
+      fresh access key for `flagleaf-mirror`, put it in the server `.env` **and**
+      Lockbox secret `flagleaf-prod` (add `fetch-secrets.sh` handling), delete the old key.
+- [ ] Drop the leftover `_healthcheck.txt` from the bucket (the key can't delete; do it from the AWS console).
 
 ---
 
@@ -169,9 +185,10 @@ already in place.
 
 ## 6. What's pending (needs the founder)
 
-- [ ] **Create the overseas bucket** (Backblaze B2 or AWS S3) + a scoped key, and
-      hand the keys over. Everything in §2 activates the moment these exist.
-- [ ] (then, Claude) add `OFFSITE_S3_*` to `.env` + Lockbox, wire the mirror cron,
-      run the first mirror, and test a restore.
+The archive is **live and verified** (AWS S3 `flagleaf-archive-ngc`, us-east-2,
+2026-06-15). Remaining items, all tracked in §2 "Open follow-ups":
 
-Until then, the code is shipped and inert — no behaviour change, no errors.
+- [ ] **Install the nightly cron** (founder, one SSH command).
+- [ ] **Rotate the AWS access key** (it passed through chat) and store the new one
+      in `.env` **and** Lockbox.
+- [ ] Delete the leftover `_healthcheck.txt` from the bucket via the AWS console.
