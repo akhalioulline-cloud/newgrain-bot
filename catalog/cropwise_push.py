@@ -109,7 +109,7 @@ def resolve_cw_field(our_field, cat):
 def build_payload(our_field, parsed, cat, local_key):
     """Return (payload, warnings). our_field = (name, number, area)."""
     warnings = []
-    fld = resolve_cw_field(our_field, parsed.get("category"))
+    fld = resolve_cw_field(our_field, cat)
     if not fld:
         return None, [f"field not found in Cropwise: {our_field[0]}"]
     field_id, shape_id = fld
