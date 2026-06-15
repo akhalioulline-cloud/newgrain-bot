@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from bot.config import settings
-from bot.moa import moa_lines, ndvi_anomaly_samecrop
+from bot.moa import moa_lines, ndvi_anomalies_all, ndvi_anomaly_samecrop
 
 engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 
@@ -184,19 +184,19 @@ async def get_pending_submission(user_id: int):
 
 
 async def ndvi_scan(farm_id: int | None = None):
-    """Proactive NDVI check across pilot fields. Reuses the same-crop anomaly
-    engine the /field card uses, run over every pilot field at once. Returns
-    (as_of_week, results) where results = [{name, crop, lines, note}] — `lines`
-    is non-empty only for fields whose recent NDVI deviates from the same-crop
-    norm. The digest layer decides what to say."""
+    """Proactive NDVI check across ALL farm fields (not just pilots). Uses the
+    batch same-crop anomaly engine (one pooled baseline) so scanning ~300 fields
+    stays fast. Returns (as_of_week, results) where results = [{name, crop, lines,
+    note}] for fields we could actually evaluate (have current-season NDVI + a
+    same-crop baseline); `lines` is non-empty only for anomalies."""
     async with engine.connect() as conn:
-        sql = "SELECT id, name, crop FROM fields WHERE is_pilot"
+        sql = "SELECT id, name, crop FROM fields"
         params = {}
         if farm_id:
-            sql += " AND farm_id = :f"
+            sql += " WHERE farm_id = :f"
             params["f"] = farm_id
         sql += " ORDER BY id"
-        pilots = (await conn.execute(text(sql), params)).mappings().all()
+        fields = (await conn.execute(text(sql), params)).mappings().all()
         cropc = (await conn.execute(text(
             "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
         all_ndvi = (await conn.execute(text(
@@ -205,11 +205,16 @@ async def ndvi_scan(farm_id: int | None = None):
         as_of = (await conn.execute(text(
             "SELECT max(week_start) FROM vegetation_weekly"))).scalar()
     crop_map = {(f, y): c for f, y, c in cropc}
+    anomalies = ndvi_anomalies_all([f["id"] for f in fields], crop_map, all_ndvi)
     results = []
-    for p in pilots:
-        lines, note = ndvi_anomaly_samecrop(p["id"], crop_map, all_ndvi)
-        results.append({"name": p["name"], "crop": p["crop"],
-                        "lines": lines, "note": note})
+    for f in fields:
+        res = anomalies.get(f["id"])
+        if not res:
+            continue
+        lines, note = res
+        if note.startswith("база"):   # evaluated (has a same-crop baseline)
+            results.append({"name": f["name"], "crop": f["crop"],
+                            "lines": lines, "note": note})
     return as_of, results
 
 

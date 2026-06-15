@@ -340,3 +340,52 @@ def ndvi_anomaly_samecrop(target_fid, crop_map, ndvi_rows, top=3):
         if 14 <= wn <= 26 and nd - prev <= -0.12:
             found[ws] = f"  {ws:%d.%m.%Y}: NDVI упал {prev:.2f}→{nd:.2f} (возможный стресс)"
     return [found[k] for k in sorted(found, reverse=True)][:top], note
+
+
+def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
+    """Batch version of ndvi_anomaly_samecrop for scanning many fields at once.
+    Precomputes the same-crop week-of-year baseline ONCE (pooled across all
+    fields/years) instead of rebuilding it per field — O(rows) total, not
+    O(rows × fields). Returns {field_id: (lines, note)} for evaluated fields.
+    (Unlike the single-field version it doesn't exclude the target field's own
+    current year from its baseline — negligible with 100+ pooled field-years.)"""
+    by_field = defaultdict(list)                       # fid -> [(ws, wn, nd)]
+    base = defaultdict(lambda: defaultdict(list))      # crop -> wn -> [nd]
+    for f, ws, wn, nd in ndvi_rows:
+        if not wn:
+            continue
+        nd = float(nd)
+        by_field[f].append((ws, wn, nd))
+        crop = crop_map.get((f, ws.year))
+        if crop:
+            base[crop][wn].append(nd)
+    baseln = {crop: {wn: mean(v) for wn, v in wks.items() if len(v) >= 2}
+              for crop, wks in base.items()}
+
+    out = {}
+    for fid in field_ids:
+        rows_t = by_field.get(fid)
+        if not rows_t:
+            continue
+        cur_year = max(ws.year for ws, _, _ in rows_t)
+        cur_crop = crop_map.get((fid, cur_year))
+        if not cur_crop:
+            continue
+        cb = baseln.get(cur_crop)
+        if not cb:
+            out[fid] = ([], f"нет истории по культуре «{cur_crop}» для сравнения")
+            continue
+        cur_weeks = sorted([(ws, wn, nd) for ws, wn, nd in rows_t if ws.year == cur_year])
+        found = {}
+        for ws, wn, nd in cur_weeks:
+            b = cb.get(wn)
+            if b is not None and 14 <= wn <= 40 and nd < b - 0.12:
+                found[ws] = f"  {ws:%d.%m.%Y}: NDVI {nd:.2f} — ниже нормы по культуре ({b:.2f})"
+        for i in range(1, len(cur_weeks)):
+            ws, wn, nd = cur_weeks[i]
+            prev = cur_weeks[i - 1][2]
+            if 14 <= wn <= 26 and nd - prev <= -0.12:
+                found[ws] = f"  {ws:%d.%m.%Y}: NDVI упал {prev:.2f}→{nd:.2f} (возможный стресс)"
+        out[fid] = ([found[k] for k in sorted(found, reverse=True)][:top],
+                    f"база: «{cur_crop}»")
+    return out

@@ -30,11 +30,14 @@ def format_digest(as_of, results) -> str:
     if not flagged:
         return f"{head}\n\n✓ Все {total} полей в норме."
     out = [head, f"\n⚠️ Требуют внимания ({len(flagged)} из {total}):"]
-    for r in flagged:
+    cap = 30  # keep the message well under Telegram's 4096-char limit
+    for r in flagged[:cap]:
         # the anomaly engine already phrases each line in plain Russian
         # (e.g. "… NDVI 0.45 — ниже нормы по культуре (0.60)")
         out.append(f"\n• {r['name']} ({r['crop'] or '—'}):")
         out.append(r["lines"][0].strip())
+    if len(flagged) > cap:
+        out.append(f"\n…и ещё {len(flagged) - cap} полей с отклонениями (см. /scan).")
     ok = total - len(flagged)
     if ok:
         out.append(f"\nОстальные {ok} — в норме.")
