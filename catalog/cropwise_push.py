@@ -22,9 +22,8 @@ import re
 import sys
 
 import requests
-from sqlalchemy import text
 
-from bot.db import engine
+from bot.db import resolve_field
 from bot.parse_op import parse_operation
 from catalog.cropwise_ops_sync import BASE, HEADERS, _all, _lead_int, _norm, _parse_date
 
@@ -157,18 +156,13 @@ def create_operation(payload):
     return r.status_code, r.text
 
 
-async def _resolve_our_field(field_ref):
-    """Find our DB field from a parsed field reference (number or name)."""
-    num = _lead_int(str(field_ref or ""))
-    async with engine.connect() as conn:
-        if num is not None:
-            rows = (await conn.execute(text(
-                "SELECT name, area_ha FROM fields WHERE is_pilot "
-                "AND btrim(regexp_replace(split_part(name,' · ',1),'^Поле\\s+','')) = :n"
-            ), {"n": str(num)})).all()
-            if len(rows) == 1:
-                return (rows[0][0], num, rows[0][1])
-    return None
+async def _resolve_our_field(field_ref, farm_id=None):
+    """Our DB field (name, leading-number, area) from a parsed field reference,
+    via the same resolver the bot uses (handles 'Поле 121/140' vs 'Поле N · Группа')."""
+    row = await resolve_field(str(field_ref or ""), farm_id)
+    if not row:
+        return None
+    return (row["name"], _lead_int(row["name"]), row["area_ha"])
 
 
 def _key(our_field, parsed):
