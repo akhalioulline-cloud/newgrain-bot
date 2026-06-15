@@ -142,7 +142,9 @@ What carries over vs. what's still needed:
 - The recreate-abroad runbook (§3) → that *is* the "stand up the non-RU instance"
   playbook.
 - The swap surface (§4) → the same swaps a non-RU instance needs.
-- The `farms.region` hook (migration 0021) → the column the eventual routing keys on.
+- The `farms.data_residency` hook (migration 0021) → the column the eventual
+  routing keys on. (Named distinctly because `farms.region` already exists and
+  means the *agronomic* region, e.g. 'ЦЧР' — not data location.)
 
 **Still needed (the separate, later build):**
 - **Region-aware multi-tenancy** — each farm tagged with its region; the app

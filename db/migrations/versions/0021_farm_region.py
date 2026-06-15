@@ -1,10 +1,12 @@
-"""add farms.region — the data-residency hook for a future dual-market launch
+"""add farms.data_residency — the data-residency hook for a future dual-market launch
 
-A farm's region records WHERE its data must live (RU personal data stays on
-Russian infra under 152-ФЗ; a future non-RU channel keeps its customers' data
-abroad). Nothing reads it yet — it's a cheap forward hook so the eventual
-region-aware routing has a column to key on, and so today's single farm is
-explicitly tagged 'RU' rather than implicitly assumed.
+NOTE the name: farms already has a `region` column (VARCHAR, e.g. 'ЦЧР') that
+means the *agronomic* region — do NOT overload it. This adds a *separate*
+`data_residency` column recording WHERE a farm's data must legally live: RU
+personal data stays on Russian infra under 152-ФЗ; a future non-RU channel keeps
+its customers' data abroad. Nothing reads it yet — it's a cheap forward hook so
+the eventual region-aware routing has a column to key on, and so today's single
+farm is explicitly tagged 'RU' rather than implicitly assumed.
 
 See docs/continuity-and-portability.md for the dual-market / relocation model.
 
@@ -23,8 +25,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE farms ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'RU'")
+    op.execute("ALTER TABLE farms ADD COLUMN IF NOT EXISTS data_residency TEXT NOT NULL DEFAULT 'RU'")
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE farms DROP COLUMN IF EXISTS region")
+    op.execute("ALTER TABLE farms DROP COLUMN IF EXISTS data_residency")
