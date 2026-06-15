@@ -37,16 +37,24 @@ def _get(path, **params):
 
 
 def _all(path, **params):
-    """All rows of a v3 resource via id-based pagination (from_id exclusive)."""
+    """All rows of a v3 resource via id-based pagination (from_id exclusive).
+
+    Page until the API returns an EMPTY page — do not stop on a short page. Some
+    endpoints (notably `fields`) cap per_page well below the requested 1000
+    (~100), so a <1000 page is normal mid-stream, not the end. The old code
+    stopped on the first short page and so only ever saw the first ~100 fields.
+    A no-forward-progress guard prevents an infinite loop if from_id is ignored.
+    """
     out, from_id = [], 0
     while True:
         rows = _get(path, from_id=from_id, per_page=1000, **params).get("data", [])
         if not rows:
             break
         out.extend(rows)
-        if len(rows) < 1000:
+        nxt = max(r["id"] for r in rows)
+        if nxt <= from_id:        # API didn't advance — stop rather than loop forever
             break
-        from_id = max(r["id"] for r in rows)
+        from_id = nxt
     return out
 
 
