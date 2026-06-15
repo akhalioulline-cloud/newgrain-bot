@@ -183,6 +183,45 @@ async def get_pending_submission(user_id: int):
         return result.mappings().first()
 
 
+def _norm_crop(c):
+    """Canonicalize crop labels so pooling isn't split (e.g. 'Пшеница озимая' and
+    'Озимая пшеница' → one label; winter vs spring wheat kept separate — they
+    have different phenology)."""
+    c = (c or "").strip()
+    low = c.lower()
+    if "пшениц" in low and "озим" in low:
+        return "Озимая пшеница"
+    if "пшениц" in low and ("яров" in low or "весн" in low):
+        return "Яровая пшеница"
+    return c
+
+
+async def _crop_sow_maps(conn):
+    """Build {(field_id, year): crop} and {(field_id, year): sow_date} for the
+    phenology (days-after-sowing) baseline. field_treatments gives crop + the
+    actual sowing-op date per season (2021-26); field_crops (2025-27) overlays as
+    the authoritative source (and correctly pairs winter crops with their autumn
+    sow date)."""
+    crop_map, sow_map = {}, {}
+    for fid, season, crop in (await conn.execute(text(
+        "SELECT field_id, season, mode() WITHIN GROUP (ORDER BY crop) FROM field_treatments "
+        "WHERE crop IS NOT NULL AND crop <> '' AND season IS NOT NULL "
+        "GROUP BY field_id, season"))).all():
+        crop_map[(fid, season)] = _norm_crop(crop)
+    for fid, season, sow in (await conn.execute(text(
+        "SELECT field_id, season, min(treatment_date) FROM field_treatments "
+        "WHERE op_category = 'sowing' AND treatment_date IS NOT NULL AND season IS NOT NULL "
+        "GROUP BY field_id, season"))).all():
+        sow_map[(fid, season)] = sow
+    for fid, yr, crop, sow in (await conn.execute(text(
+        "SELECT field_id, year, crop, sow_date FROM field_crops"))).all():
+        if crop:
+            crop_map[(fid, yr)] = _norm_crop(crop)
+        if sow:
+            sow_map[(fid, yr)] = sow
+    return crop_map, sow_map
+
+
 async def ndvi_scan(farm_id: int | None = None):
     """Proactive NDVI check across ALL farm fields (not just pilots). Uses the
     batch same-crop anomaly engine (one pooled baseline) so scanning ~300 fields
@@ -197,15 +236,13 @@ async def ndvi_scan(farm_id: int | None = None):
             params["f"] = farm_id
         sql += " ORDER BY id"
         fields = (await conn.execute(text(sql), params)).mappings().all()
-        cropc = (await conn.execute(text(
-            "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
+        crop_map, sow_map = await _crop_sow_maps(conn)
         all_ndvi = (await conn.execute(text(
             "SELECT field_id, week_start, week_no, ndvi, source FROM vegetation_weekly "
             "WHERE ndvi IS NOT NULL"))).all()
         as_of = (await conn.execute(text(
             "SELECT max(week_start) FROM vegetation_weekly"))).scalar()
-    crop_map = {(f, y): c for f, y, c in cropc}
-    anomalies = ndvi_anomalies_all([f["id"] for f in fields], crop_map, all_ndvi)
+    anomalies = ndvi_anomalies_all([f["id"] for f in fields], crop_map, sow_map, all_ndvi)
     results = []
     for f in fields:
         res = anomalies.get(f["id"])
@@ -637,9 +674,8 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         prot = (await conn.execute(text(
             "SELECT active_substance, season FROM field_treatments WHERE field_id=:i "
             "AND op_category='protection' AND active_substance IS NOT NULL"), {"i": fid})).all()
-        # cross-field data for the same-crop NDVI baseline (farm-wide rotation)
-        cropc = (await conn.execute(text(
-            "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
+        # cross-field data for the same-crop, same-phase NDVI baseline
+        crop_map, sow_map = await _crop_sow_maps(conn)
         all_ndvi = (await conn.execute(text(
             "SELECT field_id, week_start, week_no, ndvi, source FROM vegetation_weekly "
             "WHERE ndvi IS NOT NULL"))).all()
@@ -724,8 +760,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         lines.append(f"\n☁️ Погода (регион): {w.c} дней ({w.lo:%Y}–{w.hi:%Y})")
     if ndvi:
         lines.append("🌱 NDVI (свежие→старые): " + ", ".join(f"{float(x):g}" for x in ndvi))
-    crop_map = {(f_id, yr): crop for f_id, yr, crop in cropc}
-    al, note = ndvi_anomaly_samecrop(fid, crop_map, all_ndvi)
+    al, note = ndvi_anomaly_samecrop(fid, crop_map, sow_map, all_ndvi)
     if al:
         lines.append(f"\n⚠️ NDVI-аномалии ({note}):")
         lines.extend(al)

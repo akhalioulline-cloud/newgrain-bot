@@ -301,77 +301,94 @@ def moa_lines(rows, top=6):
     return lines
 
 
-def _flag_weeks(cur_weeks, cb, top=3):
-    """Anomaly lines for one field's current-year weeks against the same-crop
-    baseline `cb` ({week_no: mean}). Each entry of cur_weeks is
-    (week_start, week_no, ndvi, source). Tuned to avoid false positives:
+def _flag_weeks(cur_weeks, cb):
+    """Anomaly line(s) for one field's current-season readings against the
+    same-crop, same-PHASE baseline `cb` ({das_bucket: mean}), where das_bucket =
+    days-after-sowing // 7. Each entry of cur_weeks is (week_start, das, ndvi,
+    source). A later-sown field is compared to peers at the SAME days-after-sowing,
+    so it isn't flagged just for being young. Guards against false positives:
       • SUSTAINED below norm — flag only when the TWO most-recent readings are
-        both below norm, so a single off week (e.g. a hazy satellite pass) is
-        ignored.
-      • SHARP drop — only between two consecutive SAME-SOURCE readings, so the
-        CropWise-history → Sentinel transition can't manufacture a 'drop'."""
+        both below their phase norm (a single hazy pass is ignored).
+      • SHARP drop — only between two consecutive SAME-SOURCE readings (so the
+        CropWise→Sentinel seam can't manufacture a drop), during active growth."""
     if len(cur_weeks) < 2:
         return []
-    ws1, wn1, nd1, src1 = cur_weeks[-1]
-    ws0, wn0, nd0, src0 = cur_weeks[-2]
-    b1, b0 = cb.get(wn1), cb.get(wn0)
-    below1 = b1 is not None and 14 <= wn1 <= 40 and nd1 < b1 - 0.12
-    below0 = b0 is not None and 14 <= wn0 <= 40 and nd0 < b0 - 0.12
+    ws1, das1, nd1, src1 = cur_weeks[-1]
+    ws0, das0, nd0, src0 = cur_weeks[-2]
+    b1, b0 = cb.get(das1 // 7), cb.get(das0 // 7)
+    below1 = b1 is not None and 14 <= das1 <= 300 and nd1 < b1 - 0.12
+    below0 = b0 is not None and 14 <= das0 <= 300 and nd0 < b0 - 0.12
     line = None
     if below1 and below0:
-        line = (f"  {ws1:%d.%m.%Y}: NDVI {nd1:.2f} — ниже нормы по культуре "
+        line = (f"  {ws1:%d.%m.%Y}: NDVI {nd1:.2f} — ниже нормы для фазы "
                 f"({b1:.2f}), 2-ю неделю подряд")
-    if 14 <= wn1 <= 26 and src1 == src0 and nd1 - nd0 <= -0.12:
+    if 14 <= das1 <= 110 and src1 == src0 and nd1 - nd0 <= -0.12:
         line = f"  {ws1:%d.%m.%Y}: NDVI упал {nd0:.2f}→{nd1:.2f} (возможный стресс)"
     return [line] if line else []
 
 
-def ndvi_anomaly_samecrop(target_fid, crop_map, ndvi_rows, top=3):
-    """Flag the target field if its recent NDVI deviates from the SAME-CROP
-    week-of-year baseline (pooled across all fields/years). ndvi_rows:
+def _das(ws, sow):
+    """Days after sowing for a reading on week `ws` given sow date `sow`."""
+    return (ws - sow).days
+
+
+def ndvi_anomaly_samecrop(target_fid, crop_map, sow_map, ndvi_rows, top=3):
+    """Flag the target field if its recent NDVI is below the SAME-CROP, SAME-PHASE
+    baseline (same days-after-sowing, pooled across all field-years with a known
+    sow date). crop_map/sow_map: {(field_id, year): crop / sow_date}. ndvi_rows:
     [(field_id, week_start, week_no, ndvi, source), …]. Returns (lines, note)."""
-    rows_t = [(ws, wn, float(nd), src) for (f, ws, wn, nd, src) in ndvi_rows if f == target_fid and wn]
-    if not rows_t:
+    cur_rows = [(ws, nd, src) for (f, ws, wn, nd, src) in ndvi_rows if f == target_fid]
+    if not cur_rows:
         return [], ""
-    cur_year = max(ws.year for ws, _, _, _ in rows_t)
+    cur_year = max(ws.year for ws, _, _ in cur_rows)
     cur_crop = crop_map.get((target_fid, cur_year))
     if not cur_crop:
         return [], ""
 
     base, fy = defaultdict(list), set()
     for f, ws, wn, nd, src in ndvi_rows:
-        if not wn:
+        crop = crop_map.get((f, ws.year))
+        sow = sow_map.get((f, ws.year))
+        if crop != cur_crop or not sow:
             continue
-        if crop_map.get((f, ws.year)) == cur_crop and not (f == target_fid and ws.year == cur_year):
-            base[wn].append(float(nd))
+        if f == target_fid and ws.year == cur_year:   # exclude self-current-year
+            continue
+        d = _das(ws, sow)
+        if d >= 0:
+            base[d // 7].append(float(nd))
             fy.add((f, ws.year))
-    baseln = {wn: mean(v) for wn, v in base.items() if len(v) >= 2}
+    baseln = {b: mean(v) for b, v in base.items() if len(v) >= 2}
     if not baseln:
         return [], f"нет истории по культуре «{cur_crop}» для сравнения"
 
-    note = f"база: «{cur_crop}», {len(fy)} полей-лет"
-    cur_weeks = sorted([(ws, wn, nd, src) for ws, wn, nd, src in rows_t if ws.year == cur_year])
-    return _flag_weeks(cur_weeks, baseln, top), note
+    sow = sow_map.get((target_fid, cur_year))
+    if not sow:
+        return [], f"нет даты сева для «{cur_crop}» {cur_year}"
+    cur_weeks = sorted([(ws, _das(ws, sow), float(nd), src)
+                        for ws, nd, src in cur_rows if ws.year == cur_year and _das(ws, sow) >= 0])
+    note = f"база: «{cur_crop}» по фазе, {len(fy)} полей-лет"
+    return _flag_weeks(cur_weeks, baseln), note
 
 
-def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
-    """Batch version of ndvi_anomaly_samecrop for scanning many fields at once.
-    Precomputes the same-crop week-of-year baseline ONCE (pooled across all
-    fields/years) instead of rebuilding it per field — O(rows) total, not
-    O(rows × fields). Returns {field_id: (lines, note)} for evaluated fields.
-    ndvi_rows: [(field_id, week_start, week_no, ndvi, source), …]."""
-    by_field = defaultdict(list)                       # fid -> [(ws, wn, nd, src)]
-    base = defaultdict(lambda: defaultdict(list))      # crop -> wn -> [nd]
+def ndvi_anomalies_all(field_ids, crop_map, sow_map, ndvi_rows, top=3):
+    """Batch same-crop, same-PHASE NDVI anomaly scan over many fields. Precomputes
+    the per-crop days-after-sowing baseline ONCE — O(rows), not O(rows × fields).
+    Returns {field_id: (lines, note)} for evaluated fields (known crop + sow date)."""
+    by_field = defaultdict(list)                       # fid -> [(ws, das, nd, src)]
+    base = defaultdict(lambda: defaultdict(list))      # crop -> das_bucket -> [nd]
     for f, ws, wn, nd, src in ndvi_rows:
-        if not wn:
+        crop = crop_map.get((f, ws.year))
+        sow = sow_map.get((f, ws.year))
+        if not crop or not sow:
+            continue
+        d = _das(ws, sow)
+        if d < 0:
             continue
         nd = float(nd)
-        by_field[f].append((ws, wn, nd, src))
-        crop = crop_map.get((f, ws.year))
-        if crop:
-            base[crop][wn].append(nd)
-    baseln = {crop: {wn: mean(v) for wn, v in wks.items() if len(v) >= 2}
-              for crop, wks in base.items()}
+        by_field[f].append((ws, d, nd, src))
+        base[crop][d // 7].append(nd)
+    baseln = {crop: {b: mean(v) for b, v in bk.items() if len(v) >= 2}
+              for crop, bk in base.items()}
 
     out = {}
     for fid in field_ids:
@@ -386,6 +403,6 @@ def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
         if not cb:
             out[fid] = ([], f"нет истории по культуре «{cur_crop}» для сравнения")
             continue
-        cur_weeks = sorted([(ws, wn, nd, src) for ws, wn, nd, src in rows_t if ws.year == cur_year])
-        out[fid] = (_flag_weeks(cur_weeks, cb, top), f"база: «{cur_crop}»")
+        cur_weeks = sorted([(ws, d, nd, src) for ws, d, nd, src in rows_t if ws.year == cur_year])
+        out[fid] = (_flag_weeks(cur_weeks, cb), f"база: «{cur_crop}» по фазе")
     return out
