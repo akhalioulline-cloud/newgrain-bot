@@ -60,7 +60,7 @@ def _search_scenes(bbox, days):
         "collections": [COLLECTION],
         "bbox": bbox,
         "datetime": f"{start:%Y-%m-%dT%H:%M:%SZ}/{end:%Y-%m-%dT%H:%M:%SZ}",
-        "query": {"eo:cloud_cover": {"lt": 90}},
+        "query": {"eo:cloud_cover": {"lt": 60}},   # stricter: skip very cloudy scenes
         "limit": 100,
     }
     r = requests.post(STAC, json=payload, timeout=60)
@@ -123,10 +123,13 @@ def _field_ndvi(geom4326, fbbox, scenes, max_try=4):
         keep = (np.isin(scl_up, list(KEEP_SCL)) & (red > 0) & (nir > 0)
                 & ((n_refl + r_refl) > 0.1))
         field_px = int((red > 0).sum()) or 1
-        if keep.sum() < max(10, 0.20 * field_px):
+        # require a majority of the field's pixels to be clear land (veg/soil) —
+        # a hazy/partly-cloudy pass over this field is skipped for an older scene
+        # rather than producing a contaminated low NDVI.
+        if keep.sum() < max(20, 0.60 * field_px):
             if tried >= max_try:
                 break
-            continue  # too cloudy over this field — older scene
+            continue
         denom = n_refl[keep] + r_refl[keep]
         ndvi_px = np.clip((n_refl[keep] - r_refl[keep]) / denom, -1.0, 1.0)
         ndvi = float(np.mean(ndvi_px))

@@ -301,23 +301,45 @@ def moa_lines(rows, top=6):
     return lines
 
 
+def _flag_weeks(cur_weeks, cb, top=3):
+    """Anomaly lines for one field's current-year weeks against the same-crop
+    baseline `cb` ({week_no: mean}). Each entry of cur_weeks is
+    (week_start, week_no, ndvi, source). Tuned to avoid false positives:
+      • SUSTAINED below norm — flag only when the TWO most-recent readings are
+        both below norm, so a single off week (e.g. a hazy satellite pass) is
+        ignored.
+      • SHARP drop — only between two consecutive SAME-SOURCE readings, so the
+        CropWise-history → Sentinel transition can't manufacture a 'drop'."""
+    if len(cur_weeks) < 2:
+        return []
+    ws1, wn1, nd1, src1 = cur_weeks[-1]
+    ws0, wn0, nd0, src0 = cur_weeks[-2]
+    b1, b0 = cb.get(wn1), cb.get(wn0)
+    below1 = b1 is not None and 14 <= wn1 <= 40 and nd1 < b1 - 0.12
+    below0 = b0 is not None and 14 <= wn0 <= 40 and nd0 < b0 - 0.12
+    line = None
+    if below1 and below0:
+        line = (f"  {ws1:%d.%m.%Y}: NDVI {nd1:.2f} — ниже нормы по культуре "
+                f"({b1:.2f}), 2-ю неделю подряд")
+    if 14 <= wn1 <= 26 and src1 == src0 and nd1 - nd0 <= -0.12:
+        line = f"  {ws1:%d.%m.%Y}: NDVI упал {nd0:.2f}→{nd1:.2f} (возможный стресс)"
+    return [line] if line else []
+
+
 def ndvi_anomaly_samecrop(target_fid, crop_map, ndvi_rows, top=3):
-    """Flag recent weeks of the target field below the SAME-CROP week-of-year
-    baseline, pooled across all fields/years to beat data scarcity.
-      crop_map: {(field_id, year): crop}
-      ndvi_rows: [(field_id, week_start, week_no, ndvi), …] (ndvi not null)
-    Returns (lines, note). note states the baseline basis (or that history is
-    insufficient for the current crop)."""
-    rows_t = [(ws, wn, float(nd)) for (f, ws, wn, nd) in ndvi_rows if f == target_fid and wn]
+    """Flag the target field if its recent NDVI deviates from the SAME-CROP
+    week-of-year baseline (pooled across all fields/years). ndvi_rows:
+    [(field_id, week_start, week_no, ndvi, source), …]. Returns (lines, note)."""
+    rows_t = [(ws, wn, float(nd), src) for (f, ws, wn, nd, src) in ndvi_rows if f == target_fid and wn]
     if not rows_t:
         return [], ""
-    cur_year = max(ws.year for ws, _, _ in rows_t)
+    cur_year = max(ws.year for ws, _, _, _ in rows_t)
     cur_crop = crop_map.get((target_fid, cur_year))
     if not cur_crop:
         return [], ""
 
     base, fy = defaultdict(list), set()
-    for f, ws, wn, nd in ndvi_rows:
+    for f, ws, wn, nd, src in ndvi_rows:
         if not wn:
             continue
         if crop_map.get((f, ws.year)) == cur_crop and not (f == target_fid and ws.year == cur_year):
@@ -328,18 +350,8 @@ def ndvi_anomaly_samecrop(target_fid, crop_map, ndvi_rows, top=3):
         return [], f"нет истории по культуре «{cur_crop}» для сравнения"
 
     note = f"база: «{cur_crop}», {len(fy)} полей-лет"
-    cur_weeks = sorted([(ws, wn, nd) for ws, wn, nd in rows_t if ws.year == cur_year])
-    found = {}
-    for ws, wn, nd in cur_weeks:
-        b = baseln.get(wn)
-        if b is not None and 14 <= wn <= 40 and nd < b - 0.12:
-            found[ws] = f"  {ws:%d.%m.%Y}: NDVI {nd:.2f} — ниже нормы по культуре ({b:.2f})"
-    for i in range(1, len(cur_weeks)):
-        ws, wn, nd = cur_weeks[i]
-        prev = cur_weeks[i - 1][2]
-        if 14 <= wn <= 26 and nd - prev <= -0.12:
-            found[ws] = f"  {ws:%d.%m.%Y}: NDVI упал {prev:.2f}→{nd:.2f} (возможный стресс)"
-    return [found[k] for k in sorted(found, reverse=True)][:top], note
+    cur_weeks = sorted([(ws, wn, nd, src) for ws, wn, nd, src in rows_t if ws.year == cur_year])
+    return _flag_weeks(cur_weeks, baseln, top), note
 
 
 def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
@@ -347,15 +359,14 @@ def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
     Precomputes the same-crop week-of-year baseline ONCE (pooled across all
     fields/years) instead of rebuilding it per field — O(rows) total, not
     O(rows × fields). Returns {field_id: (lines, note)} for evaluated fields.
-    (Unlike the single-field version it doesn't exclude the target field's own
-    current year from its baseline — negligible with 100+ pooled field-years.)"""
-    by_field = defaultdict(list)                       # fid -> [(ws, wn, nd)]
+    ndvi_rows: [(field_id, week_start, week_no, ndvi, source), …]."""
+    by_field = defaultdict(list)                       # fid -> [(ws, wn, nd, src)]
     base = defaultdict(lambda: defaultdict(list))      # crop -> wn -> [nd]
-    for f, ws, wn, nd in ndvi_rows:
+    for f, ws, wn, nd, src in ndvi_rows:
         if not wn:
             continue
         nd = float(nd)
-        by_field[f].append((ws, wn, nd))
+        by_field[f].append((ws, wn, nd, src))
         crop = crop_map.get((f, ws.year))
         if crop:
             base[crop][wn].append(nd)
@@ -367,7 +378,7 @@ def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
         rows_t = by_field.get(fid)
         if not rows_t:
             continue
-        cur_year = max(ws.year for ws, _, _ in rows_t)
+        cur_year = max(ws.year for ws, _, _, _ in rows_t)
         cur_crop = crop_map.get((fid, cur_year))
         if not cur_crop:
             continue
@@ -375,17 +386,6 @@ def ndvi_anomalies_all(field_ids, crop_map, ndvi_rows, top=3):
         if not cb:
             out[fid] = ([], f"нет истории по культуре «{cur_crop}» для сравнения")
             continue
-        cur_weeks = sorted([(ws, wn, nd) for ws, wn, nd in rows_t if ws.year == cur_year])
-        found = {}
-        for ws, wn, nd in cur_weeks:
-            b = cb.get(wn)
-            if b is not None and 14 <= wn <= 40 and nd < b - 0.12:
-                found[ws] = f"  {ws:%d.%m.%Y}: NDVI {nd:.2f} — ниже нормы по культуре ({b:.2f})"
-        for i in range(1, len(cur_weeks)):
-            ws, wn, nd = cur_weeks[i]
-            prev = cur_weeks[i - 1][2]
-            if 14 <= wn <= 26 and nd - prev <= -0.12:
-                found[ws] = f"  {ws:%d.%m.%Y}: NDVI упал {prev:.2f}→{nd:.2f} (возможный стресс)"
-        out[fid] = ([found[k] for k in sorted(found, reverse=True)][:top],
-                    f"база: «{cur_crop}»")
+        cur_weeks = sorted([(ws, wn, nd, src) for ws, wn, nd, src in rows_t if ws.year == cur_year])
+        out[fid] = (_flag_weeks(cur_weeks, cb, top), f"база: «{cur_crop}»")
     return out

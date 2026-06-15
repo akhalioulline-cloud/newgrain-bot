@@ -200,7 +200,7 @@ async def ndvi_scan(farm_id: int | None = None):
         cropc = (await conn.execute(text(
             "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
         all_ndvi = (await conn.execute(text(
-            "SELECT field_id, week_start, week_no, ndvi FROM vegetation_weekly "
+            "SELECT field_id, week_start, week_no, ndvi, source FROM vegetation_weekly "
             "WHERE ndvi IS NOT NULL"))).all()
         as_of = (await conn.execute(text(
             "SELECT max(week_start) FROM vegetation_weekly"))).scalar()
@@ -641,7 +641,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         cropc = (await conn.execute(text(
             "SELECT field_id, year, crop FROM field_crops WHERE crop IS NOT NULL"))).all()
         all_ndvi = (await conn.execute(text(
-            "SELECT field_id, week_start, week_no, ndvi FROM vegetation_weekly "
+            "SELECT field_id, week_start, week_no, ndvi, source FROM vegetation_weekly "
             "WHERE ndvi IS NOT NULL"))).all()
         fcrops = (await conn.execute(text(
             "SELECT year, crop, variety, yield_cwt FROM field_crops WHERE field_id=:i "
