@@ -81,7 +81,7 @@ def load_catalogs():
         area = f.get("area") or f.get("calculated_area") or f.get("cadastral_area")
         if area:
             by_numarea[(_lead_int(num), round(float(area)))] = (f["id"], shape)
-    return {"prods": prods, "units": units, "by_name": by_name, "by_numarea": by_numarea}
+    return {"prods": prods, "by_name": by_name, "by_numarea": by_numarea}
 
 
 def resolve_work_type(parsed):
