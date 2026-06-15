@@ -149,7 +149,12 @@ def build_payload(our_field, parsed, cat, local_key):
             rate, unit_lbl = _split_dose(parsed.get("dose"))
             item = {"applicable_type": atype, "applicable_id": pid, "rate_basis": "per_area"}
             if rate is not None:
-                item.update(planned_rate=rate, planned_value=rate)
+                # a 'done' op needs the FACT (applied) values, not just planned —
+                # else strict_ami_done_status rejects it. fact_amount = rate × area.
+                amount = round(rate * float(area), 4) if area else None
+                item.update(planned_rate=rate, planned_value=rate, value=rate, fact_rate=rate)
+                if amount is not None:
+                    item.update(planned_amount=amount, fact_amount=amount)
             if unit_id:
                 item["unit_id"] = unit_id          # the product's own base unit (л/кг/ц…)
             if unit_lbl:
