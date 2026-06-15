@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import re
 import sys
+from datetime import date, timedelta
 
 import requests
 
@@ -65,15 +66,11 @@ def _split_dose(dose):
 def load_catalogs():
     """Cropwise dictionaries needed to build a create payload."""
     groups = {g["id"]: g["name"] for g in _all("field_groups")}
-    units = {}
-    for u in _all("units"):
-        lbl = (u.get("label") or u.get("name") or "").strip().lower()
-        if lbl:
-            units.setdefault(lbl, u["id"])
-    prods = {}  # norm name -> (applicable_type, id)
+    prods = {}  # norm name -> (applicable_type, id, base_unit_id)
     for atype, path in TYPE_BY_DICT:
         for p in _all(path):
-            prods.setdefault(_norm_prod(p["name"]), (atype, p["id"]))
+            unit = p.get("base_inventory_unit_id") or p.get("wh_item_base_unit_id")
+            prods.setdefault(_norm_prod(p["name"]), (atype, p["id"], unit))
     by_name, by_numarea = {}, {}
     for f in _all("fields"):
         num = str(f.get("name", "")).strip()
@@ -106,6 +103,16 @@ def resolve_cw_field(our_field, cat):
     return None
 
 
+def _resolve_date(d):
+    """'today'/'yesterday'/ISO/None -> a date (defaults to today)."""
+    s = str(d or "today").strip().lower()
+    if s in ("today", "сегодня"):
+        return date.today()
+    if s in ("yesterday", "вчера"):
+        return date.today() - timedelta(days=1)
+    return _parse_date(d) or date.today()
+
+
 def build_payload(our_field, parsed, cat, local_key):
     """Return (payload, warnings). our_field = (name, number, area)."""
     warnings = []
@@ -113,17 +120,17 @@ def build_payload(our_field, parsed, cat, local_key):
     if not fld:
         return None, [f"field not found in Cropwise: {our_field[0]}"]
     field_id, shape_id = fld
-    td = _parse_date(parsed.get("date")) or None
-    iso = td.isoformat() if td else None
+    iso = _resolve_date(parsed.get("date")).isoformat()
     area = parsed.get("area_ha")
     payload = {
         "field_id": field_id,
         "field_shape_id": shape_id,
         "work_type_id": resolve_work_type(parsed),
         "idempotency_key": local_key,
+        "completed_date": iso,
+        "planned_start_date": iso,
+        "planned_end_date": iso,
     }
-    if iso:
-        payload.update(completed_date=iso, planned_start_date=iso, planned_end_date=iso)
     if area:
         payload.update(planned_area=float(area), completed_area=float(area))
 
@@ -133,18 +140,15 @@ def build_payload(our_field, parsed, cat, local_key):
         if not pm:
             warnings.append(f"product not matched, left for manual entry: {product!r}")
         else:
-            atype, pid = pm
+            atype, pid, unit_id = pm
             rate, unit_lbl = _split_dose(parsed.get("dose"))
             item = {"applicable_type": atype, "applicable_id": pid, "rate_basis": "per_area"}
             if rate is not None:
                 item.update(planned_rate=rate, planned_value=rate)
+            if unit_id:
+                item["unit_id"] = unit_id          # the product's own base unit (л/кг/ц…)
             if unit_lbl:
-                uid = cat["units"].get(unit_lbl)
-                if uid:
-                    item["unit_id"] = uid
-                    item["rate_unit_label_per_area"] = unit_lbl
-                else:
-                    warnings.append(f"unit not matched: {unit_lbl!r}")
+                item["rate_unit_label_per_area"] = unit_lbl
             payload["application_mix_items"] = [item]
     return payload, warnings
 
