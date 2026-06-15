@@ -164,10 +164,23 @@ def build_payload(our_field, parsed, cat, local_key):
 
 
 def create_operation(payload):
-    r = requests.post(f"{BASE}/agro_operations",
-                      headers={**HEADERS, "Content-Type": "application/json"},
-                      json={"data": payload}, timeout=90)
-    return r.status_code, r.text
+    """Two-step: CREATE the operation (with its mix), then UPDATE it to done — you
+    can't mark done in the create request because the applications (внесения) don't
+    exist yet at validation time. Returns (status_code, detail)."""
+    hdr = {**HEADERS, "Content-Type": "application/json"}
+    body = {k: v for k, v in payload.items() if k != "status"}   # create as a plan first
+    r = requests.post(f"{BASE}/agro_operations", headers=hdr, json={"data": body}, timeout=90)
+    if r.status_code not in (200, 201):
+        return r.status_code, r.text
+    op_id = r.json()["data"]["id"]
+    done = {"status": "done"}
+    for k in ("completed_date", "completed_datetime", "completed_percents",
+              "completed_area", "calc_by"):
+        if k in payload:
+            done[k] = payload[k]
+    r2 = requests.put(f"{BASE}/agro_operations/{op_id}", headers=hdr,
+                      json={"data": done}, timeout=90)
+    return r2.status_code, f"created id={op_id}; mark-done HTTP {r2.status_code}: {r2.text[:400]}"
 
 
 async def _resolve_our_field(field_ref, farm_id=None):
