@@ -185,10 +185,14 @@ already in place.
 
 ## 6. What's pending (needs the founder)
 
-The archive is **live and verified** (AWS S3 `flagleaf-archive-ngc`, us-east-2,
-2026-06-15). Remaining items, all tracked in §2 "Open follow-ups":
+The archive is **live, verified, and self-maintaining** (AWS S3 `flagleaf-archive-ngc`,
+us-east-2, 2026-06-15). Cron installed: `0 3` backup (DB → local+Yandex+offsite),
+`30 3` photo/voice mirror. Key rotated to scoped `flagleaf-mirror` key, old key deleted.
 
-- [ ] **Install the nightly cron** (founder, one SSH command).
-- [ ] **Rotate the AWS access key** (it passed through chat) and store the new one
-      in `.env` **and** Lockbox.
+Remaining items, all minor:
+
+- [ ] **Put `OFFSITE_S3_*` in Lockbox** — currently server `.env` only, so a from-scratch
+      VM rebuild needs them re-added. Fold into the next secrets-handling work.
 - [ ] Delete the leftover `_healthcheck.txt` from the bucket via the AWS console.
+- [ ] *(optional)* Re-key without pasting the secret through chat, if the residual
+      transcript-exposure of the archive key is a concern.
