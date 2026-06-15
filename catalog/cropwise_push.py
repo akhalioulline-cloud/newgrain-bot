@@ -77,10 +77,10 @@ def load_catalogs():
         grp = groups.get(f.get("field_group_id"), "")
         target = f"Поле {num} · {grp}" if grp else f"Поле {num}"
         shape = f.get("field_shape_id") or f.get("current_field_shape_id") or f["id"]
-        by_name[_norm(target)] = (f["id"], shape)
         area = f.get("area") or f.get("calculated_area") or f.get("cadastral_area")
+        by_name[_norm(target)] = (f["id"], shape, area)
         if area:
-            by_numarea[(_lead_int(num), round(float(area)))] = (f["id"], shape)
+            by_numarea[(_lead_int(num), round(float(area)))] = (f["id"], shape, area)
     return {"prods": prods, "by_name": by_name, "by_numarea": by_numarea}
 
 
@@ -119,15 +119,20 @@ def build_payload(our_field, parsed, cat, local_key):
     fld = resolve_cw_field(our_field, cat)
     if not fld:
         return None, [f"field not found in Cropwise: {our_field[0]}"]
-    field_id, shape_id = fld
+    field_id, shape_id, cw_area = fld
     iso = _resolve_date(parsed.get("date")).isoformat()
-    area = parsed.get("area_ha")
+    area = parsed.get("area_ha") or cw_area
+    # status=done so a reported operation lands as COMPLETED (not a plan).
     payload = {
         "field_id": field_id,
         "field_shape_id": shape_id,
         "work_type_id": resolve_work_type(parsed),
         "idempotency_key": local_key,
+        "status": "done",
+        "calc_by": "rate",
         "completed_date": iso,
+        "completed_datetime": f"{iso}T12:00:00",
+        "completed_percents": 100.0,
         "planned_start_date": iso,
         "planned_end_date": iso,
     }
@@ -202,11 +207,20 @@ async def _cli(note, do_post):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--note", required=True, help="voice/NL operation note to parse + push")
+    ap.add_argument("--note", help="voice/NL operation note to parse + push")
     ap.add_argument("--post", action="store_true", help="REALLY create it in Cropwise (else dry)")
+    ap.add_argument("--delete", help="delete an agro_operation by id (test cleanup)")
     args = ap.parse_args()
     if not HEADERS["X-User-Api-Token"]:
         print("✗ CROPWISE_OPERATIONS_TOKEN not set", file=sys.stderr)
+        return 1
+    if args.delete:
+        r = requests.delete(f"{BASE}/agro_operations/{args.delete}", headers=HEADERS, timeout=60)
+        print(f"DELETE {args.delete} -> HTTP {r.status_code}", file=sys.stderr)
+        print(r.text[:300], file=sys.stderr)
+        return 0 if r.status_code in (200, 204) else 1
+    if not args.note:
+        print("need --note or --delete", file=sys.stderr)
         return 1
     return asyncio.run(_cli(args.note, args.post))
 
