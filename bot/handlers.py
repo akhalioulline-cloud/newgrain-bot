@@ -498,8 +498,6 @@ def _announce_store():
 
 @router.message(Command("announce"))
 async def cmd_announce(message: Message, user) -> None:
-    if not _is_admin(user):
-        return
     key = f"flagleaf:announce_seen:{message.chat.id}"
     rc = _announce_store()
     try:
@@ -1249,6 +1247,8 @@ _TEXT_ALIASES = {
     "журнал": "log",
     "экспорт": "export",
     "выгрузка": "export",
+    "новости": "announce",
+    "обновления": "announce",
 }
 
 
@@ -1281,6 +1281,8 @@ async def on_text_alias(
             await cmd_field(message, CommandObject(command="field", args=rest[1]), user)
         else:
             await cmd_fields(message, user)
+    elif alias_target == "announce":
+        await cmd_announce(message, user)
     elif alias_target == "finish":
         await cmd_finish(message, state, user)
     elif alias_target == "cancel":
