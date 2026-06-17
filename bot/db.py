@@ -363,6 +363,20 @@ async def get_top_species():
         return result.mappings().all()
 
 
+async def get_all_species():
+    """All weed species (russian + latin) — grounding for the photo-suggestion LLM."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT russian_name, latin_name FROM weed_species ORDER BY russian_name"
+        ))).mappings().all()
+
+
+async def get_submission_image_url(submission_id):
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT image_url FROM submissions WHERE id = :i"), {"i": submission_id})).scalar()
+
+
 async def get_species(species_id: int):
     async with engine.connect() as conn:
         result = await conn.execute(

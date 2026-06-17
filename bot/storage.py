@@ -36,6 +36,17 @@ async def upload_bytes(key: str, data: bytes, content_type: str) -> str:
     return await asyncio.to_thread(_upload_sync, key, data, content_type)
 
 
+def _download_sync(key: str) -> bytes:
+    return _client.get_object(Bucket=settings.s3_bucket, Key=key)["Body"].read()
+
+
+async def download_bytes(key: str) -> bytes:
+    """Fetch an object's bytes by key (or full s3://bucket/key URL)."""
+    if key.startswith("s3://"):
+        key = key.split("/", 3)[3]
+    return await asyncio.to_thread(_download_sync, key)
+
+
 def _delete_sync(key: str) -> None:
     _client.delete_object(Bucket=settings.s3_bucket, Key=key)
 

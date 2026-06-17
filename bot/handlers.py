@@ -30,7 +30,9 @@ from bot.db import (
     find_duplicate_submission,
     find_fields_by_number,
     get_all_recent_submissions,
+    get_all_species,
     get_pending_submission,
+    get_submission_image_url,
     get_field_polygons,
     get_pilot_fields,
     get_recent_treatments,
@@ -52,7 +54,8 @@ from bot import fieldmap
 from bot.ndvi_watch import format_digest
 from bot.parse_op import parse_operation
 from bot.states import OpLogForm, PhotoForm, ProblemForm
-from bot.storage import delete_object, upload_bytes
+from bot.storage import delete_object, download_bytes, upload_bytes
+from bot.weed_suggest import suggest_species
 from bot.transcribe import transcribe
 from bot.translate_llm import translate_ru_to_en
 from bot.taxonomy import DISEASES, DISEASE_RU_BY_CODE, PESTS_PICKER, PEST_RU_BY_CODE
@@ -804,10 +807,11 @@ async def on_subcategory(callback: CallbackQuery, state: FSMContext) -> None:
     await _ack(callback)
     value = callback.data.split(":")[1]
 
-    # "Другой" — branch to free-text input.
+    # "Другой" — the agronomist can't ID it. Offer photo-based guesses (in-RU
+    # qwen3.6) as a memory jog, then fall back to free-text.
     if value == "other":
         await state.set_state(PhotoForm.subcategory_other)
-        await callback.message.answer("Введите название вида (или /skip):")
+        await _offer_weed_suggestions(callback, state)
         return
 
     data = await state.get_data()
@@ -817,6 +821,51 @@ async def on_subcategory(callback: CallbackQuery, state: FSMContext) -> None:
             await update_submission(data["submission_id"], subcategory=species["latin_name"])
     await state.set_state(PhotoForm.comment)
     await callback.message.answer("Комментарий? Текстом или голосом. Или /skip.")
+
+
+async def _offer_weed_suggestions(callback: CallbackQuery, state: FSMContext) -> None:
+    """On «Другой» for a weed: ask the in-RU vision model for ≤3 ranked guesses and
+    show them as buttons (+ free-text). Any failure → plain free-text prompt."""
+    data = await state.get_data()
+    await callback.message.answer("Смотрю на фото, секунду… 🔎")
+    guesses = []
+    try:
+        url = await get_submission_image_url(data["submission_id"])
+        if url:
+            img = await download_bytes(url)
+            guesses = await suggest_species(img, await get_all_species())
+    except Exception:
+        logger.exception("weed suggestion failed")
+    if not guesses:
+        await callback.message.answer("Введите название вида (или /skip):")
+        return
+    await state.update_data(weed_guesses=[g["ru"] for g in guesses])
+    rows = [[InlineKeyboardButton(text=g["ru"], callback_data=f"wsug:{i}")]
+            for i, g in enumerate(guesses)]
+    rows.append([InlineKeyboardButton(text="✏️ Впишу сам", callback_data="wsug:own")])
+    await callback.message.answer(
+        "По фото похоже на (не точно — выберите или впишите своё):",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@router.callback_query(PhotoForm.subcategory_other, F.data.startswith("wsug:"))
+async def on_weed_suggestion(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    v = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    if v == "own":
+        await callback.message.answer("Введите название вида (или /skip):")
+        return
+    guesses = data.get("weed_guesses") or []
+    name = guesses[int(v)] if v.isdigit() and int(v) < len(guesses) else None
+    if not name:
+        await callback.message.answer("Введите название вида (или /skip):")
+        return
+    await update_submission(data["submission_id"], subcategory=name)
+    await state.set_state(PhotoForm.comment)
+    await callback.message.answer(
+        f"Записал: «{name}». Комментарий? Текстом или голосом. Или /skip.")
 
 
 @router.message(PhotoForm.subcategory_other, Command("skip"))
