@@ -55,7 +55,7 @@ from bot.db import (
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
 from bot.parse_op import parse_operation
-from bot.states import CAReview, OpLogForm, PhotoForm, ProblemForm
+from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
 from bot.weed_suggest import suggest_species
 from bot.transcribe import transcribe
@@ -1665,6 +1665,73 @@ async def on_stray_text_in_button_step(message: Message, state: FSMContext) -> N
     await message.answer(
         "Сейчас нужно выбрать вариант кнопкой выше 👆\n"
         "Если хотите выйти и начать заново — отправьте /cancel.")
+
+
+# ---------- «Задания машин»: paste a field report → create CropWise operations ----
+# Евгения (operator) pastes a report from Max; the bot parses it, previews the plan,
+# and on ✅ creates one agro-operation per field (tank mix + work-type + driver).
+def _looks_like_report(message: Message) -> bool:
+    lines = [l for l in (message.text or "").splitlines() if l.strip()]
+    if len(lines) < 3:
+        return False
+    field_re = re.compile(r"^\s*\d+[а-яa-z]?\s*/\s*\d+\s*$", re.I)
+    return any(field_re.match(l) for l in lines) or any(re.match(r"^\s*#\s*\d+", l) for l in lines)
+
+
+@router.message(StateFilter(None), F.text, _looks_like_report)
+async def on_report_paste(message: Message, state: FSMContext, user) -> None:
+    if user["role"] not in ("admin", "chief_agronomist", "annotator"):
+        return  # only operators turn reports into CropWise tasks
+    await message.answer("Разбираю отчёт…")
+    from catalog.cropwise_report import build_plan, plan_summary
+    try:
+        plan, err = await build_plan(message.text)
+    except Exception:
+        logger.exception("report parse failed")
+        plan, err = None, "ошибка разбора"
+    if not plan:
+        await message.answer(f"Не удалось разобрать отчёт ({err}). Проверьте формат.")
+        return
+    await state.update_data(report_plan=plan)
+    await state.set_state(CAReport.confirm)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Создать в CropWise", callback_data="rep:create"),
+        InlineKeyboardButton(text="✗ Отмена", callback_data="rep:cancel")]])
+    await message.answer(plan_summary(plan), reply_markup=kb)
+
+
+@router.callback_query(CAReport.confirm, F.data == "rep:create")
+async def on_report_create(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    plan = (await state.get_data()).get("report_plan")
+    await state.clear()
+    if not plan:
+        await callback.message.answer("Нечего создавать.")
+        return
+    await callback.message.answer("Создаю операции в CropWise…")
+    from catalog.cropwise_report import create_ops
+    try:
+        results = await asyncio.to_thread(create_ops, plan)
+    except Exception:
+        logger.exception("report create failed")
+        await callback.message.answer("⚠️ Ошибка при создании операций в CropWise.")
+        return
+    ok = sum(1 for r in results if r.get("ok"))
+    lines = [f"{'✓' if r.get('ok') else '✗'} поле {r['field']}"
+             + ("" if r.get("ok") else f" — {r.get('msg') or ('код ' + str(r.get('code')))}")
+             for r in results]
+    await callback.message.answer(
+        f"Готово: создано {ok}/{len(results)} операций в CropWise.\n" + "\n".join(lines)
+        + "\n\nПроверьте в CropWise.")
+
+
+@router.callback_query(CAReport.confirm, F.data == "rep:cancel")
+async def on_report_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    await state.clear()
+    await callback.message.answer("Отменено.")
 
 
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never

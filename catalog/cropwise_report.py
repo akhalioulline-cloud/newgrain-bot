@@ -13,15 +13,17 @@ Stage 2 (--post): create the operations in CropWise (run by the operator).
 """
 import argparse
 import asyncio
+import hashlib
 import json
 import re
 import sys
+from datetime import date, datetime, timedelta
 
 import requests
 
 from bot.config import settings
 from catalog.cropwise_push import (_all, _lead_int, _match_product, _norm, _split_dose,
-                                   load_catalogs)
+                                   create_operation, load_catalogs)
 
 BASE = "https://operations.cropwise.com/api/v3"
 
@@ -116,80 +118,138 @@ def match_driver(surname, users):
     return None
 
 
-async def build_plan(report):
-    parsed = await parse_report(report)
-    if not parsed:
-        return None, "не удалось разобрать отчёт"
-    cat = load_catalogs()
-    machines = _all("machines")
-    users = _all("users")
-    agri = [w for w in _all("work_types") if w.get("agri")]
-
-    wt = match_work_type(parsed.get("operation", ""), agri)
-    machine = match_machine(parsed.get("machine_number"), parsed.get("machine_type"), machines)
-    driver = match_driver(parsed.get("driver"), users)
-
-    prods = []
-    for p in parsed.get("products", []):
-        pm = _match_product(p.get("name", ""), cat["prods"])
-        rate, unit = _split_dose(p.get("dose"))
-        prods.append({"name": p.get("name"), "dose": p.get("dose"), "matched": bool(pm),
-                      "applicable": pm, "rate": rate, "unit_label": unit})
-
-    fields = []
-    for f in parsed.get("fields", []):
-        fid = cat["by_name"].get(_norm("Поле " + str(f))) or \
-            cat["by_numarea"].get((_lead_int(str(f)),
-                                   _area_of(f)))
-        # fall back: try matching the leading number to a single CW field
-        fields.append({"ref": f, "cw": fid})
-
-    plan = {"parsed": parsed, "work_type": wt, "machine": machine, "driver": driver,
-            "products": prods, "fields": fields}
-    return plan, None
-
-
 def _area_of(ref):
     m = re.search(r"/(\d+)", str(ref))
     return int(m.group(1)) if m else None
 
 
-def _print_plan(plan):
-    p = plan["parsed"]
-    wt = plan["work_type"]
-    print("Операция :", p.get("operation"),
-          "→ work_type", (f"{wt['id']} «{wt['name']}»" if wt else "НЕ СОПОСТАВЛЕНО ✗"))
-    m = plan["machine"]
-    print("Машина   :", p.get("machine_type"), p.get("machine_number"),
-          "→", (f"id {m['id']} «{m['name']}»" if m else "НЕ НАЙДЕНА ✗"))
-    d = plan["driver"]
-    print("Механизатор:", p.get("driver"),
-          "→", (f"id {d['id']} «{d['username']}»" if d else "НЕ НАЙДЕН ✗"))
-    print("Препараты:")
-    for pr in plan["products"]:
-        print(f"   {'✓' if pr['matched'] else '✗'} {pr['name']} {pr['dose'] or ''}"
-              + ("" if pr['matched'] else "  (нет в каталоге)"))
-    print("Поля:")
+async def build_plan(report):
+    """Parse + resolve a report into a SLIM, JSON-serialisable plan (safe for FSM
+    storage). Returns (plan, None) or (None, error)."""
+    parsed = await parse_report(report)
+    if not parsed:
+        return None, "не удалось разобрать отчёт"
+    cat = load_catalogs()
+    wt = match_work_type(parsed.get("operation", ""),
+                         [w for w in _all("work_types") if w.get("agri")])
+    machine = match_machine(parsed.get("machine_number"), parsed.get("machine_type"), _all("machines"))
+    driver = match_driver(parsed.get("driver"), _all("users"))
+
+    products = []
+    for p in parsed.get("products", []):
+        pm = _match_product(p.get("name", ""), cat["prods"])
+        rate, unit = _split_dose(p.get("dose"))
+        products.append({"name": p.get("name"), "dose": p.get("dose"), "matched": bool(pm),
+                         "atype": pm[0] if pm else None, "aid": pm[1] if pm else None,
+                         "unit_id": pm[2] if pm else None, "rate": rate, "unit_label": unit})
+    fields = []
+    for f in parsed.get("fields", []):
+        cw = cat["by_name"].get(_norm("Поле " + str(f))) or \
+            cat["by_numarea"].get((_lead_int(str(f)), _area_of(f)))
+        fields.append({"ref": str(f), "field_id": cw[0] if cw else None,
+                       "shape": cw[1] if cw else None, "area": cw[2] if cw else None})
+
+    plan = {
+        "operation": parsed.get("operation"),
+        "work_type": {"id": wt["id"], "name": wt["name"]} if wt else None,
+        "machine": {"id": machine["id"], "name": machine["name"]} if machine else None,
+        "machine_raw": " ".join(x for x in (parsed.get("machine_type"),
+                                            str(parsed.get("machine_number") or "")) if x).strip(),
+        "driver": {"id": driver["id"], "name": driver.get("username")} if driver else None,
+        "driver_raw": parsed.get("driver"),
+        "products": products,
+        "fields": fields,
+    }
+    return plan, None
+
+
+def plan_summary(plan):
+    wt, m, d = plan["work_type"], plan["machine"], plan["driver"]
+    L = ["📋 Отчёт → CropWise (проверьте):",
+         f"Операция: {plan['operation']} → " +
+         (f"«{wt['name']}»" if wt else "⚠️ тип не определён"),
+         f"Машина: {plan['machine_raw'] or '—'} → " +
+         (f"«{m['name']}» (учитывается по GPS отдельно)" if m else "не найдена"),
+         f"Механизатор: {plan['driver_raw'] or '—'} → " +
+         (f"{d['name']} (ответственный)" if d else "не найден"),
+         "Препараты:"]
+    for p in plan["products"]:
+        L.append(f"  {'✓' if p['matched'] else '⚠️'} {p['name']} {p['dose'] or ''}" +
+                 ("" if p["matched"] else " (нет в каталоге)"))
+    nf = sum(1 for f in plan["fields"] if f["field_id"])
+    L.append(f"Поля ({nf}/{len(plan['fields'])} распознано):")
+    L.append("  " + ", ".join((("" if f["field_id"] else "⚠️") + f["ref"]) for f in plan["fields"]))
+    L.append(f"\nСоздать {nf} агрооперац. с баковой смесью?")
+    return "\n".join(L)
+
+
+def _mix_item(p, area):
+    item = {"applicable_type": p["atype"], "applicable_id": p["aid"], "rate_basis": "per_area"}
+    rate = p.get("rate")
+    if rate is not None:
+        amount = round(rate * float(area), 4) if area else None
+        item.update(planned_rate=rate, planned_value=rate, value=rate, fact_rate=rate)
+        if amount is not None:
+            item.update(planned_amount=amount, fact_amount=amount)
+    if p.get("unit_id"):
+        item["unit_id"] = p["unit_id"]
+    if p.get("unit_label"):
+        item["rate_unit_label_per_area"] = p["unit_label"]
+    return item
+
+
+def create_ops(plan):
+    """Create one completed agro-operation per resolved field (tank mix + work-type +
+    driver as responsible person). Sync — call via asyncio.to_thread. Returns results."""
+    wt = plan.get("work_type")
+    if not wt:
+        return [{"field": "—", "ok": False, "msg": "тип операции не определён"}]
+    today = date.today().isoformat()
+    cdt = (datetime.now() - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%S")
+    driver = plan.get("driver")
+    results = []
     for f in plan["fields"]:
-        print(f"   {'✓' if f['cw'] else '✗'} {f['ref']}"
-              + ("" if f['cw'] else "  (не сопоставлено)"))
-    n = sum(1 for f in plan["fields"] if f["cw"])
-    print(f"\nИтог: будет создано {n} агрооперац. (по одной на поле) с баковой смесью.")
+        if not f["field_id"]:
+            results.append({"field": f["ref"], "ok": False, "msg": "поле не сопоставлено"})
+            continue
+        area = f["area"]
+        payload = {
+            "field_id": f["field_id"], "field_shape_id": f["shape"], "work_type_id": wt["id"],
+            "idempotency_key": "flagleaf-rep-" + hashlib.sha1(
+                f"{f['field_id']}|{wt['id']}|{today}|{plan['operation']}".encode()).hexdigest()[:20],
+            "status": "done", "calc_by": "rate", "completed_date": today,
+            "completed_datetime": cdt, "completed_percents": 100.0,
+            "planned_start_date": today, "planned_end_date": today,
+        }
+        if area:
+            payload.update(planned_area=float(area), completed_area=float(area))
+        if driver:
+            payload["responsible_user_ids"] = [driver["id"]]
+        mix = [_mix_item(p, area) for p in plan["products"] if p["matched"]]
+        if mix:
+            payload["application_mix_items"] = mix
+        code, detail = create_operation(payload)
+        results.append({"field": f["ref"], "ok": code in (200, 201), "code": code,
+                        "detail": detail[:140]})
+    return results
 
 
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", help="report text (else read stdin)")
-    ap.add_argument("--post", action="store_true", help="create in CropWise (else dry preview)")
+    ap.add_argument("--post", action="store_true", help="create in CropWise (else dry)")
     a = ap.parse_args()
     report = a.text or sys.stdin.read()
     plan, err = await build_plan(report)
     if err:
         print("✗", err, file=sys.stderr)
         return 1
-    _print_plan(plan)
+    print(plan_summary(plan))
     if a.post:
-        print("\n[--post not implemented in stage 1 — preview only]", file=sys.stderr)
+        print("\n--- creating ---", file=sys.stderr)
+        for r in create_ops(plan):
+            print(("OK  " if r["ok"] else "FAIL") + f" поле {r['field']}: " +
+                  str(r.get("detail") or r.get("msg") or r.get("code")), file=sys.stderr)
     return 0
 
 

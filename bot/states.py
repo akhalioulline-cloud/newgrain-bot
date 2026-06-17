@@ -16,6 +16,10 @@ class CAReview(StatesGroup):
     editing = State()    # chief agronomist typing a corrected attribute value
 
 
+class CAReport(StatesGroup):
+    confirm = State()    # operator pasted a «Задания машин» report, awaiting ✅/✗
+
+
 class ProblemForm(StatesGroup):
     waiting = State()
 
