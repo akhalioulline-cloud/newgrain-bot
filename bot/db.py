@@ -377,6 +377,27 @@ async def get_submission_image_url(submission_id):
             "SELECT image_url FROM submissions WHERE id = :i"), {"i": submission_id})).scalar()
 
 
+async def get_chief_agronomists(farm_id):
+    """Active chief agronomists (reviewers) of a farm — who junior submissions go to."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT tg_user_id, full_name FROM users "
+            "WHERE role = 'chief_agronomist' AND is_active AND (:f IS NULL OR farm_id = :f)"),
+            {"f": farm_id})).mappings().all()
+
+
+async def get_submission_review(submission_id):
+    """Full attributes + submitter (for the CA review card / correction notices)."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT s.id, s.category, s.subcategory, s.comment_text, s.comment_voice_text, "
+            "s.image_url, s.status, f.name AS field_name, "
+            "u.full_name AS submitter, u.tg_user_id AS submitter_tg "
+            "FROM submissions s LEFT JOIN fields f ON f.id = s.field_id "
+            "LEFT JOIN users u ON u.id = s.user_id WHERE s.id = :i"),
+            {"i": submission_id})).mappings().first()
+
+
 async def get_species(species_id: int):
     async with engine.connect() as conn:
         result = await conn.execute(
@@ -446,6 +467,7 @@ async def update_submission(submission_id: str, **fields) -> None:
         "comment_voice_text_en",   # English (YandexGPT) of the voice note
         "treatment_id",            # FK → field_treatments (photo ↔ spray link)
         "treatment_note",          # free-text/voice treatment ("Другое")
+        "field_id",                # CA review can re-assign the field
         "status",
     }
     sets = [f"{key} = :{key}" for key in fields if key in allowed]

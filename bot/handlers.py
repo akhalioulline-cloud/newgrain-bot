@@ -31,8 +31,10 @@ from bot.db import (
     find_fields_by_number,
     get_all_recent_submissions,
     get_all_species,
+    get_chief_agronomists,
     get_pending_submission,
     get_submission_image_url,
+    get_submission_review,
     get_field_polygons,
     get_pilot_fields,
     get_recent_treatments,
@@ -53,7 +55,7 @@ from bot.db import (
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
 from bot.parse_op import parse_operation
-from bot.states import OpLogForm, PhotoForm, ProblemForm
+from bot.states import CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
 from bot.weed_suggest import suggest_species
 from bot.transcribe import transcribe
@@ -64,14 +66,14 @@ router = Router()
 logger = logging.getLogger("bot.handlers")
 
 
-async def _ack(callback: CallbackQuery) -> None:
+async def _ack(callback: CallbackQuery, text: str | None = None) -> None:
     """Acknowledge a callback, but never let it abort the handler. Through the
     Telegram relay an update can arrive late and the callback go stale; a raw
     `callback.answer()` would then throw and we'd lose the user's tap (the
     field/category/species selection). Swallowing it keeps the actual DB write
     running — the next prompt is a fresh message and reaches the user anyway."""
     try:
-        await callback.answer()
+        await callback.answer(text) if text else await callback.answer()
     except Exception:
         logger.debug("callback.answer() failed (stale query) — continuing")
 
@@ -90,6 +92,7 @@ CATEGORY_LABELS = {code: label for label, code in CATEGORIES}
 # where each photo is in the pipeline (e.g. already pushed to CVAT).
 STATUS_RU = {
     "awaiting_metadata": "не завершено",
+    "pending_review": "на проверке у старшего агронома",
     "ready_for_labeling": "ждёт разметки",
     "in_labeling": "в CVAT",
     "labeled": "размечено",
@@ -890,14 +893,156 @@ async def on_subcategory_other_text(message: Message, state: FSMContext) -> None
     await message.answer(f"Записал: «{typed}». Комментарий? Текстом или голосом. Или /skip.")
 
 
+# reverse of CATEGORIES, for parsing a CA's typed category correction
+_CAT_BY_RU = {label.lower(): code for label, code in CATEGORIES}
+_CAT_BY_RU.update({"сорняки": "weed", "болезни": "disease", "вредители": "pest"})
+
+
+def _review_caption(sub) -> str:
+    cat = CATEGORY_LABELS.get(sub["category"], sub["category"] or "—")
+    com = sub["comment_text"] or sub["comment_voice_text"]
+    lines = [
+        f"🔍 На проверку — прислал: {sub['submitter'] or '—'}",
+        f"📍 Поле: {sub['field_name'] or '—'}",
+        f"🏷 Категория: {cat}",
+        f"🌿 Вид: {sub['subcategory'] or '—'}",
+    ]
+    if com:
+        lines.append(f"💬 {com}")
+    lines.append("\nПроверьте атрибуты. Исправьте при необходимости, затем отправьте на разметку.")
+    return "\n".join(lines)
+
+
+def _review_kb(sid: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Поле", callback_data=f"rev:f:{sid}"),
+         InlineKeyboardButton(text="✏️ Вид", callback_data=f"rev:s:{sid}")],
+        [InlineKeyboardButton(text="✏️ Категория", callback_data=f"rev:c:{sid}"),
+         InlineKeyboardButton(text="✏️ Комментарий", callback_data=f"rev:m:{sid}")],
+        [InlineKeyboardButton(text="✅ Подтвердить и отправить на разметку",
+                              callback_data=f"rev:ok:{sid}")],
+    ])
+
+
+async def _send_review_card(bot, chat_id, sid: str) -> None:
+    sub = await get_submission_review(sid)
+    if not sub:
+        return
+    try:
+        img = await download_bytes(sub["image_url"])
+        await bot.send_photo(chat_id, BufferedInputFile(img, "photo.jpg"),
+                             caption=_review_caption(sub), reply_markup=_review_kb(sid))
+    except Exception:
+        logger.exception("send review card failed")
+        await bot.send_message(chat_id, _review_caption(sub), reply_markup=_review_kb(sid))
+
+
 async def _finalize(message: Message, state: FSMContext, user) -> None:
     data = await state.get_data()
-    await update_submission(data["submission_id"], status="ready_for_labeling")
+    sid = data["submission_id"]
     await state.clear()
     today, week = await count_user_submissions(user["id"])
-    await message.answer(
-        f"Записал. Сохранено ✓\nЗа сегодня: {today}. За неделю: {week}."
-    )
+    # Junior agronomists' photos go to the chief agronomist for review first;
+    # chief agronomist and admins post straight to the labeling pipeline.
+    if user["role"] == "agronomist":
+        await update_submission(sid, status="pending_review")
+        cas = await get_chief_agronomists(user["farm_id"])
+        for ca in cas:
+            await _send_review_card(message.bot, ca["tg_user_id"], sid)
+        note = "Отправлено старшему агроному на проверку ✓" if cas else \
+            "Сохранено ✓ (старший агроном не назначен — отправлено как есть)."
+        if not cas:                       # no CA configured → don't strand it
+            await update_submission(sid, status="ready_for_labeling")
+        await message.answer(f"{note}\nЗа сегодня: {today}. За неделю: {week}.")
+    else:
+        await update_submission(sid, status="ready_for_labeling")
+        await message.answer(f"Записал. Сохранено ✓\nЗа сегодня: {today}. За неделю: {week}.")
+
+
+_REV_ATTR = {"f": "field", "s": "species", "c": "category", "m": "comment"}
+_REV_PROMPT = {
+    "field": "Введите номер поля:",
+    "species": "Введите вид (русское или латинское название):",
+    "category": "Введите категорию: сорняк / болезнь / вредитель / стресс / контроль / результат обработки",
+    "comment": "Введите комментарий:",
+}
+_ATTR_RU = {"field": "поле", "species": "вид", "category": "категорию", "comment": "комментарий"}
+
+
+@router.callback_query(F.data.startswith("rev:"))
+async def on_review(callback: CallbackQuery, state: FSMContext, user) -> None:
+    if user["role"] not in ("chief_agronomist", "admin"):
+        await _ack(callback, "Только старший агроном проверяет фото.")
+        return
+    _, action, sid = callback.data.split(":", 2)
+    if action == "ok":
+        await _ack(callback, "Отправлено на разметку ✓")
+        await _drop_kb(callback)
+        await update_submission(sid, status="ready_for_labeling")
+        sub = await get_submission_review(sid)
+        await callback.message.answer("✅ Отправлено на разметку.")
+        if sub and sub["submitter_tg"]:
+            try:
+                await callback.bot.send_message(
+                    sub["submitter_tg"], "✅ Ваше фото проверено старшим агрономом и "
+                    "отправлено на разметку. Спасибо!")
+            except Exception:
+                logger.exception("notify submitter (approve) failed")
+        return
+    attr = _REV_ATTR.get(action)
+    if not attr:
+        await _ack(callback)
+        return
+    await state.set_state(CAReview.editing)
+    await state.update_data(review_sid=sid, review_attr=attr)
+    await _ack(callback)
+    await callback.message.answer(_REV_PROMPT[attr])
+
+
+@router.message(CAReview.editing, F.text)
+async def on_review_edit(message: Message, state: FSMContext, user) -> None:
+    data = await state.get_data()
+    sid, attr = data.get("review_sid"), data.get("review_attr")
+    if not sid or not attr:
+        await state.clear()
+        return
+    val = message.text.strip()
+    sub = await get_submission_review(sid)
+    old = {"field": sub["field_name"], "species": sub["subcategory"],
+           "category": CATEGORY_LABELS.get(sub["category"], sub["category"]),
+           "comment": sub["comment_text"]}.get(attr) if sub else None
+    if attr == "field":
+        row = await resolve_field(val, user["farm_id"])
+        if not row:
+            await message.answer("Не нашёл такое поле. Введите номер ещё раз.")
+            return
+        await update_submission(sid, field_id=row["id"])
+        newval = row["name"]
+    elif attr == "species":
+        await update_submission(sid, subcategory=val)
+        newval = val
+    elif attr == "category":
+        code = _CAT_BY_RU.get(val.lower())
+        if not code:
+            await message.answer("Не понял категорию. Например: сорняк, болезнь, вредитель.")
+            return
+        await update_submission(sid, category=code)
+        newval = CATEGORY_LABELS.get(code, val)
+    else:  # comment
+        await update_submission(sid, comment_text=val)
+        newval = val
+    await state.set_state(None)
+    # notify the junior who submitted it
+    if sub and sub["submitter_tg"]:
+        try:
+            await message.bot.send_message(
+                sub["submitter_tg"],
+                f"✏️ Старший агроном исправил {_ATTR_RU[attr]} в вашем фото: "
+                f"«{old or '—'}» → «{newval}».")
+        except Exception:
+            logger.exception("notify submitter (correction) failed")
+    await message.answer("Исправлено ✓")
+    await _send_review_card(message.bot, message.chat.id, sid)
 
 
 def _treatment_kb(treatments) -> InlineKeyboardMarkup:

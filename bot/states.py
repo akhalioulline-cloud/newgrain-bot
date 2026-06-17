@@ -12,6 +12,10 @@ class PhotoForm(StatesGroup):
     treatment_note = State()     # waiting for free-text/voice "Другое" treatment
 
 
+class CAReview(StatesGroup):
+    editing = State()    # chief agronomist typing a corrected attribute value
+
+
 class ProblemForm(StatesGroup):
     waiting = State()
 
