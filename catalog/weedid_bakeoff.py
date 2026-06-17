@@ -99,6 +99,16 @@ def prompt_text(species):
             "Список видов:\n" + lst)
 
 
+_SERVED = {"v": None}
+
+
+def _note_served_model(v):
+    """Print, once, the model Google reports having actually run — proof it's pro."""
+    if v and not _SERVED["v"]:
+        _SERVED["v"] = v
+        print(f"  ▶ Google served modelVersion = {v}", file=sys.stderr, flush=True)
+
+
 def parse_json(txt):
     s = re.sub(r"^```(?:json)?|```$", "", (txt or "").strip(), flags=re.M).strip()
     for c in reversed(re.findall(r"\{[^{}]*\}", s)):   # prefer the LAST flat object
@@ -131,7 +141,9 @@ def call_gemini(img, prompt, key, model, tries=4):
             continue
         if r.status_code == 200:
             try:
-                txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                j = r.json()
+                _note_served_model(j.get("modelVersion"))   # what Google ACTUALLY ran
+                txt = j["candidates"][0]["content"]["parts"][0]["text"]
                 return parse_json(txt), txt.strip()
             except Exception as e:
                 return None, f"parse: {e}; {r.text[:160]}"
@@ -195,6 +207,7 @@ def main():
     if not key:
         print("missing API key", file=sys.stderr)
         return 1
+    print(f"  ▶ requesting: provider={a.provider}, model={model_name}", file=sys.stderr, flush=True)
     d = json.load(open(a.data))
     subs, species = d["subs"], d["species"]
     canon = build_canon(species)

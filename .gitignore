@@ -1,6 +1,8 @@
 # Secrets — never commit these
 .env.local
 .env
+.env.bak
+*.bak
 
 # Python
 __pycache__/
