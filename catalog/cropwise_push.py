@@ -51,6 +51,22 @@ def _norm_prod(p):
     return " ".join(s.split()).strip()
 
 
+def _match_product(name, prods):
+    """Map a product name → (applicable_type, id, base_unit_id). Exact normalized
+    match first; else a UNIQUE substring match so a short variety name («Гранова»)
+    still finds «Семена яровой пшеницы Гранова РС-1». None if ambiguous or no match."""
+    key = _norm_prod(name)
+    if not key:
+        return None
+    if key in prods:
+        return prods[key]
+    if len(key) >= 4:
+        hits = [v for k, v in prods.items() if key in k or k in key]
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+
 def _split_dose(dose):
     """'1.5 л/га' -> (1.5, 'л/га'); '0,15 ц/га' -> (0.15, 'ц/га'); None-safe."""
     if not dose:
@@ -150,7 +166,7 @@ def build_payload(our_field, parsed, cat, local_key):
 
     product = parsed.get("product")
     if product:
-        pm = cat["prods"].get(_norm_prod(product))
+        pm = _match_product(product, cat["prods"])
         if not pm:
             warnings.append(f"product not matched, left for manual entry: {product!r}")
         else:

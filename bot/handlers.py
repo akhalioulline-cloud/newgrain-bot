@@ -1136,7 +1136,7 @@ async def on_treatment_note_text(message: Message, state: FSMContext) -> None:
 _OP_CAT_RU = {
     "tillage": "обработка почвы", "sowing": "сев",
     "fertilizer": "внесение удобрений", "protection": "опрыскивание/СЗР",
-    "other": "операция",
+    "harvest": "уборка", "other": "операция",
 }
 
 
@@ -1261,6 +1261,48 @@ async def _continue_oplog(message: Message, state: FSMContext, op: dict) -> None
     await message.answer(summary, reply_markup=_oplog_confirm_kb())
 
 
+def _group_of(name: str) -> str:
+    """Отделение/группа from 'Поле 185 · Красное' → 'Красное' ('' if none)."""
+    return name.split(" · ", 1)[1].strip() if " · " in (name or "") else ""
+
+
+def _match_group(reply: str, choices) -> dict | None:
+    r = (reply or "").strip().lower().replace("ё", "е")
+    for c in choices:
+        g = _group_of(c["name"]).lower().replace("ё", "е")
+        if g and (r == g or r in g or g in r):
+            return c
+    return None
+
+
+async def _set_field(message: Message, state: FSMContext, op: dict, ref: str, farm_id) -> bool:
+    """Resolve a field reference into `op`. Across ALL farm fields, not just pilots.
+    True if set; False if it asked a clarifying question (number repeats in several
+    отделения, or not found) and left the FSM in OpLogForm.filling on the field slot."""
+    ref = (ref or "").strip()
+    cands = await find_fields_by_number(farm_id, ref)
+    if len(cands) == 1:
+        _apply_field(op, cands[0])
+        return True
+    if len(cands) > 1:                       # same number in several отделения → ask which
+        groups = [g for g in (_group_of(c["name"]) for c in cands) if g]
+        await state.update_data(op=op, slot="field", field_choices=[dict(c) for c in cands])
+        await state.set_state(OpLogForm.filling)
+        await message.answer(
+            f"Поле {ref} есть в нескольких отделениях: {', '.join(groups)}.\n"
+            f"Уточните отделение, например «{groups[0]}»." if groups else
+            f"Поле {ref} встречается несколько раз — укажите название полностью.")
+        return False
+    row = await resolve_field(ref, farm_id)  # looser name/substring fallback
+    if row:
+        _apply_field(op, row)
+        return True
+    await state.update_data(op=op, slot="field")
+    await state.set_state(OpLogForm.filling)
+    await message.answer("Не нашёл такое поле. Укажите номер ещё раз, например «119».")
+    return False
+
+
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
     parsed = await parse_operation(note)
     if not parsed:
@@ -1277,14 +1319,12 @@ async def _handle_op_note(message: Message, state: FSMContext, user, note: str) 
         "dose": parsed.get("dose"), "area": parsed.get("area_ha"),
         "operator": user["full_name"],
     }
-    fq = parsed.get("field")
-    if fq:
-        field = await resolve_field(str(fq), user["farm_id"])
-        if field:
-            _apply_field(op, field)
     if op["product"] and cat == "protection":
         op["dv"] = await lookup_active_substance(op["product"])
-    await state.update_data(op=op, farm_id=user["farm_id"])
+    await state.update_data(op=op, farm_id=user["farm_id"], field_choices=None)
+    fq = parsed.get("field")
+    if fq and not await _set_field(message, state, op, str(fq), user["farm_id"]):
+        return   # asked отделение / not found — stays in OpLogForm.filling
     await _continue_oplog(message, state, op)
 
 
@@ -1322,11 +1362,19 @@ async def _fill_slot(message: Message, state: FSMContext, user, reply: str) -> N
         await message.answer(_SLOT_Q[slot])
         return
     if slot == "field":
-        field = await resolve_field(reply, data.get("farm_id"))
-        if not field:
-            await message.answer("Не нашёл такое поле. Укажите номер ещё раз, например «119».")
-            return
-        _apply_field(op, field)
+        choices = data.get("field_choices")
+        if choices:                       # we asked which отделение — match the reply
+            pick = _match_group(reply, choices)
+            if not pick:
+                groups = ", ".join(_group_of(c["name"]) for c in choices if _group_of(c["name"]))
+                await message.answer(f"Назовите отделение: {groups}.")
+                return
+            _apply_field(op, pick)
+            await state.update_data(field_choices=None)
+        elif not await _set_field(message, state, op, reply, data.get("farm_id")):
+            return                        # _set_field asked a follow-up
+        await _continue_oplog(message, state, op)
+        return
     elif slot == "product":
         # the answer may include the dose too («Корсар 1.5 л/га») — capture both
         m = re.search(r"[\d.,]+\s*(?:л|кг|г|ц|мл|т)\s*/\s*га", reply, re.I)
