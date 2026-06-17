@@ -272,9 +272,10 @@ def main() -> int:
         url = presigned_url(key)
         n = send(
             f"📋 Справочник для разметки готов: {len(subs)} фото (статус {args.status}).\n"
-            f"Откройте в браузере рядом с CVAT (ссылка действует 7 дней):\n{url}"
+            f"Откройте в браузере рядом с CVAT (ссылка действует 7 дней):\n{url}",
+            annotators=True,
         )
-        print(f"reference uploaded; link sent to {n} admin(s).", file=sys.stderr)
+        print(f"reference uploaded; link sent to {n} recipient(s).", file=sys.stderr)
         return 0 if n else 2
 
     sys.stdout.write(html_doc)

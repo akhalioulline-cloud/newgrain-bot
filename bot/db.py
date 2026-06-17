@@ -377,6 +377,13 @@ async def get_submission_image_url(submission_id):
             "SELECT image_url FROM submissions WHERE id = :i"), {"i": submission_id})).scalar()
 
 
+async def get_annotators():
+    """Telegram ids of active annotators — recipients of the labeling reference sheet."""
+    async with engine.connect() as conn:
+        return [r[0] for r in (await conn.execute(text(
+            "SELECT tg_user_id FROM users WHERE role = 'annotator' AND is_active"))).all()]
+
+
 async def get_chief_agronomists(farm_id):
     """Active chief agronomists (reviewers) of a farm — who junior submissions go to."""
     async with engine.connect() as conn:

@@ -15,17 +15,41 @@ import requests
 from bot.config import settings
 
 
-def send(msg: str) -> int:
-    """Send `msg` to every ADMIN_TG_IDS chat. Returns count delivered.
-    Best-effort and exception-safe — callers can ignore failures."""
+def _annotator_ids() -> list:
+    """tg ids of annotator-role users (best-effort; [] on any error)."""
+    try:
+        import asyncio
+        from bot.db import get_annotators
+        return asyncio.run(get_annotators())
+    except Exception as exc:
+        print(f"alert: annotator lookup failed: {exc}", file=sys.stderr)
+        return []
+
+
+def _recipients(include_annotators: bool) -> list:
+    ids = list(settings.admin_ids or [])
+    if include_annotators:
+        ids += _annotator_ids()
+    seen, out = set(), []
+    for i in ids:                       # dedupe, keep order
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def send(msg: str, annotators: bool = False) -> int:
+    """Send `msg` to ADMIN_TG_IDS (+ annotators if annotators=True). Returns count
+    delivered. Best-effort and exception-safe — callers can ignore failures."""
     msg = (msg or "(no message)").strip()
-    if not settings.bot_token or not settings.admin_ids:
-        print("alert: BOT_TOKEN or ADMIN_TG_IDS not set — cannot send.",
+    recipients = _recipients(annotators)
+    if not settings.bot_token or not recipients:
+        print("alert: BOT_TOKEN or recipients not set — cannot send.",
               file=sys.stderr)
         return 0
     base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
     sent = 0
-    for admin in settings.admin_ids:
+    for admin in recipients:
         try:
             r = requests.post(
                 f"{base}/bot{settings.bot_token}/sendMessage",
