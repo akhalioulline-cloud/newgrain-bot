@@ -48,6 +48,7 @@ def _norm_prod(p):
     s = (p or "").lower().strip()
     s = re.sub(r"\(.*?\)", "", s)
     s = s.split(",")[0].replace("ё", "е")
+    s = re.sub(r"""[«»"„“”'`]""", "", s)     # normalize away quote variants
     return " ".join(s.split()).strip()
 
 
