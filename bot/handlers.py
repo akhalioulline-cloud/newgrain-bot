@@ -46,8 +46,10 @@ from bot.db import (
     find_similar_treatment,
     get_user_history,
     get_user_stats,
+    get_unsynced_bot_treatments,
     insert_bot_treatment,
     lookup_active_substance,
+    mark_treatment_synced,
     ndvi_scan,
     resolve_field,
     set_user_phone,
@@ -451,6 +453,25 @@ async def cmd_finish(message: Message, state: FSMContext, user) -> None:
 
 def _is_admin(user) -> bool:
     return user["role"] == "admin" or user["tg_user_id"] in settings.admin_ids
+
+
+@router.message(Command("unsynced"))
+async def cmd_unsynced(message: Message, user) -> None:
+    """Admin: bot-logged operations whose CropWise push never confirmed. The local
+    history row is safe; this surfaces the ones to re-enter in CropWise by hand."""
+    if not _is_admin(user):
+        await message.answer("Команда только для администратора.")
+        return
+    rows = await get_unsynced_bot_treatments()
+    if not rows:
+        await message.answer("✅ Все записанные операции ушли в CropWise.")
+        return
+    lines = ["⚠️ <b>Не ушли в CropWise</b> (запись в истории поля есть, повторите в CropWise вручную):"]
+    for r in rows:
+        d = r["treatment_date"].isoformat() if r["treatment_date"] else "—"
+        prod = f" · {r['product']} {r['dose'] or ''}".rstrip() if r["product"] else ""
+        lines.append(f"• {d} · {r['field_name']} · {r['operation']}{prod}")
+    await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 # "What's new" feed. Each item has a stable, increasing id; /announce posts only items
@@ -1703,14 +1724,14 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
     if not op:
         await callback.message.answer("Нечего сохранять.")
         return
-    inserted = await insert_bot_treatment(
+    treatment_id = await insert_bot_treatment(
         field_id=op["field_id"], field_name=op["field_name"],
         treatment_date=date.fromisoformat(op["date"]), crop=op["crop"],
         operation=op["operation"], op_category=op["category"], product=op["product"],
         active_substance=op["dv"], target=op["target"], dose=op["dose"],
         area_ha=op["area"], operator=op["operator"],
     )
-    if not inserted:
+    if not treatment_id:
         await callback.message.answer("ℹ️ Такая операция уже была записана — дубликат пропущен.")
         return
     await callback.message.answer("✅ Записано в историю поля. Отправляю в CropWise…")
@@ -1729,6 +1750,8 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
     except Exception:
         logger.exception("cropwise push failed")
         ok, msg = False, "не удалось отправить в CropWise (в истории поля запись сохранена)"
+    if ok:
+        await mark_treatment_synced(treatment_id)   # so it's not reported as unsynced
     await callback.message.answer(("📤 " if ok else "⚠️ ") + msg)
 
 

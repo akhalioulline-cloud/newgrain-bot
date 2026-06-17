@@ -361,10 +361,11 @@ async def find_similar_treatment(field_id, treatment_date, op_category, product)
 
 async def insert_bot_treatment(*, field_id, field_name, treatment_date, crop, operation,
                                op_category, product, active_substance, target, dose,
-                               area_ha, operator) -> bool:
+                               area_ha, operator):
     """Insert one agronomist-logged operation (source='bot'). Idempotent via the
-    natural-key index (migration 0018). Returns True if a row was inserted, False
-    if it was an exact duplicate (ON CONFLICT DO NOTHING)."""
+    natural-key index (migration 0018). Returns the new row id (truthy) on insert,
+    or None if it was an exact duplicate (ON CONFLICT DO NOTHING) — so the caller
+    only pushes a FRESH row to CropWise and can mark it synced by id."""
     season = treatment_date.year if treatment_date else None
     async with engine.begin() as conn:
         res = await conn.execute(text(
@@ -373,12 +374,34 @@ async def insert_bot_treatment(*, field_id, field_name, treatment_date, crop, op
             "area_ha, operator, source) VALUES "
             "(:fid,:fn,:td,:se,:cr,:op,:oc,:pr,:asb,:tg,:do,:ar,:opr,'bot') "
             "ON CONFLICT (field_name, treatment_date, operation, product, dose, area_ha) "
-            "DO NOTHING"),
+            "DO NOTHING RETURNING id"),
             {"fid": field_id, "fn": field_name, "td": treatment_date, "se": season,
              "cr": crop, "op": operation, "oc": op_category, "pr": product,
              "asb": active_substance, "tg": target, "do": dose, "ar": area_ha,
              "opr": operator})
-        return bool(res.rowcount)
+        return res.scalar()
+
+
+async def mark_treatment_synced(treatment_id: int) -> None:
+    """Stamp a field_treatments row as successfully pushed to CropWise."""
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "UPDATE field_treatments SET cropwise_synced_at = NOW() WHERE id = :i"),
+            {"i": treatment_id})
+
+
+async def get_unsynced_bot_treatments(limit: int = 20):
+    """Bot-logged operations whose CropWise push never confirmed (synced_at IS NULL).
+    Scoped to rows created since the sync flag existed (migration 0025, 2026-06-17)
+    so the historical CropWise-imported backlog isn't reported as unsynced."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT id, field_name, treatment_date, operation, product, dose "
+            "FROM field_treatments "
+            "WHERE source = 'bot' AND cropwise_synced_at IS NULL "
+            "AND created_at >= '2026-06-17' "
+            "ORDER BY created_at DESC LIMIT :lim"),
+            {"lim": limit})).mappings().all()
 
 
 async def get_active_users():
