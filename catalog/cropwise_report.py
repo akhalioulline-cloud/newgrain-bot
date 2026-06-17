@@ -123,6 +123,41 @@ def _area_of(ref):
     return int(m.group(1)) if m else None
 
 
+# ---------- «план агро работ» guard (Евгения's запрет) ----------
+# CropWise won't attach an agro-operation to a field unless that field's work type is
+# in the field's «план агро работ» for the season — otherwise the operation orphans
+# (the task lands empty). So: link a planned operation to its plan, and BLOCK (skip +
+# flag) a work type that isn't planned for the field. Trucks (КамАЗ) carry no field
+# operation, so they never hit this guard. The plan is keyed by work_type + season-YEAR
+# + a groupable that is EITHER the field's отделение (FieldGroup) OR its папка (GroupFolder).
+def load_plan_index():
+    """Lookup for the CURRENT season: field → отделение/папка, and (work_type, group) →
+    plan id. Reused for both linking (set agri_work_plan_id) and blocking (no plan)."""
+    year = date.today().year
+    field_group_of = {f["id"]: f.get("field_group_id") for f in _all("fields")}
+    folder_of = {g["id"]: g.get("group_folder_id") for g in _all("field_groups")}
+    plan_for = {}
+    for p in _all("agri_work_plans"):
+        if p.get("season") != year:
+            continue
+        plan_for.setdefault((p.get("work_type_id"), p.get("groupable_type"),
+                             p.get("groupable_id")), p["id"])
+    return {"field_group_of": field_group_of, "folder_of": folder_of, "plan_for": plan_for}
+
+
+def find_plan(idx, work_type_id, field_id):
+    """agri_work_plan id covering this field+work_type this season, or None (→ block).
+    Matches at the отделение (FieldGroup) level first, then the папка (GroupFolder)."""
+    if work_type_id is None or field_id is None:
+        return None
+    grp = idx["field_group_of"].get(field_id)
+    if grp is None:
+        return None
+    folder = idx["folder_of"].get(grp)
+    return (idx["plan_for"].get((work_type_id, "FieldGroup", grp))
+            or (idx["plan_for"].get((work_type_id, "GroupFolder", folder)) if folder else None))
+
+
 async def build_plan(report):
     """Parse + resolve a report into a SLIM, JSON-serialisable plan (safe for FSM
     storage). Returns (plan, None) or (None, error)."""
@@ -142,12 +177,17 @@ async def build_plan(report):
         products.append({"name": p.get("name"), "dose": p.get("dose"), "matched": bool(pm),
                          "atype": pm[0] if pm else None, "aid": pm[1] if pm else None,
                          "unit_id": pm[2] if pm else None, "rate": rate, "unit_label": unit})
+    pidx = load_plan_index()
+    wt_id = wt["id"] if wt else None
     fields = []
     for f in parsed.get("fields", []):
         cw = cat["by_name"].get(_norm("Поле " + str(f))) or \
             cat["by_numarea"].get((_lead_int(str(f)), _area_of(f)))
-        fields.append({"ref": str(f), "field_id": cw[0] if cw else None,
-                       "shape": cw[1] if cw else None, "area": cw[2] if cw else None})
+        fid = cw[0] if cw else None
+        plan_id = find_plan(pidx, wt_id, fid) if fid else None
+        fields.append({"ref": str(f), "field_id": fid,
+                       "shape": cw[1] if cw else None, "area": cw[2] if cw else None,
+                       "plan_id": plan_id, "planned": plan_id is not None})
 
     plan = {
         "operation": parsed.get("operation"),
@@ -176,10 +216,23 @@ def plan_summary(plan):
     for p in plan["products"]:
         L.append(f"  {'✓' if p['matched'] else '⚠️'} {p['name']} {p['dose'] or ''}" +
                  ("" if p["matched"] else " (нет в каталоге)"))
-    nf = sum(1 for f in plan["fields"] if f["field_id"])
-    L.append(f"Поля ({nf}/{len(plan['fields'])} распознано):")
-    L.append("  " + ", ".join((("" if f["field_id"] else "⚠️") + f["ref"]) for f in plan["fields"]))
-    L.append(f"\nСоздать {nf} агрооперац. с баковой смесью?")
+    wt_ok = wt is not None
+    creatable = [f for f in plan["fields"] if f["field_id"] and (f["planned"] or not wt_ok)]
+    unplanned = [f for f in plan["fields"] if f["field_id"] and wt_ok and not f["planned"]]
+
+    def _mark(f):
+        if not f["field_id"]:
+            return "⚠️"                       # поле не сопоставлено
+        if wt_ok and not f["planned"]:
+            return "🚫"                        # вид работ не в плане агро работ
+        return "✓"
+    L.append(f"Поля ({len(creatable)}/{len(plan['fields'])} к созданию):")
+    L.append("  " + ", ".join(_mark(f) + f["ref"] for f in plan["fields"]))
+    if unplanned:
+        L.append(f"🚫 пропущу — вид работ «{wt['name']}» не в «плане агро работ» этих полей "
+                 "(добавьте его в план в CropWise):")
+        L.append("  " + ", ".join(f["ref"] for f in unplanned))
+    L.append(f"\nСоздать {len(creatable)} агрооперац. с баковой смесью?")
     return "\n".join(L)
 
 
@@ -212,9 +265,14 @@ def create_ops(plan):
         if not f["field_id"]:
             results.append({"field": f["ref"], "ok": False, "msg": "поле не сопоставлено"})
             continue
+        if not f.get("planned"):                 # Евгения's запрет: no план → skip, don't orphan
+            results.append({"field": f["ref"], "ok": False,
+                            "msg": f"вид работ «{wt['name']}» не в плане агро работ — пропущено"})
+            continue
         area = f["area"]
         payload = {
             "field_id": f["field_id"], "field_shape_id": f["shape"], "work_type_id": wt["id"],
+            "agri_work_plan_id": f["plan_id"],   # attach to the field's план агро работ
             "idempotency_key": "flagleaf-rep-" + hashlib.sha1(
                 f"{f['field_id']}|{wt['id']}|{today}|{plan['operation']}".encode()).hexdigest()[:20],
             "status": "done", "calc_by": "rate", "completed_date": today,
