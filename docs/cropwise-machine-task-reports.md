@@ -59,6 +59,35 @@ suffixes). These match our `fields.name` style («Поле 121/140»).
 | field list | the task's fields/crop zones — **one task spans several fields** |
 | `#NNNNN` | the resulting CropWise **task number** — almost certainly an **`/agri_work_plans`** id/number (the «задание»; `agro_operations.agri_work_plan_id` links to it), NOT `agro_operation.operation_number` (no match found) |
 
+## VERIFIED against task #28225 (via API, 2026-06-17)
+The web URL `operations.cropwise.com/machines/39/tasks/28225/edit` = API
+`/machine_tasks/28225`. So the `#` is a **machine_task** id, filed under a machine —
+a *different* resource than `agro_operations` (that's why the operation_number search
+found nothing; it was never an access problem). All of it reads fine with our token:
+
+- **`/machine_tasks/28225`** — machine_id 39, driver_id 169219, implement_id 110,
+  **work_type_id 190 = «Краевая обработка сои гербицидами»** (the agronomic op type from
+  line 1, crop-specific!), status done, season 2026, plus heavy **GPS telematics**
+  (total/work distance, covered_area 75 ha, fuel, speeds, work timetable) — auto-captured
+  from the machine's tracker. `related_agri_task_ids` / `related_transportation_task_ids`
+  were **empty** on this task.
+- **`/machines/39`** = «JD 4730 (6448ЕХ31) Самоходка», `machine_subtype: sprayer`,
+  `registration_number: "6448ЕХ31"`. → report's «самоходка 6448» = this machine
+  (the report № = the machine's registration number; `default_driver_id` is null, so the
+  driver is set **per task**).
+- **`/users/169219`** = «Яровой Владимир Николаевич». → report's «Яровой» = this driver.
+
+**So a report maps to TWO parallel CropWise records:**
+1. the **machine_task** (the `#`): machine + driver + implement + work_type + GPS — largely
+   telematics-driven; carries the operation type (work_type 190).
+2. the **agro_operation** (what we already sync): the fields + tank-mix products + doses.
+On #28225 these weren't cross-linked (`related_agri_task_ids: []`) — they appear to coexist
+as separate records of the same real work, which Евгения keys in from the one Max report.
+
+**Access verdict: there is NO отделение access problem here.** The token read the machine,
+its task, the driver, and the work-type without issue — the earlier "can't find #28225" was
+purely me querying the wrong resource (`agro_operations` instead of `machine_tasks`).
+
 ## Open questions (confirm before automating)
 1. **One task = one `agri_work_plan` spanning the fields, or N per-field `agro_operations`?**
    The single `#` per multi-field report points to one work-plan grouping. Need to see one
