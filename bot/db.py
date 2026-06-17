@@ -100,9 +100,41 @@ async def get_pilot_fields(farm_id: int | None):
         return result.mappings().all()
 
 
+def _field_number(name: str) -> str:
+    """The number part of a field name: 'Поле 47 · Красное' -> '47',
+    'Поле 76/108' -> '76/108'."""
+    base = (name or "").split(" · ", 1)[0]
+    return re.sub(r"^Поле\s+", "", base).strip()
+
+
+def _pick_field(cands, q):
+    """Pick ONE field for a typed query, exact-first so a number never matches a
+    longer one ('47' must not return 'Поле 147'). Tiers: full-name exact → number-
+    part exact → loose substring (DISABLED for a purely numeric query — that is the
+    boundary that caused the 47→147 bug). cands are dict-likes with a 'name'."""
+    q = (q or "").strip()
+    if not q:
+        return None
+    ql = q.lower()
+    qnum = re.sub(r"^поле\s+", "", ql).strip()        # 'поле 47' behaves like '47'
+    for c in cands:                                   # 1. exact full name / 'Поле <q>'
+        nl = c["name"].lower()
+        if nl == ql or nl == f"поле {ql}":
+            return c
+    for c in cands:                                   # 2. exact number part ('47' == '47')
+        if _field_number(c["name"]).lower() == qnum:
+            return c
+    if re.fullmatch(r"\d+", qnum):                    # numeric query: no substring fallback
+        return None
+    for c in cands:                                   # 3. loose substring (group names etc.)
+        if qnum and qnum in c["name"].lower():
+            return c
+    return None
+
+
 async def resolve_field_id(field_query: str, farm_id: int | None = None):
     """Resolve a /field query to a field id using the SAME matching as
-    field_card_text (exact name, 'Поле <q>', or substring), so the map and the
+    field_card_text (exact name, 'Поле <q>', or number/substring), so the map and the
     text card always refer to the same field. Returns the id or None."""
     q = (field_query or "").strip()
     async with engine.connect() as conn:
@@ -113,11 +145,7 @@ async def resolve_field_id(field_query: str, farm_id: int | None = None):
             params["f"] = farm_id
         sql += " ORDER BY id"
         cands = (await conn.execute(text(sql), params)).mappings().all()
-    field = next(
-        (c for c in cands if c["name"] == q or c["name"] == f"Поле {q}"
-         or (q and q.lower() in c["name"].lower())),
-        None,
-    )
+    field = _pick_field(cands, q)
     return field["id"] if field else None
 
 
@@ -700,8 +728,7 @@ async def field_card_text(field_query: str, farm_id: int | None = None) -> str:
         else:
             cands = (await conn.execute(text(
                 "SELECT id, name, crop, area_ha FROM fields ORDER BY id"))).mappings().all()
-        field = next((c for c in cands if c["name"] == q or c["name"] == f"Поле {q}"
-                      or (q and q.lower() in c["name"].lower())), None)
+        field = _pick_field(cands, q)
         if field is None:
             avail = ", ".join(c["name"] for c in cands) or "—"
             return f"Поле не найдено: «{q}».\nДоступные поля: {avail}"
