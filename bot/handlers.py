@@ -1031,18 +1031,19 @@ async def on_review_edit(message: Message, state: FSMContext, user) -> None:
     else:  # comment
         await update_submission(sid, comment_text=val)
         newval = val
-    await state.set_state(None)
-    # notify the junior who submitted it
+    # The correction itself finalizes the photo — straight to the annotator, no
+    # extra confirmation. The junior is only notified.
+    await update_submission(sid, status="ready_for_labeling")
+    await state.clear()
     if sub and sub["submitter_tg"]:
         try:
             await message.bot.send_message(
                 sub["submitter_tg"],
                 f"✏️ Старший агроном исправил {_ATTR_RU[attr]} в вашем фото: "
-                f"«{old or '—'}» → «{newval}».")
+                f"«{old or '—'}» → «{newval}». Фото отправлено на разметку.")
         except Exception:
             logger.exception("notify submitter (correction) failed")
-    await message.answer("Исправлено ✓")
-    await _send_review_card(message.bot, message.chat.id, sid)
+    await message.answer("Исправлено и отправлено на разметку ✓")
 
 
 def _treatment_kb(treatments) -> InlineKeyboardMarkup:
