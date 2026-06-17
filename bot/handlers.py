@@ -27,6 +27,7 @@ from bot.db import (
     deactivate_user,
     delete_submission,
     field_card_text,
+    field_at_point,
     find_duplicate_submission,
     find_fields_by_number,
     get_all_recent_submissions,
@@ -58,6 +59,7 @@ from bot.parse_op import parse_operation
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
 from bot.weed_suggest import suggest_species
+from bot.agro_chat import answer as agro_answer
 from bot.transcribe import transcribe
 from bot.translate_llm import translate_ru_to_en
 from bot.taxonomy import DISEASES, DISEASE_RU_BY_CODE, PESTS_PICKER, PEST_RU_BY_CODE
@@ -1732,6 +1734,57 @@ async def on_report_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await _drop_kb(callback)
     await state.clear()
     await callback.message.answer("Отменено.")
+
+
+# ---------- conversational Q&A: free-text question → grounded colloquial answer ----
+_THIS_FIELD_RE = re.compile(r"эт(?:о|ом|ого|ой)\s+пол|на этом пол|здесь|тут|где я", re.I)
+_FIELD_REF_RE = re.compile(r"пол[еяю]\s*№?\s*(\d+[а-я]?(?:\s*/\s*\d+)?)", re.I)
+
+
+def _extract_field_ref(text: str):
+    t = (text or "").replace("ё", "е")
+    if _THIS_FIELD_RE.search(t):
+        return "__last__"
+    m = _FIELD_REF_RE.search(t)
+    return re.sub(r"\s+", "", m.group(1)) if m else None
+
+
+@router.message(StateFilter(None), F.location)
+async def on_location(message: Message, state: FSMContext, user) -> None:
+    loc = message.location
+    field = await field_at_point(loc.latitude, loc.longitude, user["farm_id"])
+    if not field:
+        await message.answer("Не нашёл поле по этим координатам. Назовите поле номером, например «119».")
+        return
+    await state.update_data(last_field_id=field["id"], last_field_name=field["name"])
+    await message.answer(
+        f"📍 Вы на поле {field['name']}" + (f" · {field['crop']}" if field["crop"] else "")
+        + ".\nСпросите что-нибудь о нём — например «какая обработка была недавно?».")
+
+
+@router.message(StateFilter(None), F.text)   # LAST text handler — free-text → a question
+async def on_question(message: Message, state: FSMContext, user) -> None:
+    q = (message.text or "").strip()
+    ref = _extract_field_ref(q)
+    context = None
+    if ref == "__last__":
+        fn = (await state.get_data()).get("last_field_name")
+        if not fn:
+            await message.answer("О каком поле речь? Назовите номер (например «119») или "
+                                 "пришлите геопозицию (📎 → Геопозиция), и я определю поле сам.")
+            return
+        context = await field_card_text(fn, user["farm_id"])
+    elif ref:
+        field = await resolve_field(ref, user["farm_id"])
+        if field:
+            await state.update_data(last_field_id=field["id"], last_field_name=field["name"])
+            context = await field_card_text(field["name"], user["farm_id"])
+    try:
+        await message.bot.send_chat_action(message.chat.id, "typing")
+    except Exception:
+        pass
+    ans = await agro_answer(q, context)
+    await message.answer(ans or "Не понял вопрос — переформулируйте, пожалуйста.")
 
 
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never

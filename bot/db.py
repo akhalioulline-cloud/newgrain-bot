@@ -135,6 +135,19 @@ async def get_field_polygons(simplify: float = 0.00005):
         return result.mappings().all()
 
 
+async def field_at_point(lat: float, lon: float, farm_id: int | None = None):
+    """The field whose polygon contains a GPS point ('это поле' by geolocation).
+    Returns the field row or None."""
+    async with engine.connect() as conn:
+        sql = ("SELECT id, name, crop, area_ha FROM fields WHERE geom IS NOT NULL "
+               "AND ST_Contains(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))")
+        params = {"lon": lon, "lat": lat}
+        if farm_id:
+            sql += " AND farm_id = :f"
+            params["f"] = farm_id
+        return (await conn.execute(text(sql + " LIMIT 1"), params)).mappings().first()
+
+
 async def find_fields_by_number(farm_id: int | None, number: str):
     """Resolve a typed field number ('125', '76/108', '31-1') to field rows.
     Fields are named 'Поле <номер> · <группа>' (or 'Поле <номер>' for pilots),
