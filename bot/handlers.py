@@ -1202,6 +1202,65 @@ async def on_oplog_none(callback: CallbackQuery) -> None:
     await _drop_kb(callback)
 
 
+# What the bot will ask back for when the agronomist's note is missing a required
+# slot (one question at a time). Field is always required; product+dose for any
+# operation that applies a substance; crop if the field has none on record.
+_SLOT_Q = {
+    "field": "На каком поле? Укажите номер, например «119».",
+    "product": "Какой препарат или удобрение вносили? Например «Корсар».",
+    "dose": "Какая норма расхода? Например «1.5 л/га».",
+    "crop": "Какая культура на этом поле?",
+}
+
+
+def _apply_field(op: dict, field) -> None:
+    op["field_id"] = field["id"]
+    op["field_name"] = field["name"]
+    op["crop"] = field["crop"]
+    if op["area"] is None and field["area_ha"] is not None:
+        op["area"] = float(field["area_ha"])
+
+
+def _op_missing(op: dict) -> list:
+    """Required slots still empty, in the order we'll ask for them."""
+    miss = []
+    if not op.get("field_id"):
+        miss.append("field")
+    if op["category"] in ("protection", "fertilizer", "sowing"):
+        if not op.get("product"):
+            miss.append("product")
+        elif not op.get("dose"):
+            miss.append("dose")
+    if not op.get("crop"):
+        miss.append("crop")
+    return miss
+
+
+async def _continue_oplog(message: Message, state: FSMContext, op: dict) -> None:
+    """Ask for the next missing slot, or — when complete — show the confirm card."""
+    miss = _op_missing(op)
+    if miss:
+        await state.update_data(op=op, slot=miss[0])
+        await state.set_state(OpLogForm.filling)
+        await message.answer(_SLOT_Q[miss[0]])
+        return
+    await state.update_data(op=op)
+    await state.set_state(OpLogForm.confirm)
+    # Conflict check: warn if a colleague (or earlier entry) already logged the
+    # same product on this field today, so the agronomist can avoid a duplicate.
+    summary = _op_summary(op)
+    dups = await find_similar_treatment(
+        op["field_id"], date.fromisoformat(op["date"]), op["category"], op["product"])
+    if dups:
+        who = ", ".join(sorted({d["operator"] for d in dups if d["operator"]})) or "кто-то"
+        summary = (
+            f"⚠️ На этом поле за {date.fromisoformat(op['date']):%d.%m} уже записана "
+            f"обработка «{op['product']}» (записал: {who}).\n"
+            f"Если это та же операция — нажмите «Отмена».\n\n" + summary
+        )
+    await message.answer(summary, reply_markup=_oplog_confirm_kb())
+
+
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
     parsed = await parse_operation(note)
     if not parsed:
@@ -1209,41 +1268,24 @@ async def _handle_op_note(message: Message, state: FSMContext, user, note: str) 
             "Не понял. Повторите, например: «опрыскал 119 Корсаром 1.5 л/га от сорняков»."
         )
         return
-    fq = parsed.get("field")
-    field = await resolve_field(str(fq), user["farm_id"]) if fq else None
-    if not field:
-        await message.answer("Не понял, какое поле. Укажите номер, например «119».")
-        return
     cat = (parsed.get("category") or "other").lower()
-    product = parsed.get("product")
-    dv = await lookup_active_substance(product) if (product and cat == "protection") else None
-    raw_area = parsed.get("area_ha")
-    if raw_area is None and field["area_ha"] is not None:
-        raw_area = float(field["area_ha"])
     op = {
-        "field_id": field["id"], "field_name": field["name"], "crop": field["crop"],
+        "field_id": None, "field_name": None, "crop": None,
         "date": _op_date(parsed.get("date")).isoformat(), "category": cat,
         "operation": parsed.get("operation") or _OP_CAT_RU.get(cat, "операция"),
-        "product": product, "dv": dv, "target": parsed.get("target"),
-        "dose": parsed.get("dose"),
-        "area": float(raw_area) if raw_area is not None else None,
+        "product": parsed.get("product"), "dv": None, "target": parsed.get("target"),
+        "dose": parsed.get("dose"), "area": parsed.get("area_ha"),
         "operator": user["full_name"],
     }
-    await state.update_data(op=op)
-    await state.set_state(OpLogForm.confirm)
-    # Conflict check: warn if a colleague (or earlier entry) already logged the
-    # same product on this field today, so the agronomist can avoid a duplicate.
-    summary = _op_summary(op)
-    dups = await find_similar_treatment(
-        field["id"], _op_date(parsed.get("date")), cat, product)
-    if dups:
-        who = ", ".join(sorted({d["operator"] for d in dups if d["operator"]})) or "кто-то"
-        summary = (
-            f"⚠️ На этом поле за {date.fromisoformat(op['date']):%d.%m} уже записана "
-            f"обработка «{product}» (записал: {who}).\n"
-            f"Если это та же операция — нажмите «Отмена».\n\n" + summary
-        )
-    await message.answer(summary, reply_markup=_oplog_confirm_kb())
+    fq = parsed.get("field")
+    if fq:
+        field = await resolve_field(str(fq), user["farm_id"])
+        if field:
+            _apply_field(op, field)
+    if op["product"] and cat == "protection":
+        op["dv"] = await lookup_active_substance(op["product"])
+    await state.update_data(op=op, farm_id=user["farm_id"])
+    await _continue_oplog(message, state, op)
 
 
 @router.message(OpLogForm.awaiting, F.voice)
@@ -1265,6 +1307,61 @@ async def on_oplog_voice(message: Message, state: FSMContext, user) -> None:
 @router.message(OpLogForm.awaiting, F.text)
 async def on_oplog_text(message: Message, state: FSMContext, user) -> None:
     await _handle_op_note(message, state, user, message.text)
+
+
+async def _fill_slot(message: Message, state: FSMContext, user, reply: str) -> None:
+    """Apply the agronomist's answer to the slot we asked about, then continue."""
+    data = await state.get_data()
+    op, slot = data.get("op"), data.get("slot")
+    if not op or not slot:
+        await state.clear()
+        await message.answer("Что-то сбилось. Начните заново: /log.")
+        return
+    reply = (reply or "").strip()
+    if not reply:
+        await message.answer(_SLOT_Q[slot])
+        return
+    if slot == "field":
+        field = await resolve_field(reply, data.get("farm_id"))
+        if not field:
+            await message.answer("Не нашёл такое поле. Укажите номер ещё раз, например «119».")
+            return
+        _apply_field(op, field)
+    elif slot == "product":
+        # the answer may include the dose too («Корсар 1.5 л/га») — capture both
+        m = re.search(r"[\d.,]+\s*(?:л|кг|г|ц|мл|т)\s*/\s*га", reply, re.I)
+        if m and not op["dose"]:
+            op["dose"] = m.group(0)
+            op["product"] = reply[:m.start()].strip(" ,") or reply
+        else:
+            op["product"] = reply
+        if op["category"] == "protection":
+            op["dv"] = await lookup_active_substance(op["product"])
+    elif slot == "dose":
+        op["dose"] = reply
+    elif slot == "crop":
+        op["crop"] = reply
+    await _continue_oplog(message, state, op)
+
+
+@router.message(OpLogForm.filling, F.voice)
+async def on_oplog_fill_voice(message: Message, state: FSMContext, user) -> None:
+    file = await message.bot.get_file(message.voice.file_id)
+    buffer = await message.bot.download_file(file.file_path)
+    try:
+        reply = await transcribe(buffer.read())
+    except Exception:
+        logger.exception("oplog fill voice transcription failed")
+        reply = ""
+    if not reply:
+        await message.answer("Не разобрал голос — повторите ещё раз или текстом.")
+        return
+    await _fill_slot(message, state, user, reply)
+
+
+@router.message(OpLogForm.filling, F.text)
+async def on_oplog_fill_text(message: Message, state: FSMContext, user) -> None:
+    await _fill_slot(message, state, user, message.text)
 
 
 @router.callback_query(OpLogForm.confirm, F.data == "oplog:save")

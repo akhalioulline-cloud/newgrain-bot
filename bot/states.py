@@ -18,4 +18,5 @@ class ProblemForm(StatesGroup):
 
 class OpLogForm(StatesGroup):
     awaiting = State()   # waiting for a free-form/voice operation note
+    filling = State()    # asking back for a missing slot (field/product/dose/crop)
     confirm = State()    # parsed op shown, waiting for ✓/✗
