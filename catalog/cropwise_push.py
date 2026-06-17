@@ -20,7 +20,7 @@ import asyncio
 import hashlib
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import requests
 
@@ -120,7 +120,14 @@ def build_payload(our_field, parsed, cat, local_key):
     if not fld:
         return None, [f"field not found in Cropwise: {our_field[0]}"]
     field_id, shape_id, cw_area = fld
-    iso = _resolve_date(parsed.get("date")).isoformat()
+    cd = _resolve_date(parsed.get("date"))
+    iso = cd.isoformat()
+    # completed_datetime must be <= now (Cropwise rejects a FUTURE time): for today
+    # use a few minutes ago, for a past date use midday.
+    if cd >= date.today():
+        cdt = (datetime.now() - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%S")
+    else:
+        cdt = f"{iso}T12:00:00"
     area = parsed.get("area_ha") or cw_area
     # status=done so a reported operation lands as COMPLETED (not a plan).
     payload = {
@@ -131,7 +138,7 @@ def build_payload(our_field, parsed, cat, local_key):
         "status": "done",
         "calc_by": "rate",
         "completed_date": iso,
-        "completed_datetime": f"{iso}T12:00:00",
+        "completed_datetime": cdt,
         "completed_percents": 100.0,
         "planned_start_date": iso,
         "planned_end_date": iso,
