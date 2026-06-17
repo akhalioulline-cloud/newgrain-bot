@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import re
@@ -1282,10 +1283,26 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
         active_substance=op["dv"], target=op["target"], dose=op["dose"],
         area_ha=op["area"], operator=op["operator"],
     )
-    if inserted:
-        await callback.message.answer("✅ Записано в историю поля.")
-    else:
+    if not inserted:
         await callback.message.answer("ℹ️ Такая операция уже была записана — дубликат пропущен.")
+        return
+    await callback.message.answer("✅ Записано в историю поля. Отправляю в CropWise…")
+    # Mirror the operation into CropWise (confirm-before-push: this IS the confirm).
+    # Sync requests under the hood → run off the event loop. Never blocks the save:
+    # the history row is already in; a CropWise hiccup is just a warning.
+    parsed_like = {
+        "category": op["category"], "operation": op["operation"],
+        "product": op["product"], "dose": op["dose"],
+        "area_ha": op["area"], "date": op["date"],
+    }
+    try:
+        from catalog.cropwise_push import push_treatment
+        ok, msg = await asyncio.to_thread(
+            push_treatment, op["field_name"], op["area"], parsed_like)
+    except Exception:
+        logger.exception("cropwise push failed")
+        ok, msg = False, "не удалось отправить в CropWise (в истории поля запись сохранена)"
+    await callback.message.answer(("📤 " if ok else "⚠️ ") + msg)
 
 
 @router.callback_query(OpLogForm.confirm, F.data == "oplog:cancel")

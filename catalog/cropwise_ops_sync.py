@@ -139,6 +139,8 @@ async def build_rows(only_field=None):
     rows, unmatched = [], set()
     cat_counts = {}
     for op in ops:
+        if (op.get("idempotency_key") or "").startswith("flagleaf-"):
+            continue   # our own bot→CropWise push; already stored as source='bot'
         af = api_fields.get(op.get("field_id"))
         if not af:
             continue

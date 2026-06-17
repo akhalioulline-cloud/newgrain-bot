@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import re
 import sys
+import time
 from datetime import date, datetime, timedelta
 
 import requests
@@ -202,6 +203,42 @@ def create_operation(payload):
                       json={"data": done}, timeout=90)
     return r2.status_code, (f"created id={op_id}; внесение×{len(mix)}; "
                             f"mark-done HTTP {r2.status_code}: {r2.text[:300]}")
+
+
+_CATALOG_CACHE = {"data": None, "ts": 0.0}
+
+
+def _catalogs_cached(ttl=3600):
+    """Cropwise dictionaries, reloaded at most once an hour (the load is heavy —
+    several API calls — so we don't refetch on every bot /log)."""
+    now = time.time()
+    if _CATALOG_CACHE["data"] is None or now - _CATALOG_CACHE["ts"] > ttl:
+        _CATALOG_CACHE["data"] = load_catalogs()
+        _CATALOG_CACHE["ts"] = now
+    return _CATALOG_CACHE["data"]
+
+
+def push_treatment(field_name, field_area, parsed):
+    """Bot entry point: create a completed agro_operation in Cropwise from a logged
+    op. `parsed` has category/operation/product/dose/area_ha/date. Sync (requests) —
+    call via asyncio.to_thread. Returns (ok: bool, russian_message). Never raises for
+    a Cropwise problem; the local history row is already saved by the caller."""
+    if not HEADERS["X-User-Api-Token"]:
+        return False, "CropWise не настроен"
+    try:
+        cat = _catalogs_cached()
+        our_field = (field_name, _lead_int(field_name), field_area)
+        payload, warnings = build_payload(our_field, parsed, cat, _key(our_field, parsed))
+        if payload is None:
+            return False, "поле не найдено в CropWise"
+        code, detail = create_operation(payload)
+    except Exception as exc:
+        return False, f"ошибка отправки в CropWise: {exc}"
+    if code not in (200, 201):
+        return False, f"CropWise вернул ошибку ({code})"
+    if any("product not matched" in w for w in warnings):
+        return True, "отправлено в CropWise (препарат не распознан — впишите внесение вручную)"
+    return True, "отправлено в CropWise"
 
 
 async def _resolve_our_field(field_ref, farm_id=None):
