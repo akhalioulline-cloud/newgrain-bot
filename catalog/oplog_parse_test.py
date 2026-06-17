@@ -14,9 +14,9 @@ import sys
 
 from sqlalchemy import text
 
-from bot.db import engine, resolve_field
+from bot.db import engine, find_fields_by_number, resolve_field
 from bot.parse_op import parse_operation
-from catalog.cropwise_push import _lead_int, _norm_prod
+from catalog.cropwise_push import _lead_int, _match_product, _norm_prod, load_catalogs
 
 TPL = {
     "protection": ["опрыскал {f} {p} {d} от сорняков",
@@ -62,6 +62,7 @@ async def main():
             SELECT field_id, field_name, op_category, operation, product, dose
             FROM r WHERE rn <= 5 ORDER BY op_category, rn"""))).all()
 
+    prods = load_catalogs()["prods"]          # for grading via the REAL product matcher
     ok = tot = clar_ok = clar_tot = 0
     for i, (fid, fname, cat, op, prod, dose) in enumerate(rows):
         num = _lead_int(fname)
@@ -76,10 +77,18 @@ async def main():
         if not parsed:
             print(f"  PARSE-FAIL  {note!r}", file=sys.stderr)
             continue
-        rf = await resolve_field(str(parsed.get("field") or ""), farm_id)
-        f_ok = bool(rf and rf["id"] == fid)
+        # Field: did the PARSER read the right number? (which отделение is a separate
+        # step the bot now handles by asking, so we don't penalise the parser for it.)
+        pnum = _lead_int(str(parsed.get("field") or ""))
+        f_ok = pnum is not None and pnum == num
+        ambig = len(await find_fields_by_number(farm_id, str(num))) > 1
+        # Product: does the REAL matcher recognise it (and land on the same product)?
         pp = parsed.get("product")
-        p_ok = (not prod) or bool(pp and (_norm_prod(pp) == _norm_prod(prod) or norm(sp) in norm(pp)))
+        if not prod:
+            p_ok = True
+        else:
+            want, got = _match_product(prod, prods), _match_product(pp or "", prods)
+            p_ok = bool(got and (not want or got[1] == want[1]))
         pc = parsed.get("category") or "other"
         c_ok = pc == cat or (pc in ("tillage", "other") and cat in ("tillage", "other"))
         case_ok = f_ok and p_ok and c_ok
@@ -91,6 +100,8 @@ async def main():
             if "dose" in asks:
                 clar_ok += 1
             extra = f"  [dropped dose → asks {asks or 'nothing'}]"
+        if ambig and f_ok:
+            extra += "  [number repeats → bot asks отделение]"
         flags = ("" if f_ok else f" field✗(got {parsed.get('field')}, exp {num})") + \
                 ("" if p_ok else f" product✗(got {pp!r}, exp {sp!r})") + \
                 ("" if c_ok else f" cat✗(got {pc}, exp {cat})")
