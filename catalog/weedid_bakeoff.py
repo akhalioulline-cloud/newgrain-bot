@@ -23,6 +23,23 @@ import boto3
 import requests
 from botocore.client import Config
 
+try:                                  # shrink photos before upload (faster over a slow VPN)
+    import io
+    from PIL import Image
+
+    def _shrink(b, maxpx=1024, q=85):
+        try:
+            im = Image.open(io.BytesIO(b)).convert("RGB")
+            im.thumbnail((maxpx, maxpx))
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=q)
+            return out.getvalue()
+        except Exception:
+            return b
+except ImportError:
+    def _shrink(b, **k):
+        return b
+
 
 def load_env(path=".env"):
     env = {}
@@ -106,7 +123,12 @@ def call_gemini(img, prompt, key, model, tries=4):
     ]}], "generationConfig": {"temperature": 0}}
     last = ""
     for i in range(tries):
-        r = requests.post(url, json=body, timeout=120)
+        try:
+            r = requests.post(url, json=body, timeout=90)
+        except requests.exceptions.RequestException as e:   # timeout / VPN drop → retry
+            last = f"net {type(e).__name__}"
+            time.sleep(min(4 * (i + 1), 15))
+            continue
         if r.status_code == 200:
             try:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -131,7 +153,12 @@ def call_yandex(img, prompt, key, folder, model, tries=3):
     url = "https://llm.api.cloud.yandex.net/v1/chat/completions"
     last = ""
     for i in range(tries):
-        r = requests.post(url, headers={"Authorization": f"Api-Key {key}"}, json=body, timeout=180)
+        try:
+            r = requests.post(url, headers={"Authorization": f"Api-Key {key}"}, json=body, timeout=180)
+        except requests.exceptions.RequestException as e:
+            last = f"net {type(e).__name__}"
+            time.sleep(min(4 * (i + 1), 12))
+            continue
         if r.status_code == 200:
             msg = r.json()["choices"][0]["message"]
             content = msg.get("content") or ""
@@ -184,6 +211,7 @@ def main():
     for sub in subs:
         try:
             img = base64.b64decode(sub["b64"]) if sub.get("b64") else fetch_image(s3, sub["url"])
+            img = _shrink(img)
         except Exception as e:
             print("skip img", sub["id"], e, file=sys.stderr)
             continue

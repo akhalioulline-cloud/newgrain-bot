@@ -1,4 +1,4 @@
-# Bot → CropWise push — LIVE
+# Bot → CropWise push — LIVE (in field testing)
 
 *As of 2026-06-17.*
 
@@ -39,6 +39,27 @@ cached ~1h in the bot. Dedup: the weekly pull (`cropwise_ops_sync`) skips ops wh
 ## Decisions
 - **Confirm-before-push**: the `/log` ✓ confirmation *is* the confirm; on ✓ it pushes.
 - **Unmatched product**: still create the operation, flag «впишите внесение вручную».
+
+## Slot-filling & gap-asking (handlers, OpLogForm.filling)
+If a logged op is missing a required slot, the bot asks for it one at a time
+(text or voice) until complete, instead of dead-ending or saving a partial op:
+- **field** — always; resolves across ALL 283 fields, not just pilots. If a number
+  repeats in several отделения it asks «какое отделение?» and resolves from the answer.
+- **product** — for protection/fertilizer/sowing ops.
+- **dose** — once a product is known (needed for the внесение rate).
+- **crop** — only if the field has none on record.
+Harvest/tillage (no substance) only need the field.
+
+## Validation (2026-06-17, `catalog/oplog_audit.py` + `oplog_parse_test.py`)
+Against the full CropWise history: **100%** product recognition (357/357), **100%**
+work-type mapping (167/167), all real fields resolve, clarification fires only on
+genuinely incomplete ops (~6.5%). Parser spot-check on realistic phrasings: **29/30**
+clean extraction (the 1 miss is gracefully handled — bot asks for the field);
+**4/4** correct dose-clarification. Re-run both tools as new ops/products arrive.
+
+## Status: IN FIELD TESTING (from 2026-06-17)
+Live; awaiting real use by the agronomists and the CropWise operator (who normally
+records ops manually) to surface bugs before we consider it done.
 
 ## CLI (for testing / cleanup)
 ```
