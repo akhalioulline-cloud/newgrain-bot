@@ -301,6 +301,21 @@ async def lookup_active_substance(product: str):
             {"pat": f"%{core}%"})).scalar()
 
 
+async def get_registered_products(crop: str, target: str | None = None, limit: int = 30):
+    """Products from the Госкаталог registry registered for a crop (and target),
+    so the chat assistant recommends only real, registered options."""
+    async with engine.connect() as conn:
+        sql = ("SELECT DISTINCT product_name, active_substances, target, rate "
+               "FROM pesticide_applications WHERE crop ILIKE :crop")
+        params = {"crop": f"%{crop}%"}
+        if target:
+            sql += " AND target ILIKE :target"
+            params["target"] = f"%{target}%"
+        sql += " ORDER BY product_name LIMIT :lim"
+        params["lim"] = limit
+        return (await conn.execute(text(sql), params)).mappings().all()
+
+
 async def find_similar_treatment(field_id, treatment_date, op_category, product):
     """Existing op(s) on the same field + date + category with the same product —
     used to warn an agronomist about a likely duplicate (e.g. a colleague already

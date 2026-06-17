@@ -4,10 +4,13 @@ YandexGPT (in-RU, same key as parse_op/translate). Returns None on failure so th
 caller can fall back gracefully.
 """
 import asyncio
+import json
+import re
 
 import requests
 
 from bot.config import settings
+from bot.db import get_registered_products
 
 _ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -41,7 +44,10 @@ _SYS = (
     "На агрономические вопросы давай КОНКРЕТНЫЙ ответ: называй торговые названия препаратов "
     "и действующее вещество, типичные нормы расхода (л/га или кг/га), фазу применения и "
     "против чего. Сначала точно пойми, о чём речь (например «осот» — это сорняк, нужен "
-    "гербицид, а не инсектицид). Не пиши дисклеймеры («разрешённых к применению в РФ», "
+    "гербицид, а не инсектицид). Если в контексте есть блок «ЗАРЕГИСТРИРОВАННЫЕ ПРЕПАРАТЫ» "
+    "(это реальный Госкаталог) — рекомендуй препараты и нормы ТОЛЬКО из этого списка, "
+    "выбирая 2–3 подходящих под задачу; не называй препаратов вне списка. "
+    "Не пиши дисклеймеры («разрешённых к применению в РФ», "
     "«зарегистрированных в Госкаталоге») и не отсылай «ознакомьтесь с каталогом» — сразу "
     "давай дельный совет. Если по конкретному препарату или норме не уверен — коротко "
     "скажи об этом, не выдумывай. "
@@ -52,25 +58,77 @@ _SYS = (
 )
 
 
+def _complete(system_text: str, user_text: str, max_tokens: int, temperature: float) -> str:
+    body = {
+        "modelUri": f"gpt://{settings.yc_folder_id}/{settings.yc_translate_model}",
+        "completionOptions": {"stream": False, "temperature": temperature, "maxTokens": max_tokens},
+        "messages": [{"role": "system", "text": system_text}, {"role": "user", "text": user_text}],
+    }
+    r = requests.post(_ENDPOINT, headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
+                      json=body, timeout=45)
+    r.raise_for_status()
+    return r.json()["result"]["alternatives"][0]["message"]["text"].strip()
+
+
+_REC_RE = re.compile(r"обработ|препарат|гербицид|фунгицид|инсектицид|против|чем\s+.*\sот\s", re.I)
+
+_EXTRACT_SYS = (
+    "Из вопроса агронома про защиту растений извлеки КУЛЬТУРУ (стандартное название: соя, "
+    "подсолнечник, пшеница, кукуруза, ячмень, рапс и т.п.) и ВРЕДНЫЙ ОБЪЕКТ (короткий корень "
+    "слова для поиска: осот, злаков, двудольн, амбрози, тля, ржавчин, фузариоз и т.п.). "
+    'Верни ТОЛЬКО JSON: {"crop":"..."|null, "target":"..."|null}. '
+    "Если вопрос не про подбор препарата/обработку — оба null."
+)
+
+
+def _clean_json(s):
+    s = re.sub(r"^```(?:json)?|```$", "", (s or "").strip(), flags=re.M).strip()
+    m = re.search(r"\{.*\}", s, re.S)
+    return json.loads(m.group(0)) if m else None
+
+
+async def _registry_grounding(question: str) -> str | None:
+    """For a «чем обработать культуру X от Y» question, pull registered products from the
+    Госкаталог so the answer stays correct (real, registered options only)."""
+    if not _REC_RE.search(question):
+        return None
+    try:
+        ct = _clean_json(await asyncio.to_thread(_complete, _EXTRACT_SYS, question, 200, 0.0))
+    except Exception:
+        return None
+    if not ct or not ct.get("crop"):
+        return None
+    crop, target = ct["crop"], ct.get("target")
+    prods = await get_registered_products(crop, target)
+    if not prods and target:
+        prods = await get_registered_products(crop)        # broaden to crop-only
+    if not prods:
+        return None
+    seen, lines = set(), []
+    for p in prods:
+        if p["product_name"] in seen:
+            continue
+        seen.add(p["product_name"])
+        lines.append(f"• {p['product_name']} (д.в. {p['active_substances']}) — "
+                     f"{p['target']}; норма {p['rate']}")
+        if len(lines) >= 20:
+            break
+    head = (f"ЗАРЕГИСТРИРОВАННЫЕ ПРЕПАРАТЫ (Госкаталог) для «{crop}»"
+            + (f" против «{target}»" if target else "")
+            + " — рекомендуй ТОЛЬКО из этого списка:")
+    return head + "\n" + "\n".join(lines)
+
+
 async def answer(question: str, context: str | None = None) -> str | None:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
-    user = (f"ДАННЫЕ ПО ПОЛЮ:\n{context}\n\nВОПРОС: {question}"
-            if context else f"ВОПРОС: {question}")
-    body = {
-        "modelUri": f"gpt://{settings.yc_folder_id}/{settings.yc_translate_model}",
-        "completionOptions": {"stream": False, "temperature": 0.45, "maxTokens": 700},
-        "messages": [{"role": "system", "text": _SYS}, {"role": "user", "text": user}],
-    }
-
-    def _call() -> str:
-        r = requests.post(_ENDPOINT,
-                          headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
-                          json=body, timeout=45)
-        r.raise_for_status()
-        return r.json()["result"]["alternatives"][0]["message"]["text"].strip()
-
+    grounding = await _registry_grounding(question)
+    parts = [p for p in (
+        f"ДАННЫЕ ПО ПОЛЮ:\n{context}" if context else None,
+        grounding,
+        f"ВОПРОС: {question}",
+    ) if p]
     try:
-        return await asyncio.to_thread(_call)
+        return await asyncio.to_thread(_complete, _SYS, "\n\n".join(parts), 700, 0.45)
     except Exception:
         return None
