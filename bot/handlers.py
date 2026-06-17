@@ -1653,6 +1653,20 @@ async def on_oplog_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.answer("Отменено.")
 
 
+# Button-only steps (confirm / pickers) have no text handler — so stray text used
+# to vanish silently and leave the user stuck (their «поле …» alias wouldn't fire).
+# Nudge them to the buttons or /cancel instead of swallowing it.
+@router.message(
+    StateFilter(OpLogForm.confirm, PhotoForm.field, PhotoForm.category,
+                PhotoForm.subcategory, PhotoForm.treatment),
+    F.text,
+)
+async def on_stray_text_in_button_step(message: Message, state: FSMContext) -> None:
+    await message.answer(
+        "Сейчас нужно выбрать вариант кнопкой выше 👆\n"
+        "Если хотите выйти и начать заново — отправьте /cancel.")
+
+
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never
 # ---------- swallows messages that belong to the photo flow above. ----------
 
