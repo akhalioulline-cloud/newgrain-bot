@@ -53,11 +53,11 @@ def _call_sync(img: bytes, species) -> list:
             {"type": "image_url",
              "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}},
         ]}],
-        "temperature": 0, "max_tokens": 1500,
+        "temperature": 0, "max_tokens": 2500,
     }
     try:
         r = requests.post(_URL, headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
-                          json=body, timeout=60)
+                          json=body, timeout=90)
         if r.status_code != 200:
             logger.warning("weed-suggest HTTP %s", r.status_code)
             return []

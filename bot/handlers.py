@@ -908,7 +908,9 @@ async def _offer_weed_suggestions(callback: CallbackQuery, state: FSMContext) ->
     except Exception:
         logger.exception("weed suggestion failed")
     if not guesses:
-        await callback.message.answer("Введите название вида (или /skip):")
+        await callback.message.answer(
+            "Не смог распознать вид по фото 🤷 Напишите название сами "
+            "(или /skip, если не знаете).")
         return
     await state.update_data(weed_guesses=[g["ru"] for g in guesses])
     rows = [[InlineKeyboardButton(text=g["ru"], callback_data=f"wsug:{i}")]
