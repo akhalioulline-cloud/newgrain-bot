@@ -171,15 +171,28 @@ def build_payload(our_field, parsed, cat, local_key):
 
 
 def create_operation(payload):
-    """Two-step: CREATE the operation (with its mix), then UPDATE it to done — you
-    can't mark done in the create request because the applications (внесения) don't
-    exist yet at validation time. Returns (status_code, detail)."""
+    """THREE steps — operation and внесение are separate Cropwise resources, so a
+    single request can't do it (per CropWise support):
+      1. POST /agro_operations            → create the operation (planned)
+      2. POST /application_mix_items       → add each внесение (fact applied), linked
+                                             by agro_operation_id
+      3. PUT  /agro_operations/{id}        → mark status=done
+    Returns (final_status_code, detail).
+    """
     hdr = {**HEADERS, "Content-Type": "application/json"}
-    body = {k: v for k, v in payload.items() if k != "status"}   # create as a plan first
-    r = requests.post(f"{BASE}/agro_operations", headers=hdr, json={"data": body}, timeout=90)
+    mix = payload.get("application_mix_items", [])
+    op_body = {k: v for k, v in payload.items()
+               if k not in ("status", "application_mix_items")}
+    r = requests.post(f"{BASE}/agro_operations", headers=hdr, json={"data": op_body}, timeout=90)
     if r.status_code not in (200, 201):
         return r.status_code, r.text
     op_id = r.json()["data"]["id"]
+    for it in mix:                                   # the внесение(s) as their own resource
+        item = {**it, "agro_operation_id": op_id}
+        ri = requests.post(f"{BASE}/application_mix_items", headers=hdr,
+                           json={"data": item}, timeout=90)
+        if ri.status_code not in (200, 201):
+            return ri.status_code, f"op {op_id} created but внесение failed: {ri.text[:300]}"
     done = {"status": "done"}
     for k in ("completed_date", "completed_datetime", "completed_percents",
               "completed_area", "calc_by"):
@@ -187,7 +200,8 @@ def create_operation(payload):
             done[k] = payload[k]
     r2 = requests.put(f"{BASE}/agro_operations/{op_id}", headers=hdr,
                       json={"data": done}, timeout=90)
-    return r2.status_code, f"created id={op_id}; mark-done HTTP {r2.status_code}: {r2.text[:400]}"
+    return r2.status_code, (f"created id={op_id}; внесение×{len(mix)}; "
+                            f"mark-done HTTP {r2.status_code}: {r2.text[:300]}")
 
 
 async def _resolve_our_field(field_ref, farm_id=None):
