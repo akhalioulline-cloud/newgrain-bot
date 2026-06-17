@@ -1,50 +1,53 @@
-# Bot → CropWise push — status (blocked on CropWise support)
+# Bot → CropWise push — LIVE
 
-*As of 2026-06-15.*
+*As of 2026-06-17.*
 
-Goal: an agronomist reports an операция to the bot (voice/NL) → it's created in
-CropWise automatically, no double entry. Reverse of the read sync.
+An agronomist reports an операция to the bot (voice/NL via `/log` or the daily
+nudge) → it's created in CropWise automatically as a **completed** operation, no
+double entry. Reverse of the read sync. **Wired into the bot and confirmed
+end-to-end** (op 20521: status=done + внесение Корсар fact_rate 1.8).
 
-## What works (proven against live CropWise)
-- `catalog/cropwise_push.py` parses a note (`bot/parse_op.py`), maps it to
-  CropWise dictionaries, and **creates an agro_operation** — `POST /agro_operations`
-  returns **201**. Field, work-type, product, rate, unit, date, idempotency_key all
-  map correctly (e.g. поле 121 → CW field 158, Корсар → Chemical 51, unit 26 liter).
-- Update (`PUT`) and delete (`DELETE → 204`) also work — **the token has full write
-  access** (the probe returned 422 validation, not 403; create+delete succeeded).
-- CLI: `python -m catalog.cropwise_push --note "…"` (dry preview) / `--post` (create)
-  / `--delete <id>` (cleanup). Two-step create-then-complete is implemented.
+## How it works
+`catalog/cropwise_push.py` maps a parsed op to CropWise's dictionaries (field by
+name/number+area, work-type by category/keyword, product → chemical/fertilizer/seed
+id, unit from the product's base unit) and creates it in **three steps** — because
+the operation and the внесение are **separate CropWise resources** (per support, a
+single request can't do both):
 
-## The blocker
-Operations are created as **«Запланировано» (planned)**. Marking them **«Сделано»
-(done)** fails with `422 strict_ami_done_status` — *«отсутствуют внесения»*.
+1. `POST /agro_operations` — create the operation (planned).
+2. `POST /application_mix_items` — add the внесение (with `agro_operation_id`,
+   `fact_rate`/`fact_amount`, unit, rate_basis). This is the actual application.
+3. `PUT /agro_operations/{id}` — set `status=done`.
 
-The mobile app confirms why: completion is **not** a status you pick (the Статус
-screen only offers Запланировано / В процессе / Отменено). «Сделано» is **derived**
-— it happens only after you add a **внесение** (actual application record) on the
-**Внесения** screen. That внесение is a **separate entity** from
-`application_mix_items`, and the app does **not** pre-fill it from the planned mix
-(you re-enter product/dose/area). So pre-fill-and-tap saves little — full
-automation is the only worthwhile version, and it needs the внесение API.
+Wired in `handlers.on_oplog_save`: after the local `field_treatments` save
+(`source='bot'`), `push_treatment()` runs off the event loop. A CropWise failure is
+only a warning — the local history row is never blocked. The CropWise catalog is
+cached ~1h in the bot. Dedup: the weekly pull (`cropwise_ops_sync`) skips ops whose
+`idempotency_key` starts with `flagleaf-` (our own pushes, already stored locally).
 
-Guessed endpoints `/ao_applications`, `/applications`,
-`/agro_operation_applications` all 404. The внесение creation method is
-undocumented → asked CropWise support (question sent 2026-06-15).
+## Gotchas solved (so we don't relearn them)
+- **`strict_ami_done_status` was a CropWise SETTING**, not an API limit —
+  «запрет на закрытие агрооперации без внесений». The owner unticked it. With it on,
+  no API call can close an operation without an внесение.
+- **`completed_datetime` must be ≤ now** — CropWise rejects a future time; we use
+  `now − 15 min` for today (midday for past dates).
+- **Embedded `application_mix_items` in the operation POST are dropped** — the
+  внесение must be its own `POST /application_mix_items` with `agro_operation_id`.
+- Token has full write access (create→201, delete→204). No separate "внесение"
+  endpoint name — it's `/application_mix_items`.
 
-## Question sent to CropWise support
-> API v3 — как создать «внесение» (фактическое применение) у агрооперации, чтобы
-> она перешла в «Сделано»? Создание операций работает (POST → 201), но `status=done`
-> даёт `422 strict_ami_done_status` («отсутствуют внесения»). В приложении внесение
-> добавляется отдельно на экране «Внесения». Какой endpoint и поля? Можно ли создать
-> операцию сразу с внесением в одном запросе? (`/ao_applications`, `/applications` → 404)
+## Decisions
+- **Confirm-before-push**: the `/log` ✓ confirmation *is* the confirm; on ✓ it pushes.
+- **Unmatched product**: still create the operation, flag «впишите внесение вручную».
 
-## Resume when CropWise answers
-1. Add a `create_внесение` step to `cropwise_push.py` using their endpoint/fields,
-   called after the operation is created, then mark done.
-2. Re-test with `--post` on a pilot field; verify status «Сделано»; delete the test op.
-3. Wire into the bot `/log` confirm step (founder chose **confirm-before-push** +
-   **push op, flag unmatched product**). Add idempotency dedup so the weekly pull
-   (`cropwise_ops_sync`) doesn't re-import our own pushes.
+## CLI (for testing / cleanup)
+```
+python -m catalog.cropwise_push --note "опрыскал поле 119 Корсаром 1.5 л/га сегодня"        # dry preview
+python -m catalog.cropwise_push --note "…" --post     # real create (3-step)
+python -m catalog.cropwise_push --delete <id>          # remove a test op
+```
 
-Feature decisions already made: confirm-before-send; unmatched product → still
-create the op, flag the product for manual entry.
+## Possible follow-ups
+- Map more work-types / units as real ops reveal gaps.
+- Surface the created CropWise operation id back to the agronomist (currently just
+  «отправлено в CropWise»).
