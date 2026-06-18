@@ -57,6 +57,7 @@ from bot.db import (
 )
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
+from bot.oplog_match import looks_like_oplog
 from bot.parse_op import parse_operation
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
@@ -1458,15 +1459,18 @@ def _op_date(s: str) -> date:
 
 
 def _op_summary(op: dict) -> str:
-    lines = ["Записать операцию?",
-             f"📍 {op['field_name']}" + (f" · {op['crop']}" if op["crop"] else ""),
-             f"🛠 {op['operation']}"]
+    fields = op.get("fields") or []
+    if len(fields) > 1:
+        head = f"📍 Поля ({len(fields)}): " + ", ".join(f["name"] for f in fields)
+    else:
+        head = f"📍 {op['field_name']}" + (f" · {op['crop']}" if op["crop"] else "")
+    lines = ["Записать операцию?", head, f"🛠 {op['operation']}"]
     if op["product"]:
         lines.append(f"📦 {op['product']}" + (f" ({op['dv']})" if op["dv"] else ""))
     bits = [b for b in (op["dose"], op["target"]) if b]
     if bits:
         lines.append("• " + " · ".join(bits))
-    if op["area"]:
+    if len(fields) <= 1 and op["area"]:
         lines.append(f"📐 {op['area']:g} га")
     lines.append(f"📅 {date.fromisoformat(op['date']):%d.%m.%Y}")
     return "\n".join(lines)
@@ -1516,12 +1520,24 @@ _SLOT_Q = {
 }
 
 
+def _field_entry(field) -> dict:
+    return {"id": field["id"], "name": field["name"], "crop": field["crop"],
+            "area": float(field["area_ha"]) if field["area_ha"] is not None else None}
+
+
+def _field_entry_from_op(op: dict) -> dict:
+    """Fallback field entry from the op's single-field mirror (defensive)."""
+    return {"id": op["field_id"], "name": op["field_name"],
+            "crop": op["crop"], "area": op["area"]}
+
+
 def _apply_field(op: dict, field) -> None:
     op["field_id"] = field["id"]
     op["field_name"] = field["name"]
     op["crop"] = field["crop"]
     if op["area"] is None and field["area_ha"] is not None:
         op["area"] = float(field["area_ha"])
+    op["fields"] = [_field_entry(field)]   # canonical list; mirror above kept for single-field code
 
 
 def _op_missing(op: dict) -> list:
@@ -1551,8 +1567,9 @@ async def _continue_oplog(message: Message, state: FSMContext, op: dict) -> None
     await state.set_state(OpLogForm.confirm)
     # Conflict check: warn if a colleague (or earlier entry) already logged the
     # same product on this field today, so the agronomist can avoid a duplicate.
+    # Single-field only — a multi-field log is checked per row at save time.
     summary = _op_summary(op)
-    dups = await find_similar_treatment(
+    dups = [] if len(op.get("fields") or []) > 1 else await find_similar_treatment(
         op["field_id"], date.fromisoformat(op["date"]), op["category"], op["product"])
     if dups:
         who = ", ".join(sorted({d["operator"] for d in dups if d["operator"]})) or "кто-то"
@@ -1606,6 +1623,36 @@ async def _set_field(message: Message, state: FSMContext, op: dict, ref: str, fa
     return False
 
 
+async def _set_fields(message: Message, state: FSMContext, op: dict, refs: list, farm_id) -> bool:
+    """Resolve one OR several field refs into op['fields']. One ref → the existing
+    single-field path (handles отделение disambiguation). Several → resolve each
+    best-effort, proceed with the ones found, and flag any that didn't resolve."""
+    refs = [r for r in (str(x).strip() for x in refs) if r]
+    if len(refs) <= 1:
+        return await _set_field(message, state, op, refs[0] if refs else "", farm_id)
+    resolved, unresolved = [], []
+    for ref in refs:
+        cands = await find_fields_by_number(farm_id, ref)
+        row = cands[0] if len(cands) == 1 else (
+            None if cands else await resolve_field(ref, farm_id))
+        (resolved if row else unresolved).append(_field_entry(row) if row else ref)
+    if not resolved:
+        await state.update_data(op=op, slot="field")
+        await state.set_state(OpLogForm.filling)
+        await message.answer("Не нашёл такие поля. Укажите номер, например «119».")
+        return False
+    op["fields"] = resolved
+    first = resolved[0]
+    op["field_id"], op["field_name"], op["crop"] = first["id"], first["name"], first["crop"]
+    if op["area"] is None:
+        op["area"] = first["area"]
+    if unresolved:
+        await message.answer("⚠️ Не распознал поля: " + ", ".join(unresolved)
+                             + ". Запишу только распознанные — остальные залогируйте отдельно.")
+    await state.update_data(op=op)
+    return True
+
+
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
     parsed = await parse_operation(note)
     if not parsed:
@@ -1615,7 +1662,7 @@ async def _handle_op_note(message: Message, state: FSMContext, user, note: str) 
         return
     cat = (parsed.get("category") or "other").lower()
     op = {
-        "field_id": None, "field_name": None, "crop": None,
+        "fields": [], "field_id": None, "field_name": None, "crop": None,
         "date": _op_date(parsed.get("date")).isoformat(), "category": cat,
         "operation": parsed.get("operation") or _OP_CAT_RU.get(cat, "операция"),
         "product": parsed.get("product"), "dv": None, "target": parsed.get("target"),
@@ -1625,8 +1672,8 @@ async def _handle_op_note(message: Message, state: FSMContext, user, note: str) 
     if op["product"] and cat == "protection":
         op["dv"] = await lookup_active_substance(op["product"])
     await state.update_data(op=op, farm_id=user["farm_id"], field_choices=None)
-    fq = parsed.get("field")
-    if fq and not await _set_field(message, state, op, str(fq), user["farm_id"]):
+    refs = parsed.get("fields") or ([parsed["field"]] if parsed.get("field") else [])
+    if refs and not await _set_fields(message, state, op, refs, user["farm_id"]):
         return   # asked отделение / not found — stays in OpLogForm.filling
     await _continue_oplog(message, state, op)
 
@@ -1724,35 +1771,45 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
     if not op:
         await callback.message.answer("Нечего сохранять.")
         return
-    treatment_id = await insert_bot_treatment(
-        field_id=op["field_id"], field_name=op["field_name"],
-        treatment_date=date.fromisoformat(op["date"]), crop=op["crop"],
-        operation=op["operation"], op_category=op["category"], product=op["product"],
-        active_substance=op["dv"], target=op["target"], dose=op["dose"],
-        area_ha=op["area"], operator=op["operator"],
-    )
-    if not treatment_id:
-        await callback.message.answer("ℹ️ Такая операция уже была записана — дубликат пропущен.")
+    fields = op.get("fields") or ([_field_entry_from_op(op)] if op.get("field_id") else [])
+    if not fields:
+        await callback.message.answer("Нечего сохранять.")
         return
-    await callback.message.answer("✅ Записано в историю поля. Отправляю в CropWise…")
-    # Mirror the operation into CropWise (confirm-before-push: this IS the confirm).
-    # Sync requests under the hood → run off the event loop. Never blocks the save:
-    # the history row is already in; a CropWise hiccup is just a warning.
-    parsed_like = {
-        "category": op["category"], "operation": op["operation"],
-        "product": op["product"], "dose": op["dose"],
-        "area_ha": op["area"], "date": op["date"],
-    }
-    try:
-        from catalog.cropwise_push import push_treatment
-        ok, msg = await asyncio.to_thread(
-            push_treatment, op["field_name"], op["area"], parsed_like)
-    except Exception:
-        logger.exception("cropwise push failed")
-        ok, msg = False, "не удалось отправить в CropWise (в истории поля запись сохранена)"
-    if ok:
-        await mark_treatment_synced(treatment_id)   # so it's not reported as unsynced
-    await callback.message.answer(("📤 " if ok else "⚠️ ") + msg)
+    await callback.message.answer("Сохраняю…")
+    from catalog.cropwise_push import push_treatment
+    saved, dup, lines = 0, 0, []
+    # One field_treatments row + one CropWise push PER field (a multi-field note like
+    # «опрыскал поля 262, 252, 251 …» fans out to one operation each).
+    for f in fields:
+        tid = await insert_bot_treatment(
+            field_id=f["id"], field_name=f["name"],
+            treatment_date=date.fromisoformat(op["date"]), crop=f.get("crop"),
+            operation=op["operation"], op_category=op["category"], product=op["product"],
+            active_substance=op["dv"], target=op["target"], dose=op["dose"],
+            area_ha=f.get("area"), operator=op["operator"],
+        )
+        if not tid:
+            dup += 1
+            lines.append(f"• {f['name']}: дубликат, пропущено")
+            continue
+        saved += 1
+        parsed_like = {"category": op["category"], "operation": op["operation"],
+                       "product": op["product"], "dose": op["dose"],
+                       "area_ha": f.get("area"), "date": op["date"]}
+        try:
+            ok, _ = await asyncio.to_thread(push_treatment, f["name"], f.get("area"), parsed_like)
+        except Exception:
+            logger.exception("cropwise push failed")
+            ok = False
+        if ok:
+            await mark_treatment_synced(tid)
+            lines.append(f"• {f['name']}: ✅ история + CropWise")
+        else:
+            lines.append(f"• {f['name']}: ✅ история, ⚠️ CropWise не принял")
+    head = (f"Готово: записано {saved} из {len(fields)}"
+            + (f", дубликатов {dup}" if dup else "") + ".")
+    await callback.message.answer(head + "\n" + "\n".join(lines)
+                                  + ("\n\nПроверьте в CropWise." if saved else ""))
 
 
 @router.callback_query(OpLogForm.confirm, F.data == "oplog:cancel")
@@ -1842,6 +1899,21 @@ async def on_report_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await _drop_kb(callback)
     await state.clear()
     await callback.message.answer("Отменено.")
+
+
+# ---------- free-text operation log: «опрыскал поле 119 …» → the REAL save flow ----
+# The bot guide tells agronomists to just type the operation. This routes such a
+# statement into parse → confirm card (✓) → save + CropWise, instead of letting it
+# fall to the assistant below (which only DESCRIBES logging and never saves — the bug
+# Евгения hit: bot "accepted" the spray but it never reached CropWise). Questions
+# («чем обработать сою?») don't match and still go to the assistant.
+def _oplog_filter(message: Message) -> bool:
+    return looks_like_oplog(message.text or "")
+
+
+@router.message(StateFilter(None), F.text, _oplog_filter)
+async def on_oplog_freetext(message: Message, state: FSMContext, user) -> None:
+    await _handle_op_note(message, state, user, message.text)
 
 
 # ---------- conversational Q&A: free-text question → grounded colloquial answer ----
