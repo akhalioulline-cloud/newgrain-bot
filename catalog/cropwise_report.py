@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 import requests
 
 from bot.config import settings
+from catalog.cropwise_ops_sync import HEADERS
 from catalog.cropwise_push import (_all, _lead_int, _match_product, _norm, _split_dose,
                                    create_operation, load_catalogs)
 
@@ -290,6 +291,59 @@ def create_ops(plan):
         results.append({"field": f["ref"], "ok": code in (200, 201), "code": code,
                         "detail": detail[:140]})
     return results
+
+
+# ---------- machine task (logistics: КамАЗ подвоз воды — driver+machine, NO field) ----
+def build_machine_task(operation, machine_raw, driver_raw, date_iso):
+    """Resolve a logistics note into a CropWise machine-task plan: work_type (matched
+    against ALL work types — transport isn't an agri type), machine, driver. No field
+    (one trip serves many). Sync — call via asyncio.to_thread."""
+    wt = match_work_type(operation, _all("work_types"))
+    machine = match_machine(machine_raw, machine_raw, _all("machines")) if machine_raw else None
+    driver = match_driver(driver_raw, _all("users")) if driver_raw else None
+    return {
+        "kind": "machine_task", "operation": operation, "date": date_iso,
+        "work_type": {"id": wt["id"], "name": wt["name"]} if wt else None,
+        "machine": {"id": machine["id"], "name": machine["name"]} if machine else None,
+        "machine_raw": machine_raw,
+        "driver": {"id": driver["id"], "name": driver.get("username")} if driver else None,
+        "driver_raw": driver_raw,
+    }
+
+
+def mt_summary(plan):
+    wt, m, d = plan["work_type"], plan["machine"], plan["driver"]
+    return "\n".join([
+        "🚚 Задание машины (без поля) → CropWise:",
+        f"Операция: {plan['operation']} → " + (f"«{wt['name']}»" if wt else "⚠️ вид работ не определён"),
+        f"Машина: {plan['machine_raw'] or '—'} → " + (f"«{m['name']}»" if m else "⚠️ не найдена"),
+        f"Водитель: {plan['driver_raw'] or '—'} → " + (f"{d['name']}" if d else "не указан"),
+        f"Дата: {date.fromisoformat(plan['date']):%d.%m.%Y}",
+        "\nСоздать задание машины?",
+    ])
+
+
+def create_machine_task(plan):
+    """POST a completed machine task to CropWise (no field). Idempotent via external_id.
+    Sync — call via asyncio.to_thread. Returns (status_code, detail)."""
+    wt, m, d = plan.get("work_type"), plan.get("machine"), plan.get("driver")
+    if not wt:
+        return 0, "вид работ не определён"
+    if not m:
+        return 0, "машина не найдена"
+    iso = plan["date"]
+    body = {
+        "work_type_id": wt["id"], "machine_id": m["id"], "season": int(iso[:4]),
+        "start_time": f"{iso}T08:00:00+03:00", "end_time": f"{iso}T17:00:00+03:00",
+        "status": "done", "auto_created": False, "description": plan["operation"],
+        "external_id": "flagleaf-mt-" + hashlib.sha1(
+            f"{wt['id']}|{m['id']}|{iso}|{plan['operation']}".encode()).hexdigest()[:20],
+    }
+    if d:
+        body["driver_id"] = d["id"]
+    r = requests.post(f"{BASE}/machine_tasks", headers={**HEADERS, "Content-Type": "application/json"},
+                      json={"data": body}, timeout=60)
+    return r.status_code, r.text[:300]
 
 
 async def main():

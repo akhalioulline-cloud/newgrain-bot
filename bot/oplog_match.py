@@ -41,3 +41,14 @@ def looks_like_oplog(text: str) -> bool:
     if not _VERB_RE.search(t):
         return False
     return bool(_ANCHOR_RE.search(t))
+
+
+# Logistics / transport work (подвоз воды/удобрений, перевозка): a КамАЗ task with a
+# driver + machine but NO field (one trip serves many fields). These become a CropWise
+# MACHINE TASK, not a field operation, so the log flow must NOT demand a field.
+_TRANSPORT_RE = re.compile(r"подвоз|подвез|перевоз|перевез|достав|транспорт|закачк", re.I)
+
+
+def is_logistics_op(operation_text: str) -> bool:
+    """True if the operation is field-less logistics (→ CropWise machine task)."""
+    return bool(_TRANSPORT_RE.search((operation_text or "").replace("ё", "е")))

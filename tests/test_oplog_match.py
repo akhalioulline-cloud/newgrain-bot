@@ -2,7 +2,7 @@
 Regression guard for the bug where typed operations were faked by the chatbot and
 never saved. Uses Евгения's real phrasings from the field test.
 """
-from bot.oplog_match import looks_like_oplog
+from bot.oplog_match import is_logistics_op, looks_like_oplog
 
 
 # Real operation statements → must enter the log flow (True)
@@ -49,3 +49,16 @@ def test_empty_is_not_a_log():
 def test_verb_without_anchor_is_not_a_log():
     # an operation word but no field/number to act on → not a log entry
     assert not looks_like_oplog("опрыскивание прошло хорошо")
+
+
+# Logistics detection → machine task (no field) vs ordinary field operation
+def test_logistics_ops_detected():
+    assert is_logistics_op("подвоз воды")
+    assert is_logistics_op("перевозка зерна")
+    assert is_logistics_op("доставка семян")
+
+
+def test_field_ops_are_not_logistics():
+    assert not is_logistics_op("опрыскивание")
+    assert not is_logistics_op("сев сои")
+    assert not is_logistics_op("")

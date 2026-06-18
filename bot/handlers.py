@@ -57,7 +57,7 @@ from bot.db import (
 )
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
-from bot.oplog_match import looks_like_oplog
+from bot.oplog_match import is_logistics_op, looks_like_oplog
 from bot.parse_op import parse_operation
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
@@ -1653,12 +1653,36 @@ async def _set_fields(message: Message, state: FSMContext, op: dict, refs: list,
     return True
 
 
+async def _handle_machine_task(message: Message, state: FSMContext, user, parsed: dict) -> None:
+    """Logistics (КамАЗ подвоз воды): driver + machine + work-type, NO field — becomes
+    a CropWise machine task. The water goes to many fields, so we don't ask for one."""
+    from catalog.cropwise_report import build_machine_task, mt_summary
+    op_date = _op_date(parsed.get("date")).isoformat()
+    plan = await asyncio.to_thread(
+        build_machine_task, parsed.get("operation") or "подвоз",
+        parsed.get("machine"), parsed.get("driver"), op_date)
+    if not plan.get("work_type") or not plan.get("machine"):
+        miss = ([] if plan.get("work_type") else ["вид работ"]) + \
+               ([] if plan.get("machine") else ["машину и её номер"])
+        await message.answer(
+            "Не разобрал " + " и ".join(miss) + " для задания машины.\n"
+            "Повторите, например: «17 июня КамАЗ 286 Двулучанский подвоз воды».")
+        return
+    plan["operator"] = user["full_name"]
+    await state.update_data(op=plan)
+    await state.set_state(OpLogForm.confirm)
+    await message.answer(mt_summary(plan), reply_markup=_oplog_confirm_kb())
+
+
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
     parsed = await parse_operation(note)
     if not parsed:
         await message.answer(
             "Не понял. Повторите, например: «опрыскал 119 Корсаром 1.5 л/га от сорняков»."
         )
+        return
+    if is_logistics_op(parsed.get("operation") or "") or is_logistics_op(note):
+        await _handle_machine_task(message, state, user, parsed)
         return
     cat = (parsed.get("category") or "other").lower()
     op = {
@@ -1770,6 +1794,22 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     if not op:
         await callback.message.answer("Нечего сохранять.")
+        return
+    if op.get("kind") == "machine_task":            # logistics: no field, → CropWise machine task
+        from catalog.cropwise_report import create_machine_task
+        await callback.message.answer("Создаю задание машины в CropWise…")
+        try:
+            code, detail = await asyncio.to_thread(create_machine_task, op)
+        except Exception:
+            logger.exception("machine task create failed")
+            code, detail = 0, "ошибка"
+        if code in (200, 201):
+            await callback.message.answer(
+                f"✅ Задание машины создано: «{op['work_type']['name']}», "
+                f"{op['machine']['name']}. Проверьте в CropWise.")
+        else:
+            await callback.message.answer(
+                f"⚠️ CropWise не принял задание машины (код {code}). Запись не создана.")
         return
     fields = op.get("fields") or ([_field_entry_from_op(op)] if op.get("field_id") else [])
     if not fields:
