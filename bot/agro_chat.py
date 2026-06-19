@@ -10,7 +10,7 @@ import re
 import requests
 
 from bot.config import settings
-from bot.db import get_registered_products
+from bot.db import get_registered_products, get_vendor_recommendations
 
 _ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -55,6 +55,10 @@ _SYS = (
     "трибенурон-устойчивые) — обязательно оговаривай это условие. Если подходящего "
     "селективного препарата для этой культуры нет — честно скажи об этом и предложи "
     "агроприёмы (нужный гибрид, севооборот, механическую прополку), а НЕ опасный препарат. "
+    "Если в контексте есть блок «ПРЕПАРАТЫ ПРОИЗВОДИТЕЛЕЙ Syngenta и «Август»» — добавь их "
+    "ОТДЕЛЬНЫМ блоком в конце, ПОСЛЕ нейтральных рекомендаций, под заголовком «🏷 От "
+    "производителей (Syngenta / Август):», у каждого препарата ставь пометку производителя. "
+    "Это дополнение, а НЕ замена нейтрального совета; не подавай их как нейтральную рекомендацию. "
     "Не пиши дисклеймеры («разрешённых к применению в РФ», "
     "«зарегистрированных в Госкаталоге») и не отсылай «ознакомьтесь с каталогом» — сразу "
     "давай дельный совет. Если по конкретному препарату или норме не уверен — коротко "
@@ -146,7 +150,35 @@ async def _registry_grounding(question: str) -> str | None:
                  "метиле (система Express/Sumo) и на имазамоксе/имазапире (Clearfield) "
                  "применимы ТОЛЬКО на устойчивых к ним гибридах — на обычных они повредят "
                  "культуру. Укажи это условие в ответе.)")
-    return head + "\n" + "\n".join(lines)
+    block = head + "\n" + "\n".join(lines)
+    vendor = await _vendor_grounding(crop, used)
+    return block + ("\n\n" + vendor if vendor else "")
+
+
+async def _vendor_grounding(crop: str, target: str | None) -> str | None:
+    """Producers' own registered products (Syngenta / Август) for the crop, surfaced as a
+    SEPARATE, clearly-flagged block in addition to the neutral list."""
+    rows = await get_vendor_recommendations(crop, target)
+    if not rows and target:
+        rows = await get_vendor_recommendations(crop)        # broaden to crop-only
+    if not rows:
+        return None
+    by = {}
+    for r in rows:
+        key = r["vendor"]
+        if r["product_name"] in {p["product_name"] for p in by.get(key, [])}:
+            continue
+        by.setdefault(key, []).append(r)
+    out = ["ПРЕПАРАТЫ ПРОИЗВОДИТЕЛЕЙ Syngenta и «Август» (из их собственной линейки, по "
+           "официальной регистрации) — покажи их ОТДЕЛЬНЫМ блоком в конце ответа под "
+           "заголовком «🏷 От производителей (Syngenta / Август):», только зарегистрированные "
+           "для этой культуры, с пометкой производителя у каждого; не выдавай за нейтральную "
+           "рекомендацию:"]
+    for vendor, items in by.items():
+        for r in items[:6]:
+            out.append(f"• [{vendor}] {r['product_name']} (д.в. {r['active_substances']}) — "
+                       f"{r['target']}; норма {r['rate']}")
+    return "\n".join(out)
 
 
 async def answer(question: str, context: str | None = None) -> str | None:

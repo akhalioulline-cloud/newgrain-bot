@@ -344,6 +344,32 @@ async def get_registered_products(crop: str, target: str | None = None, limit: i
         return (await conn.execute(text(sql), params)).mappings().all()
 
 
+# Producers whose own registered products the bot surfaces as a flagged extra block
+# (founder decision 2026-06-19, LICENSING.md §6). Sourced from the official Госкаталог
+# (registrant field) — NOT from the producers' copyrighted atlases.
+_VENDORS = (("Syngenta", "%синген%"), ("Август", "%август%"))
+
+
+async def get_vendor_recommendations(crop: str, target: str | None = None, limit: int = 24):
+    """Registered products of Syngenta / Август for a crop (+optional target), from the
+    Госкаталог, tagged by manufacturer. These are the producers' OWN registered options —
+    surfaced in addition to the neutral list and clearly flagged as theirs."""
+    out = []
+    async with engine.connect() as conn:
+        for vendor, pat in _VENDORS:
+            sql = ("SELECT DISTINCT product_name, active_substances, target, rate "
+                   "FROM pesticide_applications WHERE crop ILIKE :crop AND registrant ILIKE :reg")
+            params = {"crop": f"%{crop}%", "reg": pat}
+            if target:
+                sql += " AND target ILIKE :target"
+                params["target"] = f"%{target}%"
+            sql += " ORDER BY product_name LIMIT :lim"
+            params["lim"] = limit
+            for r in (await conn.execute(text(sql), params)).mappings().all():
+                out.append({**dict(r), "vendor": vendor})
+    return out
+
+
 async def find_similar_treatment(field_id, treatment_date, op_category, product):
     """Existing op(s) on the same field + date + category with the same product —
     used to warn an agronomist about a likely duplicate (e.g. a colleague already
