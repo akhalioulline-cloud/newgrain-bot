@@ -109,31 +109,37 @@ def match_machine(number, mtype, machines):
     return None
 
 
-def match_driver(driver_raw, users):
-    """Match «Фамилия [Имя] [Отчество]» to a CropWise user. Among same-surname users the
-    given name AND patronymic disambiguate in order — «Шапаренко Сергей» beats «…Евгений»,
-    and «Купченко Николай Николаевич» beats «…Николай Павлович». Ties break toward an
-    ACTIVE record (CropWise has many stale 'no_access' namesake duplicates). A bare
-    surname still returns the first (active) match, as before. Initials work too («…С»)."""
+def driver_matches(driver_raw, users):
+    """Best-ranked driver candidates for «Фамилия [Имя] [Отчество]». Among same-surname
+    users the given name AND patronymic narrow in order («Шапаренко Сергей» beats «…Евгений»,
+    «Купченко Николай Николаевич» beats «…Николай Павлович»); ties break toward ACTIVE
+    records (CropWise has many stale 'no_access' namesake dups). Returns [] or [one]
+    normally; MORE THAN ONE only for true active full-namesakes the supplied name can't
+    separate — the caller should then ask which. Initials work too («…С»)."""
     parts = _norm_txt(driver_raw).split()
     if not parts:
-        return None
+        return []
     surname, given = parts[0], [p.strip(".") for p in parts[1:]]
-    cands = []
+    scored = []
     for u in users:
         un = _norm_txt(u.get("username"))
         toks = un.split() if un else []
         if not toks or not (toks[0] == surname or surname in un):
             continue
-        # how many of the supplied name tokens (имя, отчество…) match, in order
         score = sum(1 for i, g in enumerate(given)
                     if len(toks) > i + 1 and toks[i + 1].startswith(g))
-        active = u.get("status") != "no_access"
-        cands.append((score, active, u))
-    if not cands:
-        return None
-    cands.sort(key=lambda c: (c[0], c[1]), reverse=True)   # best name match, then active
-    return cands[0][2]
+        scored.append((score, u.get("status") != "no_access", u))
+    if not scored:
+        return []
+    scored.sort(key=lambda c: (c[0], c[1]), reverse=True)
+    s0, a0, _ = scored[0]
+    return [u for (s, a, u) in scored if s == s0 and a == a0]   # all tied for best
+
+
+def match_driver(driver_raw, users):
+    """Single best driver (first of driver_matches), or None."""
+    m = driver_matches(driver_raw, users)
+    return m[0] if m else None
 
 
 def _area_of(ref):
@@ -331,7 +337,8 @@ def build_machine_task(operation, machine_raw, driver_raw, date_iso):
     (one trip serves many). Sync — call via asyncio.to_thread."""
     wt = match_work_type(operation, _all("work_types"))
     machine = match_machine(machine_raw, machine_raw, _all("machines")) if machine_raw else None
-    driver = match_driver(driver_raw, _all("users")) if driver_raw else None
+    drivers = driver_matches(driver_raw, _all("users")) if driver_raw else []
+    driver = drivers[0] if drivers else None
     return {
         "kind": "machine_task", "operation": operation, "date": date_iso,
         "work_type": {"id": wt["id"], "name": wt["name"]} if wt else None,
@@ -339,6 +346,9 @@ def build_machine_task(operation, machine_raw, driver_raw, date_iso):
         "machine_raw": machine_raw,
         "driver": {"id": driver["id"], "name": driver.get("username")} if driver else None,
         "driver_raw": driver_raw,
+        # >1 only for true active full-namesakes → the bot asks which (no typeable unique id)
+        "driver_options": ([{"id": u["id"], "name": u.get("username")} for u in drivers]
+                           if len(drivers) > 1 else None),
     }
 
 

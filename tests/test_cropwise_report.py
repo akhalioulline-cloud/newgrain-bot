@@ -2,7 +2,7 @@
 Covers: report-line matching (work-type / machine / driver) and the plan lookup
 that decides whether an operation is created-and-linked or blocked.
 """
-from catalog.cropwise_report import (_area_of, find_plan, match_driver,
+from catalog.cropwise_report import (_area_of, driver_matches, find_plan, match_driver,
                                       match_machine, match_work_type, plan_summary)
 
 
@@ -56,6 +56,17 @@ def test_match_driver_prefers_active_record():
     users = [{"id": 1, "username": "Тимошенко Владимир Николаевич", "status": "no_access"},
              {"id": 2, "username": "Тимошенко Владимир Николаевич", "status": "user"}]
     assert match_driver("Тимошенко Владимир Николаевич", users)["id"] == 2
+
+
+def test_driver_matches_flags_true_ambiguity():
+    # two ACTIVE people, identical full name → caller must ask (>1 candidate)
+    users = [{"id": 1, "username": "Купченко Николай Николаевич", "status": "user"},
+             {"id": 2, "username": "Купченко Николай Николаевич", "status": "user"}]
+    assert len(driver_matches("Купченко Николай Николаевич", users)) == 2
+    # but the given name resolving it uniquely → exactly one
+    users2 = [{"id": 1, "username": "Шапаренко Евгений Александрович", "status": "user"},
+              {"id": 2, "username": "Шапаренко Сергей Петрович", "status": "user"}]
+    assert len(driver_matches("Шапаренко Сергей", users2)) == 1
 
 
 def test_area_of():

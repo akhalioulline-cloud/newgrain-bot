@@ -1671,7 +1671,35 @@ async def _handle_machine_task(message: Message, state: FSMContext, user, parsed
     plan["operator"] = user["full_name"]
     await state.update_data(op=plan)
     await state.set_state(OpLogForm.confirm)
+    if plan.get("driver_options"):               # true active full-namesakes → ask which
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=o["name"], callback_data=f"mtdrv:{o['id']}")]
+            for o in plan["driver_options"]])
+        await message.answer(
+            f"Несколько водителей с именем «{plan['driver_raw']}» — выберите нужного:",
+            reply_markup=kb)
+        return
     await message.answer(mt_summary(plan), reply_markup=_oplog_confirm_kb())
+
+
+@router.callback_query(OpLogForm.confirm, F.data.startswith("mtdrv:"))
+async def on_mt_driver_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    await _ack(callback)
+    await _drop_kb(callback)
+    from catalog.cropwise_report import mt_summary
+    op = (await state.get_data()).get("op")
+    if not op or not op.get("driver_options"):
+        await callback.message.answer("Сессия истекла — повторите /log.")
+        await state.clear()
+        return
+    did = int(callback.data.split(":")[1])
+    chosen = next((o for o in op["driver_options"] if o["id"] == did), None)
+    if not chosen:
+        await callback.message.answer("Не нашёл этого водителя, повторите.")
+        return
+    op["driver"], op["driver_options"] = {"id": chosen["id"], "name": chosen["name"]}, None
+    await state.update_data(op=op)
+    await callback.message.answer(mt_summary(op), reply_markup=_oplog_confirm_kb())
 
 
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
