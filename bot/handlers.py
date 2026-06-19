@@ -1924,13 +1924,26 @@ async def on_report_create(callback: CallbackQuery, state: FSMContext) -> None:
         logger.exception("report create failed")
         await callback.message.answer("⚠️ Ошибка при создании операций в CropWise.")
         return
-    ok = sum(1 for r in results if r.get("ok"))
-    lines = [f"{'✓' if r.get('ok') else '✗'} поле {r['field']}"
-             + ("" if r.get("ok") else f" — {r.get('msg') or ('код ' + str(r.get('code')))}")
-             for r in results]
-    await callback.message.answer(
-        f"Готово: создано {ok}/{len(results)} операций в CropWise.\n" + "\n".join(lines)
-        + "\n\nПроверьте в CropWise.")
+    created = sum(1 for r in results if r.get("ok") and not r.get("already"))
+    already = sum(1 for r in results if r.get("already"))
+    failed = [r for r in results if not r.get("ok")]
+
+    def _line(r):
+        if r.get("already"):
+            return f"↺ поле {r['field']} — уже было создано ранее"
+        if r.get("ok"):
+            return f"✓ поле {r['field']}"
+        return (f"✗ поле {r['field']} — "
+                + str(r.get("msg") or r.get("detail") or ("код " + str(r.get("code")))))
+
+    head = f"Готово: создано {created}"
+    if already:
+        head += f", уже было ранее {already}"
+    if failed:
+        head += f", не удалось {len(failed)}"
+    head += f" (всего {len(results)})."
+    await callback.message.answer(head + "\n" + "\n".join(_line(r) for r in results)
+                                  + "\n\nПроверьте в CropWise.")
 
 
 @router.callback_query(CAReport.confirm, F.data == "rep:cancel")

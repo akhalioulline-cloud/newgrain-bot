@@ -261,6 +261,13 @@ def create_ops(plan):
     today = date.today().isoformat()
     cdt = (datetime.now() - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%S")
     driver = plan.get("driver")
+    # Dedup on the operation's IDENTITY (field + work-type + season), NOT a date-stamped
+    # key: re-pasting the same report (even on a later day) reports «уже создано ранее»
+    # instead of creating a duplicate or showing a scary «код 422». One agro-operation
+    # per field × work-type × season is the CropWise model (it's how plans key, too).
+    cur_year = date.today().year
+    done = {(o.get("field_id"), o.get("work_type_id")) for o in _all("agro_operations")
+            if o.get("season") == cur_year}
     results = []
     for f in plan["fields"]:
         if not f["field_id"]:
@@ -270,12 +277,19 @@ def create_ops(plan):
             results.append({"field": f["ref"], "ok": False,
                             "msg": f"вид работ «{wt['name']}» не в плане агро работ — пропущено"})
             continue
+        if (f["field_id"], wt["id"]) in done:    # an op for this field+work-type already exists
+            results.append({"field": f["ref"], "ok": True, "already": True,
+                            "msg": "уже создано ранее"})
+            continue
         area = f["area"]
+        # stable (date-less) key — a re-paste yields the same key, so CropWise itself
+        # also rejects a duplicate even if the scan above missed it.
+        key = "flagleaf-rep-" + hashlib.sha1(
+            f"{f['field_id']}|{wt['id']}|{plan['operation']}".encode()).hexdigest()[:20]
         payload = {
             "field_id": f["field_id"], "field_shape_id": f["shape"], "work_type_id": wt["id"],
             "agri_work_plan_id": f["plan_id"],   # attach to the field's план агро работ
-            "idempotency_key": "flagleaf-rep-" + hashlib.sha1(
-                f"{f['field_id']}|{wt['id']}|{today}|{plan['operation']}".encode()).hexdigest()[:20],
+            "idempotency_key": key,
             "status": "done", "calc_by": "rate", "completed_date": today,
             "completed_datetime": cdt, "completed_percents": 100.0,
             "planned_start_date": today, "planned_end_date": today,
