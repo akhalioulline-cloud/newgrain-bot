@@ -250,7 +250,16 @@ def main() -> int:
                     help="send the HTML to ADMIN_TG_IDS via Telegram instead of stdout")
     args = ap.parse_args()
 
-    subs, species = asyncio.run(_fetch(args.status))
+    # Fetch photos AND annotator ids in ONE event loop — a second asyncio.run() would
+    # reuse the async DB engine bound to the first (closed) loop and silently fail the
+    # annotator lookup (which is why the reference reached admins only, never annotators).
+    async def _gather():
+        from bot.db import get_annotators
+        subs_, species_ = await _fetch(args.status)
+        ann_ = await get_annotators() if args.deliver else []
+        return subs_, species_, ann_
+
+    subs, species, annotator_ids = asyncio.run(_gather())
     if not subs:
         print(f"No submissions at status={args.status!r}.", file=sys.stderr)
         return 1
@@ -273,9 +282,10 @@ def main() -> int:
         n = send(
             f"📋 Справочник для разметки готов: {len(subs)} фото (статус {args.status}).\n"
             f"Откройте в браузере рядом с CVAT (ссылка действует 7 дней):\n{url}",
-            annotators=True,
+            extra_ids=annotator_ids,          # annotators fetched in the same loop above
         )
-        print(f"reference uploaded; link sent to {n} recipient(s).", file=sys.stderr)
+        print(f"reference uploaded; link sent to {n} recipient(s) "
+              f"(incl. {len(annotator_ids)} annotator(s)).", file=sys.stderr)
         return 0 if n else 2
 
     sys.stdout.write(html_doc)

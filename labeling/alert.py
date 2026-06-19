@@ -38,11 +38,16 @@ def _recipients(include_annotators: bool) -> list:
     return out
 
 
-def send(msg: str, annotators: bool = False) -> int:
-    """Send `msg` to ADMIN_TG_IDS (+ annotators if annotators=True). Returns count
-    delivered. Best-effort and exception-safe — callers can ignore failures."""
+def send(msg: str, annotators: bool = False, extra_ids: list | None = None) -> int:
+    """Send `msg` to ADMIN_TG_IDS (+ annotators if annotators=True, + any extra_ids).
+    Returns count delivered. Best-effort and exception-safe — callers can ignore failures.
+    Pass `extra_ids` (e.g. annotator ids fetched in the caller's own event loop) to avoid
+    the cross-event-loop DB lookup in `_annotator_ids` when the caller already ran asyncio."""
     msg = (msg or "(no message)").strip()
     recipients = _recipients(annotators)
+    for i in (extra_ids or []):
+        if i not in recipients:
+            recipients.append(i)
     if not settings.bot_token or not recipients:
         print("alert: BOT_TOKEN or recipients not set — cannot send.",
               file=sys.stderr)
