@@ -16,6 +16,13 @@ def test_kamaz_haul_is_a_log():
     assert looks_like_oplog("17 июня КамАЗ 286 подвозил воду на поле Двулучанский")
 
 
+def test_logistics_phrasings_route_to_log():
+    # logistics verbs must trigger the log flow too (else they fall to the assistant)
+    assert looks_like_oplog("Закачка воды Попов Газ 159")
+    assert looks_like_oplog("перевозка зерна КамАЗ 928")
+    assert looks_like_oplog("доставка семян ГАЗ 159")
+
+
 def test_canonical_guide_example_is_a_log():
     assert looks_like_oplog("опрыскал поле 119 Корсаром 1.5 л/га от сорняков")
 
