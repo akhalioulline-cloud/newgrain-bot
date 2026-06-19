@@ -57,7 +57,7 @@ from bot.db import (
 )
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
-from bot.oplog_match import is_logistics_op, looks_like_oplog
+from bot.oplog_match import is_fieldless_op, looks_like_oplog
 from bot.parse_op import parse_operation
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
@@ -1709,7 +1709,7 @@ async def _handle_op_note(message: Message, state: FSMContext, user, note: str) 
             "Не понял. Повторите, например: «опрыскал 119 Корсаром 1.5 л/га от сорняков»."
         )
         return
-    if is_logistics_op(parsed.get("operation") or "") or is_logistics_op(note):
+    if is_fieldless_op(parsed.get("operation") or "") or is_fieldless_op(note):
         await _handle_machine_task(message, state, user, parsed)
         return
     cat = (parsed.get("category") or "other").lower()
