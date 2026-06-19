@@ -177,6 +177,30 @@ async def _literature_grounding(question: str) -> str | None:
     return "\n".join(out)
 
 
+# Structured format for product-recommendation questions («чем обработать сою от осота?») —
+# same clarity as the photo diagnosis, minus the vision sections (the object is already named).
+# Used only when registry grounding fired (a real crop+target protection question); how-to and
+# field-history questions keep the conversational _SYS.
+_REC_SYS = (
+    "Ты — опытный агроном-консультант хозяйства «New Grain Co» (ЦЧР). Ответь на вопрос о защите "
+    "растений СТРУКТУРИРОВАННО, обычным текстом (БЕЗ markdown-звёздочек), по разделам с такими "
+    "заголовками-значками:\n"
+    "🌿 Объект: одной фразой что это (тип сорняка/болезни/вредителя, особенности — напр. осот "
+    "многолетний корнеотпрысковый).\n"
+    "🛡 Меры борьбы: 1) агротехнически/механически; 2) химически.\n"
+    "💊 Препараты: 2–3 подходящих с нормой расхода. Если в контексте есть блок ЗАРЕГИСТРИРОВАННЫЕ "
+    "ПРЕПАРАТЫ — бери препараты ТОЛЬКО из него, с пометкой производителя в [скобках], если она "
+    "есть. Если блока нет — назови действующие вещества и попроси уточнить культуру.\n"
+    "⏱ Когда обрабатывать: оптимальная фаза культуры и сорняка.\n"
+    "📚 Источники: если в контексте есть блок НАУЧНЫЕ ИСТОЧНИКИ — добавь 1–2 ссылки.\n\n"
+    "ЖЁСТКИЕ ПРАВИЛА: безопасность культуры превыше всего — НЕ рекомендуй препараты, повреждающие "
+    "саму культуру (глифосат — сплошной; на подсолнечнике/сое противодвудольные, трибенурон-метил, "
+    "имидазолиноны — ТОЛЬКО на устойчивых гибридах Express/Clearfield, обязательно оговори это). "
+    "Не выдумывай препаратов вне списка; если зарегистрированных нет — честно скажи и предложи "
+    "агроприёмы. Без дисклеймеров («разрешённых в РФ», «ознакомьтесь с каталогом») — сразу по делу."
+)
+
+
 async def answer(question: str, context: str | None = None) -> str | None:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
@@ -188,7 +212,10 @@ async def answer(question: str, context: str | None = None) -> str | None:
         literature,
         f"ВОПРОС: {question}",
     ) if p]
+    # Structured answer for real recommendation questions (grounding fired); conversational
+    # otherwise (bot how-to, field history, off-topic).
+    sys, max_toks = (_REC_SYS, 950) if grounding else (_SYS, 700)
     try:
-        return await asyncio.to_thread(_complete, _SYS, "\n\n".join(parts), 700, 0.45)
+        return await asyncio.to_thread(_complete, sys, "\n\n".join(parts), max_toks, 0.45)
     except Exception:
         return None
