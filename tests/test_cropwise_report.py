@@ -16,6 +16,21 @@ def test_match_work_type_token_overlap():
     assert match_work_type("полив", agri) is None
 
 
+def test_match_work_type_splits_plus_and_stems():
+    # «Воды+Гербициды» must split; «гербицидов»≈«гербициды» → the fuller match wins
+    types = [{"id": 127, "name": "Подвоз Воды"},
+             {"id": 129, "name": "Подвоз Воды+Гербициды"}]
+    assert match_work_type("подвоз воды и гербицидов", types)["id"] == 129
+    assert match_work_type("подвоз воды", types)["id"] == 127
+
+
+def test_match_work_type_pass_number_bonus():
+    types = [{"id": 1, "name": "1-я обработка подсолнечника"},
+             {"id": 2, "name": "2-я обработка подсолнечника"}]
+    assert match_work_type("1-я обработка подсолнечника", types)["id"] == 1
+    assert match_work_type("2-я обработка подсолнечника", types)["id"] == 2
+
+
 def test_match_machine_by_number_anywhere():
     machines = [{"id": 5, "name": "Самоходный опрыскиватель", "registration_number": "Е 6448 АА"},
                 {"id": 6, "name": "Амазон", "inventory_number": "5200"}]

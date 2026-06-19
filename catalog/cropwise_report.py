@@ -82,15 +82,34 @@ async def parse_report(text):
 
 
 # ---------- resolvers against CropWise dictionaries ----------
-def match_work_type(op_text, agri_types):
-    """Best agri work_type for the report's operation line, by token overlap (+crop/pass)."""
-    want = set(_norm_txt(op_text).replace("-", " ").split())
+_WT_STOP = {"и", "в", "на", "с", "по", "для", "от", "под", "до", "за"}
+
+
+def _wt_tokens(s):
+    """Significant tokens of a work-type/operation name: split on ANY non-letter (so
+    «Воды+Гербициды» → воды, гербициды), drop stopwords («и») and 1–2-char noise."""
+    toks = re.split(r"[^а-яa-z0-9]+", _norm_txt(s))
+    return [t for t in toks if len(t) >= 3 and t not in _WT_STOP]
+
+
+def _wt_tok_match(a, b):
+    # exact, or same 5-char stem so «гербицидов» ≈ «гербициды», «опрыскивание» ≈ «опрыскивал»
+    return a == b or (len(a) >= 4 and len(b) >= 4 and a[:5] == b[:5])
+
+
+def match_work_type(op_text, types):
+    """Best work_type for an operation line, by stopword-stripped, stem-aware token overlap
+    (+1 when a pass number 1/2… matches). Pass the candidate set the caller wants (e.g. only
+    agri types for field ops, only non-agri for machine tasks). None below 2 matched tokens."""
+    want = _wt_tokens(op_text)
+    if not want:
+        return None
+    digits = re.findall(r"\d", op_text)
     best, score = None, 0
-    for w in agri_types:
-        toks = set(_norm_txt(w["name"]).replace("-", " ").split())
-        s = len(want & toks)
-        # bonus when the pass number matches (1/№1/1-я, 2/2-я …)
-        for d in re.findall(r"\d", op_text):
+    for w in types:
+        toks = _wt_tokens(w["name"])
+        s = sum(1 for a in want if any(_wt_tok_match(a, b) for b in toks))
+        for d in digits:                       # pass number (1/№1/1-я, 2/2-я …)
             if d in w["name"]:
                 s += 1
         if s > score:
@@ -335,7 +354,13 @@ def build_machine_task(operation, machine_raw, driver_raw, date_iso):
     """Resolve a logistics note into a CropWise machine-task plan: work_type (matched
     against ALL work types — transport isn't an agri type), machine, driver. No field
     (one trip serves many). Sync — call via asyncio.to_thread."""
-    wt = match_work_type(operation, _all("work_types"))
+    # A machine task is logistics/territory work → match a NON-agri (Транспорт/…) work type,
+    # never a field «Внесение/Опрыскивание» type. «подвоз воды и гербицидов» must land on
+    # «Подвоз Воды+Гербициды», not «Опрыскивание и внесение гербицидов». Fall back to all
+    # types only if nothing non-agri matches.
+    all_wts = _all("work_types")
+    wt = (match_work_type(operation, [w for w in all_wts if not w.get("agri")])
+          or match_work_type(operation, all_wts))
     machine = match_machine(machine_raw, machine_raw, _all("machines")) if machine_raw else None
     drivers = driver_matches(driver_raw, _all("users")) if driver_raw else []
     driver = drivers[0] if drivers else None
