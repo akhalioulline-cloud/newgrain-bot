@@ -373,19 +373,22 @@ def producer_label(registrant: str | None) -> str | None:
 
 async def search_literature(query: str, limit: int = 3):
     """Top open-access (CC BY) agronomy articles matching a question, by Russian full-text
-    rank over title+abstract. Used to ground the chat assistant with real, citable science."""
-    if not (query or "").strip():
+    rank over title+abstract. OR-matches significant words (≥4 chars) so a verbose question
+    still retrieves on its key terms. Used to ground the chat assistant with citable science."""
+    terms = re.findall(r"[а-яёa-z0-9]{4,}", (query or "").lower())
+    if not terms:
         return []
+    tsq = " | ".join(terms[:12])
     async with engine.connect() as conn:
         return (await conn.execute(text(
             "SELECT title, authors, journal, year, url, abstract, license, "
             "ts_rank(to_tsvector('russian', coalesce(title,'')||' '||coalesce(abstract,'')), "
-            "        plainto_tsquery('russian', :q)) AS rank "
+            "        to_tsquery('russian', :q)) AS rank "
             "FROM agro_literature "
             "WHERE to_tsvector('russian', coalesce(title,'')||' '||coalesce(abstract,'')) "
-            "      @@ plainto_tsquery('russian', :q) "
+            "      @@ to_tsquery('russian', :q) "
             "ORDER BY rank DESC LIMIT :lim"),
-            {"q": query, "lim": limit})).mappings().all()
+            {"q": tsq, "lim": limit})).mappings().all()
 
 
 async def find_similar_treatment(field_id, treatment_date, op_category, product):
