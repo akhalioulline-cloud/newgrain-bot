@@ -57,6 +57,22 @@ services:
       redis:
         condition: service_healthy
 
+  # Public web API for ai.flagleaf.ru (Phase 1). Same image/brain as the bot; reuses the
+  # async DB engine + agro_chat/diagnose. Bound to 127.0.0.1 only — nginx on the host
+  # terminates TLS for ai.flagleaf.ru and proxies here. No public port of its own.
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
