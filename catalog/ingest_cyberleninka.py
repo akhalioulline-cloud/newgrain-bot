@@ -132,47 +132,70 @@ def fetch_page(url):
             "license": "CC BY", "lang": lang}
 
 
+async def _total():
+    async with engine.connect() as conn:
+        return (await conn.execute(text("SELECT count(*) FROM agro_literature"))).scalar()
+
+
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--delay", type=float, default=1.5, help="seconds between page fetches")
     ap.add_argument("--max", type=int, default=0, help="cap per journal (0 = all)")
+    ap.add_argument("--quiet", action="store_true", help="no Telegram notification")
     a = ap.parse_args()
-
-    journals = discover_journals()
-    print(f"discovered {len(journals)} agronomy journals", file=sys.stderr)
-    async with engine.connect() as conn:
-        seen = {r[0] for r in (await conn.execute(text("SELECT url FROM agro_literature"))).all()}
-    print(f"already have {len(seen)} articles", file=sys.stderr)
+    from labeling.alert import send as notify
 
     inserted = skipped = 0
-    for set_spec, jname in journals:
-        n_j = 0
-        for title, authors, publisher, url in oai_records(set_spec):
-            if a.max and n_j >= a.max:
-                break
-            n_j += 1
-            if url in seen:
-                continue
-            seen.add(url)
-            page = fetch_page(url)
-            time.sleep(a.delay)
-            if not page or not (page["abstract"] or page["full_text"]):
-                skipped += 1
-                continue
-            async with engine.begin() as conn:
-                res = await conn.execute(text(
-                    "INSERT INTO agro_literature (source, journal, title, authors, publisher, "
-                    "year, url, license, abstract, full_text, lang) VALUES "
-                    "('cyberleninka', :j, :t, :au, :pub, :y, :u, :lic, :ab, :ft, :lang) "
-                    "ON CONFLICT (url) DO NOTHING"),
-                    {"j": jname, "t": title, "au": authors or None, "pub": publisher or None,
-                     "y": page["year"], "u": url, "lic": page["license"],
-                     "ab": page["abstract"], "ft": page["full_text"], "lang": page["lang"]})
-                inserted += res.rowcount
-            if inserted and inserted % 100 == 0:
-                print(f"  …{inserted} inserted ({jname})", file=sys.stderr, flush=True)
-        print(f"✓ {jname}: total inserted so far {inserted}", file=sys.stderr, flush=True)
-    print(f"DONE: inserted {inserted}, skipped {skipped}", file=sys.stderr)
+    try:
+        journals = discover_journals()
+        print(f"discovered {len(journals)} agronomy journals", file=sys.stderr)
+        async with engine.connect() as conn:
+            seen = {r[0] for r in (await conn.execute(text("SELECT url FROM agro_literature"))).all()}
+        print(f"already have {len(seen)} articles", file=sys.stderr)
+
+        for set_spec, jname in journals:
+            n_j = 0
+            for title, authors, publisher, url in oai_records(set_spec):
+                if a.max and n_j >= a.max:
+                    break
+                n_j += 1
+                if url in seen:
+                    continue
+                seen.add(url)
+                page = fetch_page(url)
+                time.sleep(a.delay)
+                if not page or not (page["abstract"] or page["full_text"]):
+                    skipped += 1
+                    continue
+                async with engine.begin() as conn:
+                    res = await conn.execute(text(
+                        "INSERT INTO agro_literature (source, journal, title, authors, publisher, "
+                        "year, url, license, abstract, full_text, lang) VALUES "
+                        "('cyberleninka', :j, :t, :au, :pub, :y, :u, :lic, :ab, :ft, :lang) "
+                        "ON CONFLICT (url) DO NOTHING"),
+                        {"j": jname, "t": title, "au": authors or None, "pub": publisher or None,
+                         "y": page["year"], "u": url, "lic": page["license"],
+                         "ab": page["abstract"], "ft": page["full_text"], "lang": page["lang"]})
+                    inserted += res.rowcount
+                if inserted and inserted % 100 == 0:
+                    print(f"  …{inserted} inserted ({jname})", file=sys.stderr, flush=True)
+            print(f"✓ {jname}: total inserted so far {inserted}", file=sys.stderr, flush=True)
+    except Exception as exc:
+        print(f"FATAL: {exc}", file=sys.stderr)
+        if not a.quiet:
+            notify(f"⚠️ Сбор научной базы (CyberLeninka) прервался ошибкой: {str(exc)[:200]}. "
+                   f"Собрано статей: {await _total()}. Сбор возобновится ночью автоматически.")
+        raise
+
+    total = await _total()
+    print(f"DONE: inserted {inserted}, skipped {skipped}, total {total}", file=sys.stderr)
+    if not a.quiet:
+        if inserted:
+            notify(f"📚 Научная база (CyberLeninka): прогон завершён, добавлено {inserted} "
+                   f"новых статей. Всего в базе: {total}. Бот уже использует их в ответах.")
+        else:
+            notify(f"✅ Научная база (CyberLeninka) собрана полностью — новых статей нет. "
+                   f"Всего: {total}.")
 
 
 if __name__ == "__main__":
