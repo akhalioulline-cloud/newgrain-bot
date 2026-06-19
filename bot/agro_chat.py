@@ -10,7 +10,7 @@ import re
 import requests
 
 from bot.config import settings
-from bot.db import get_registered_products, get_vendor_recommendations
+from bot.db import get_registered_products, producer_label
 
 _ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -55,10 +55,10 @@ _SYS = (
     "трибенурон-устойчивые) — обязательно оговаривай это условие. Если подходящего "
     "селективного препарата для этой культуры нет — честно скажи об этом и предложи "
     "агроприёмы (нужный гибрид, севооборот, механическую прополку), а НЕ опасный препарат. "
-    "Если в контексте есть блок «ПРЕПАРАТЫ ПРОИЗВОДИТЕЛЕЙ Syngenta и «Август»» — добавь их "
-    "ОТДЕЛЬНЫМ блоком в конце, ПОСЛЕ нейтральных рекомендаций, под заголовком «🏷 От "
-    "производителей (Syngenta / Август):», у каждого препарата ставь пометку производителя. "
-    "Это дополнение, а НЕ замена нейтрального совета; не подавай их как нейтральную рекомендацию. "
+    "Если у препарата в списке есть метка производителя в [скобках] (Syngenta, Bayer, BASF, "
+    "Corteva, FMC, Adama, Август, Щёлково Агрохим) — указывай производителя рядом с препаратом "
+    "в ответе, например «Корсар (Август)». Препараты без метки — другие производители, их тоже "
+    "можно рекомендовать. "
     "Не пиши дисклеймеры («разрешённых к применению в РФ», "
     "«зарегистрированных в Госкаталоге») и не отсылай «ознакомьтесь с каталогом» — сразу "
     "давай дельный совет. Если по конкретному препарату или норме не уверен — коротко "
@@ -138,47 +138,22 @@ async def _registry_grounding(question: str) -> str | None:
         if p["product_name"] in seen:
             continue
         seen.add(p["product_name"])
-        lines.append(f"• {p['product_name']} (д.в. {p['active_substances']}) — "
+        maker = producer_label(p.get("registrant"))   # tag major producers inline
+        tag = f" [{maker}]" if maker else ""
+        lines.append(f"• {p['product_name']}{tag} (д.в. {p['active_substances']}) — "
                      f"{p['target']}; норма {p['rate']}")
         if len(lines) >= 20:
             break
     head = (f"ЗАРЕГИСТРИРОВАННЫЕ для «{crop}» препараты (Госкаталог)"
             + (f" против «{used}»" if used else "")
-            + " — рекомендуй ТОЛЬКО из этого списка (зарегистрированы для этой культуры):")
+            + " — рекомендуй ТОЛЬКО из этого списка (зарегистрированы для этой культуры). "
+            "Метка в [скобках] — производитель: укажи его рядом с препаратом в ответе:")
     if re.search(r"подсолн|со[яи]|рапс", crop, re.I):
         head += ("\n(ОБЯЗАТЕЛЬНО предупреди: на подсолнечнике/сое препараты на трибенурон-"
                  "метиле (система Express/Sumo) и на имазамоксе/имазапире (Clearfield) "
                  "применимы ТОЛЬКО на устойчивых к ним гибридах — на обычных они повредят "
                  "культуру. Укажи это условие в ответе.)")
-    block = head + "\n" + "\n".join(lines)
-    vendor = await _vendor_grounding(crop, used)
-    return block + ("\n\n" + vendor if vendor else "")
-
-
-async def _vendor_grounding(crop: str, target: str | None) -> str | None:
-    """Producers' own registered products (Syngenta / Август) for the crop, surfaced as a
-    SEPARATE, clearly-flagged block in addition to the neutral list."""
-    rows = await get_vendor_recommendations(crop, target)
-    if not rows and target:
-        rows = await get_vendor_recommendations(crop)        # broaden to crop-only
-    if not rows:
-        return None
-    by = {}
-    for r in rows:
-        key = r["vendor"]
-        if r["product_name"] in {p["product_name"] for p in by.get(key, [])}:
-            continue
-        by.setdefault(key, []).append(r)
-    out = ["ПРЕПАРАТЫ ПРОИЗВОДИТЕЛЕЙ Syngenta и «Август» (из их собственной линейки, по "
-           "официальной регистрации) — покажи их ОТДЕЛЬНЫМ блоком в конце ответа под "
-           "заголовком «🏷 От производителей (Syngenta / Август):», только зарегистрированные "
-           "для этой культуры, с пометкой производителя у каждого; не выдавай за нейтральную "
-           "рекомендацию:"]
-    for vendor, items in by.items():
-        for r in items[:6]:
-            out.append(f"• [{vendor}] {r['product_name']} (д.в. {r['active_substances']}) — "
-                       f"{r['target']}; норма {r['rate']}")
-    return "\n".join(out)
+    return head + "\n" + "\n".join(lines)
 
 
 async def answer(question: str, context: str | None = None) -> str | None:

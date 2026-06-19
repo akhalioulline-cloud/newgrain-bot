@@ -333,7 +333,7 @@ async def get_registered_products(crop: str, target: str | None = None, limit: i
     """Products from the Госкаталог registry registered for a crop (and target),
     so the chat assistant recommends only real, registered options."""
     async with engine.connect() as conn:
-        sql = ("SELECT DISTINCT product_name, active_substances, target, rate "
+        sql = ("SELECT DISTINCT product_name, active_substances, target, rate, registrant "
                "FROM pesticide_applications WHERE crop ILIKE :crop")
         params = {"crop": f"%{crop}%"}
         if target:
@@ -344,30 +344,31 @@ async def get_registered_products(crop: str, target: str | None = None, limit: i
         return (await conn.execute(text(sql), params)).mappings().all()
 
 
-# Producers whose own registered products the bot surfaces as a flagged extra block
-# (founder decision 2026-06-19, LICENSING.md §6). Sourced from the official Госкаталог
-# (registrant field) — NOT from the producers' copyrighted atlases.
-_VENDORS = (("Syngenta", "%синген%"), ("Август", "%август%"))
+# Major producers → short label, matched against the Госкаталог `registrant` field (which
+# is the OFFICIAL, authoritative source — not the producers' copyrighted atlases). Founder
+# decision 2026-06-19, LICENSING.md §2.4. Verified against producer sites: ВЗСП is Август's
+# plant (a филиал); «Дюпон Наука и Технологии» is DuPont's RU registrant → Corteva.
+# Substrings are matched after lowercasing + ё→е, longest-intent first.
+_PRODUCERS = (
+    ("Syngenta", ("синген", "syngenta")),
+    ("Bayer", ("байер", "bayer")),
+    ("BASF", ("басф", "basf")),
+    ("Corteva", ("кортева", "corteva", "дюпон", "dupont")),
+    ("FMC", ("эфэмси", "фмс кемикал", "fmc")),
+    ("Adama", ("адама", "adama")),
+    ("Август", ("август", "взсп")),
+    ("Щёлково Агрохим", ("щелков",)),
+)
 
 
-async def get_vendor_recommendations(crop: str, target: str | None = None, limit: int = 24):
-    """Registered products of Syngenta / Август for a crop (+optional target), from the
-    Госкаталог, tagged by manufacturer. These are the producers' OWN registered options —
-    surfaced in addition to the neutral list and clearly flagged as theirs."""
-    out = []
-    async with engine.connect() as conn:
-        for vendor, pat in _VENDORS:
-            sql = ("SELECT DISTINCT product_name, active_substances, target, rate "
-                   "FROM pesticide_applications WHERE crop ILIKE :crop AND registrant ILIKE :reg")
-            params = {"crop": f"%{crop}%", "reg": pat}
-            if target:
-                sql += " AND target ILIKE :target"
-                params["target"] = f"%{target}%"
-            sql += " ORDER BY product_name LIMIT :lim"
-            params["lim"] = limit
-            for r in (await conn.execute(text(sql), params)).mappings().all():
-                out.append({**dict(r), "vendor": vendor})
-    return out
+def producer_label(registrant: str | None) -> str | None:
+    """Short producer label for a Госкаталог registrant string, or None if not a tracked
+    major producer (generic/other registrants stay untagged)."""
+    s = (registrant or "").lower().replace("ё", "е")
+    for label, subs in _PRODUCERS:
+        if any(sub in s for sub in subs):
+            return label
+    return None
 
 
 async def find_similar_treatment(field_id, treatment_date, op_category, product):
