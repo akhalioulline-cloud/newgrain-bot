@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLAGLEAF — ИИ-агроном</title>
+<meta name="description" content="ИИ-агроном Flagleaf: определит сорняк, болезнь или вредителя по фото и подскажет, чем обработать — с учётом зарегистрированных препаратов.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --gold:#b9994b; --ink:#1a1a1a; --bg:#faf8f4; --bot:#fff; --usr:#1a1a1a;
+         --muted:#8a8a8a; --line:#e7e2d8; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
+       display:flex;flex-direction:column;min-height:100dvh}
+  header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);
+         background:#fff;position:sticky;top:0;z-index:5}
+  .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
+  .logo b{color:var(--gold)}
+  .sub{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.2}
+  .sub a{color:var(--gold);text-decoration:none}
+  #chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
+        max-width:760px;width:100%;margin:0 auto}
+  .msg{max-width:88%;padding:12px 14px;border-radius:14px;font-size:15px;line-height:1.5;
+       white-space:pre-wrap;word-wrap:break-word}
+  .bot{align-self:flex-start;background:var(--bot);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .user{align-self:flex-end;background:var(--usr);color:#fff;border-bottom-right-radius:4px}
+  .user img{max-width:200px;border-radius:8px;display:block;margin-bottom:6px}
+  .typing{color:var(--muted);font-style:italic}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;max-width:760px;width:100%;margin:0 auto;padding:0 16px 4px}
+  .chip{font-size:13px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:16px;
+        padding:6px 12px;cursor:pointer}
+  .chip:hover{border-color:var(--gold)}
+  form{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line);
+       background:#fff;max-width:760px;width:100%;margin:0 auto}
+  textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+           font:inherit;max-height:120px;outline:none}
+  textarea:focus{border-color:var(--gold)}
+  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:12px;width:44px;height:44px;
+           font-size:18px;cursor:pointer;flex:none}
+  .send{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
+  .send:disabled{opacity:.5;cursor:default}
+  .thumb{height:40px;border-radius:8px;border:1px solid var(--line)}
+  .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:4px 12px;
+       font-size:13px;color:var(--muted)}
+  .att .x{cursor:pointer;color:#c0392b;font-weight:700}
+  .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">FLAG<b>LEAF</b></span>
+  <span class="sub">ИИ-агроном · демо<br><a href="https://flagleaf.ru">flagleaf.ru</a></span>
+</header>
+
+<div id="chat"></div>
+
+<div class="chips" id="chips">
+  <span class="chip" data-q="Чем обработать сою от осота?">Чем обработать сою от осота?</span>
+  <span class="chip" data-q="Чем обработать подсолнечник от двудольных сорняков?">Гербицид для подсолнечника</span>
+  <span class="chip" data-photo="1">📷 Определить по фото</span>
+</div>
+
+<div class="att" id="att"><img class="thumb" id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
+
+<form id="form">
+  <input type="file" id="file" accept="image/*" hidden>
+  <button type="button" class="iconbtn" id="attach" title="Прикрепить фото">📎</button>
+  <textarea id="q" rows="1" placeholder="Спросите про сорняк, болезнь, обработку…"></textarea>
+  <button type="submit" class="iconbtn send" id="send" title="Отправить">➤</button>
+</form>
+<div class="disclaimer">ИИ-помощник. Рекомендации проверяйте перед применением; за окончательным решением — к агроному.</div>
+
+<script>
+const chat = document.getElementById('chat');
+const q = document.getElementById('q');
+const form = document.getElementById('form');
+const fileInput = document.getElementById('file');
+const att = document.getElementById('att'), thumb = document.getElementById('thumb'), attname = document.getElementById('attname');
+let pendingFile = null;
+
+function add(text, who){ const d=document.createElement('div'); d.className='msg '+who; d.textContent=text;
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d; }
+function addUser(text, imgUrl){ const d=document.createElement('div'); d.className='msg user';
+  if(imgUrl){ const im=document.createElement('img'); im.src=imgUrl; d.appendChild(im); }
+  if(text){ d.appendChild(document.createTextNode(text)); }
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight; }
+
+add('Здравствуйте! Я ИИ-агроном Flagleaf. Пришлите фото сорняка/болезни с вопросом — определю и подскажу, чем обработать. Можно и просто спросить текстом.', 'bot');
+
+function setFile(f){ pendingFile=f; if(f){ thumb.src=URL.createObjectURL(f); attname.textContent=f.name; att.style.display='flex'; }
+  else { att.style.display='none'; fileInput.value=''; } }
+document.getElementById('attach').onclick=()=>fileInput.click();
+fileInput.onchange=e=>{ if(e.target.files[0]) setFile(e.target.files[0]); };
+document.getElementById('attx').onclick=()=>setFile(null);
+
+q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,120)+'px'; });
+document.getElementById('chips').onclick=e=>{ const c=e.target.closest('.chip'); if(!c) return;
+  if(c.dataset.photo){ fileInput.click(); } else { q.value=c.dataset.q; form.requestSubmit(); } };
+
+async function ask(){
+  const text=q.value.trim(); const file=pendingFile;
+  if(!text && !file) return;
+  addUser(text, file?URL.createObjectURL(file):null);
+  q.value=''; q.style.height='auto'; setFile(null);
+  const t=add('анализирую…','bot typing');
+  document.getElementById('send').disabled=true;
+  try{
+    let r;
+    if(file){ const fd=new FormData(); fd.append('image',file); fd.append('question',text);
+      r=await fetch('/api/diagnose',{method:'POST',body:fd}); }
+    else { r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:text})}); }
+    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
+    const j=await r.json();
+    t.textContent=j.answer||'Что-то пошло не так, попробуйте ещё раз.'; t.className='msg bot';
+  }catch(err){ t.textContent='Ошибка сети. Проверьте соединение и попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ document.getElementById('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
+}
+form.addEventListener('submit', e=>{ e.preventDefault(); ask(); });
+q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+</script>
+</body>
+</html>
