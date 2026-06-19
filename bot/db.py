@@ -511,12 +511,16 @@ async def get_annotators():
 
 
 async def get_chief_agronomists(farm_id):
-    """Active chief agronomists (reviewers) of a farm — who junior submissions go to."""
+    """Active chief agronomists (reviewers) of a farm — who junior submissions go to.
+    Build the farm filter conditionally: asyncpg can't type a param used only in
+    `:f IS NULL`, which threw AmbiguousParameterError and silently broke review delivery."""
+    sql = "SELECT tg_user_id, full_name FROM users WHERE role = 'chief_agronomist' AND is_active"
+    params = {}
+    if farm_id is not None:
+        sql += " AND farm_id = :f"
+        params["f"] = farm_id
     async with engine.connect() as conn:
-        return (await conn.execute(text(
-            "SELECT tg_user_id, full_name FROM users "
-            "WHERE role = 'chief_agronomist' AND is_active AND (:f IS NULL OR farm_id = :f)"),
-            {"f": farm_id})).mappings().all()
+        return (await conn.execute(text(sql), params)).mappings().all()
 
 
 async def get_submission_review(submission_id):
