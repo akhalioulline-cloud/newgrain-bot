@@ -45,6 +45,19 @@ _KEEP = re.compile(
 _REC = re.compile(r"<record>(.*?)</record>", re.S)
 _TOK = re.compile(r"<resumptionToken[^>]*>(.*?)</resumptionToken>", re.S)
 
+# Fallback if ListSets is rate-limited (503) — known agronomy journals, so a throttled
+# discovery never zeroes the harvest. Full discovery (when ListSets works) finds more.
+_FALLBACK_JOURNALS = [
+    ("journal_15642", "Масличные культуры"), ("journal_30234", "Земледелие"),
+    ("journal_17681", "Сельскохозяйственная биология"), ("journal_15389", "Агрохимический вестник"),
+    ("journal_33169", "Научно-агрономический журнал"), ("journal_4178", "Вестник Курской ГСХА"),
+    ("journal_7108", "Вестник Ульяновской ГСХА"), ("journal_9102", "Вестник Белорусской ГСХА"),
+    ("journal_32785", "Известия Великолукской ГСХА"), ("journal_6014", "Вестник РУДН. Агрономия"),
+    ("journal_10598", "Международный сельскохозяйственный журнал"),
+    ("journal_35708", "Почвоведение и агрохимия"), ("journal_32065", "Вестник Тувинского ГУ"),
+    ("journal_35035", "Сельскохозяйственные технологии"),
+]
+
 
 def _get(url, params=None, tries=6):
     """GET with exponential backoff on 503/429 and transient network errors."""
@@ -72,11 +85,13 @@ def _clean(s):
 
 
 def discover_journals():
-    r = _get(OAI, {"verb": "ListSets"})
-    if not r:
-        return []
-    sets = re.findall(r"<setSpec>(.*?)</setSpec>\s*<setName>(.*?)</setName>", r.text, re.S)
-    return [(s, _clean(n)) for s, n in sets if s.startswith("journal_") and _KEEP.search(n)]
+    r = _get(OAI, {"verb": "ListSets"}, tries=8)
+    sets = re.findall(r"<setSpec>(.*?)</setSpec>\s*<setName>(.*?)</setName>", r.text, re.S) if r else []
+    found = [(s, _clean(n)) for s, n in sets if s.startswith("journal_") and _KEEP.search(n)]
+    if found:
+        return found
+    print("ListSets unavailable (throttled) — using fallback journal list", file=sys.stderr)
+    return _FALLBACK_JOURNALS
 
 
 def oai_records(set_spec):
@@ -145,7 +160,7 @@ async def main():
     a = ap.parse_args()
     from labeling.alert import send as notify
 
-    inserted = skipped = 0
+    inserted = skipped = records = 0
     try:
         journals = discover_journals()
         print(f"discovered {len(journals)} agronomy journals", file=sys.stderr)
@@ -159,6 +174,7 @@ async def main():
                 if a.max and n_j >= a.max:
                     break
                 n_j += 1
+                records += 1               # OAI records actually walked (proof we listed)
                 if url in seen:
                     continue
                 seen.add(url)
@@ -188,14 +204,22 @@ async def main():
         raise
 
     total = await _total()
-    print(f"DONE: inserted {inserted}, skipped {skipped}, total {total}", file=sys.stderr)
-    if not a.quiet:
-        if inserted:
-            notify(f"📚 Научная база (CyberLeninka): прогон завершён, добавлено {inserted} "
-                   f"новых статей. Всего в базе: {total}. Бот уже использует их в ответах.")
-        else:
-            notify(f"✅ Научная база (CyberLeninka) собрана полностью — новых статей нет. "
-                   f"Всего: {total}.")
+    print(f"DONE: inserted {inserted}, skipped {skipped}, records {records}, total {total}",
+          file=sys.stderr)
+    if a.quiet:
+        return
+    if inserted:                       # made progress
+        notify(f"📚 Научная база (CyberLeninka): прогон завершён, добавлено {inserted} "
+               f"новых статей. Всего в базе: {total}. Бот уже использует их в ответах.")
+    elif records == 0:                 # couldn't even list articles → access problem
+        notify("⚠️ Сбор научной базы: не удалось получить список статей с CyberLeninka "
+               f"(ограничение доступа). В базе пока {total}. Повтор автоматически ночью.")
+    elif skipped == 0:                 # walked everything, nothing new failed → truly complete
+        notify(f"✅ Научная база (CyberLeninka) собрана полностью — новых статей нет. "
+               f"Всего: {total}.")
+    else:                              # listed, but new pages failed to load → throttled
+        notify(f"⚠️ Сбор научной базы: часть статей не загрузилась (ограничение доступа), "
+               f"добавлено 0. В базе {total}. Повтор автоматически ночью.")
 
 
 if __name__ == "__main__":
