@@ -164,3 +164,24 @@ this file *before* downloading.
 3. ☐ Decide storage location — **not iCloud Drive** (will cause sync chaos with 10+ GB). Recommended: local `~/data/flagleaf-bootstrap/` + optional sync to Yandex Object Storage prefix `bootstrap/`.
 4. ☐ For each ✅ APPROVED row, add a `data-card` entry with attribution line for any future model trained on it.
 5. ☐ When new dataset candidates surface (especially for soy diseases or the 7 uncovered weed classes), open a row here *before* downloading.
+
+---
+
+## Text knowledge corpus — CyberLeninka (added 2026-06-19)
+
+Separate from the CV datasets above: this is the **textual knowledge base** (sub-product 3),
+used to ground the chat assistant's agronomy answers with citations.
+
+| Source | Use | Licence | Decision |
+|--------|-----|---------|----------|
+| **CyberLeninka** (cyberleninka.ru) | Agronomy/crop-protection scientific articles → `agro_literature` table → RAG citations in the bot | **CC BY** (Creative Commons Attribution; confirmed on article pages — "CC BY") | ✅ **APPROVED.** Commercial use allowed WITH attribution; the bot satisfies this by citing each article (title, authors, year, link). Harvested via OAI-PMH + page (abstract + full text). |
+
+**Attribution requirement (must hold):** every answer that uses an article must cite it
+(handled by `agro_chat._literature_grounding`, which always emits title + authors + year + URL).
+
+**Explicitly NOT used** (so the corpus stays clean): eLIBRARY.ru/РИНЦ (ToS forbids bulk
+download), and the commercial manufacturer atlases / apps (LICENSING.md §2.2). Official
+regulator publications (Минсельхоз, Россельхознадзор, ГОСТ, Госкаталог) are a separate
+approved tier (LICENSING.md §1в) for a future ingestion.
+
+Harvester: `catalog/ingest_cyberleninka.py`. Strategy: `docs/knowledge-corpus-strategy.md`.
