@@ -43,9 +43,9 @@ _SYS = (
     '"products":[{"name":"<препарат>","dose":"<норма, напр. 2 л/га>"}],'
     '"fields":["<номер/площадь, напр. 167/104>", ...]}\n'
     "Вторая строка содержит механизатора, машину и её номер в произвольном порядке "
-    "(через пробел или дефис). driver — это ВСЕГДА человек (фамилия, и имя/инициалы если "
-    "они указаны, например «Шапаренко Сергей»), никогда не часть названия машины. "
-    "Примеры второй строки:\n"
+    "(через пробел или дефис). driver — это ВСЕГДА человек (фамилия, и имя/отчество/инициалы "
+    "если они указаны, например «Шапаренко Сергей Петрович»), никогда не часть названия "
+    "машины. Примеры второй строки:\n"
     "«Яровой самоходка 6448» → driver=Яровой, machine_type=самоходка, machine_number=6448\n"
     "«Черных 5628-Рсм 3000» → driver=Черных, machine_number=5628, machine_type=Рсм 3000\n"
     "«6439-Шапаренко-Amazon 5.200» → machine_number=6439, driver=Шапаренко, machine_type=Amazon 5.200\n"
@@ -110,28 +110,30 @@ def match_machine(number, mtype, machines):
 
 
 def match_driver(driver_raw, users):
-    """Match «Фамилия [Имя/инициал]» to a CropWise user. When several users share the
-    surname (namesakes), the given name/initial disambiguates — «Шапаренко Сергей» picks
-    Шапаренко Сергей, not Шапаренко Евгений. Falls back to the first match if no given
-    name (or it doesn't match), so a bare surname behaves as before."""
+    """Match «Фамилия [Имя] [Отчество]» to a CropWise user. Among same-surname users the
+    given name AND patronymic disambiguate in order — «Шапаренко Сергей» beats «…Евгений»,
+    and «Купченко Николай Николаевич» beats «…Николай Павлович». Ties break toward an
+    ACTIVE record (CropWise has many stale 'no_access' namesake duplicates). A bare
+    surname still returns the first (active) match, as before. Initials work too («…С»)."""
     parts = _norm_txt(driver_raw).split()
     if not parts:
         return None
-    surname = parts[0]
-    given = parts[1].strip(".") if len(parts) > 1 else None
+    surname, given = parts[0], [p.strip(".") for p in parts[1:]]
     cands = []
     for u in users:
         un = _norm_txt(u.get("username"))
         toks = un.split() if un else []
-        if toks and (toks[0] == surname or surname in un):
-            cands.append((u, toks))
+        if not toks or not (toks[0] == surname or surname in un):
+            continue
+        # how many of the supplied name tokens (имя, отчество…) match, in order
+        score = sum(1 for i, g in enumerate(given)
+                    if len(toks) > i + 1 and toks[i + 1].startswith(g))
+        active = u.get("status") != "no_access"
+        cands.append((score, active, u))
     if not cands:
         return None
-    if given and len(cands) > 1:                 # disambiguate namesakes by first name/initial
-        for u, toks in cands:
-            if len(toks) > 1 and toks[1].startswith(given):
-                return u
-    return cands[0][0]
+    cands.sort(key=lambda c: (c[0], c[1]), reverse=True)   # best name match, then active
+    return cands[0][2]
 
 
 def _area_of(ref):

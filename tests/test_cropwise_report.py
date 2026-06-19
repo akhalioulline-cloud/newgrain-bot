@@ -43,6 +43,21 @@ def test_match_driver_disambiguates_namesakes():
     assert match_driver("Шапаренко С", users)["id"] == 2
 
 
+def test_match_driver_disambiguates_by_patronymic():
+    users = [{"id": 1, "username": "Купченко Николай Павлович"},
+             {"id": 2, "username": "Купченко Николай Николаевич"}]
+    # same surname AND first name → patronymic decides
+    assert match_driver("Купченко Николай Николаевич", users)["id"] == 2
+    assert match_driver("Купченко Николай Павлович", users)["id"] == 1
+
+
+def test_match_driver_prefers_active_record():
+    # CropWise has stale 'no_access' namesake duplicates — prefer the active one
+    users = [{"id": 1, "username": "Тимошенко Владимир Николаевич", "status": "no_access"},
+             {"id": 2, "username": "Тимошенко Владимир Николаевич", "status": "user"}]
+    assert match_driver("Тимошенко Владимир Николаевич", users)["id"] == 2
+
+
 def test_area_of():
     assert _area_of("167/104") == 104
     assert _area_of("121") is None
