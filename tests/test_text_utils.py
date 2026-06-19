@@ -1,8 +1,18 @@
 """Small pure text helpers that parse LLM output / canonicalise labels. Cheap to
 test, and they sit on the critical path (a bad JSON strip = a silent failure)."""
-from bot.agro_chat import _clean_json
+from bot.agro_chat import _REC_RE, _clean_json
 from bot.db import _norm_crop
 from bot.weed_suggest import _parse
+
+
+def test_rec_trigger_catches_control_phrasings():
+    # the dangerous-advice bug: «чем бороться с сорняком» must trigger Госкаталог grounding
+    assert _REC_RE.search("чем бороться с живокостью в посевах подсолнечника")
+    assert _REC_RE.search("как избавиться от осота на сое")
+    assert _REC_RE.search("чем обработать подсолнечник от двудольных сорняков")
+    assert _REC_RE.search("какой гербицид против амброзии")
+    # not a protection question → no grounding
+    assert not _REC_RE.search("какая площадь поля 119")
 
 
 def test_clean_json_strips_markdown_fence():
