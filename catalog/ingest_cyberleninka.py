@@ -101,6 +101,15 @@ def oai_records(set_spec):
         r = _get(OAI, params)
         if not r or r.status_code != 200:
             return
+        if "<OAI-PMH" not in r.text:           # anti-bot/throttle HTML page, not OAI XML
+            for w in (60, 120, 240):           # wait out a short throttle, then give up
+                time.sleep(w)
+                r = _get(OAI, params)
+                if r and "<OAI-PMH" in r.text:
+                    break
+            else:
+                print(f"  {set_spec}: throttled (no OAI XML) — skipping", file=sys.stderr)
+                return
         for block in _REC.findall(r.text):
             title = (_tag(block, "title") or [""])[0]
             ids = [x for x in _tag(block, "identifier") if x.startswith("http")]
@@ -154,7 +163,7 @@ async def _total():
 
 async def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--delay", type=float, default=1.5, help="seconds between page fetches")
+    ap.add_argument("--delay", type=float, default=2.5, help="seconds between page fetches")
     ap.add_argument("--max", type=int, default=0, help="cap per journal (0 = all)")
     ap.add_argument("--quiet", action="store_true", help="no Telegram notification")
     a = ap.parse_args()

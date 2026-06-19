@@ -21,5 +21,5 @@ fi
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 echo "$(date -Is) refresh start" >> "$LOG"
 $COMPOSE run --rm --name "$NAME" -T -e PYTHONPATH=/app bot \
-  python -m catalog.ingest_cyberleninka --delay 1.5 >> "$LOG" 2>&1
+  python -m catalog.ingest_cyberleninka --delay 2.5 >> "$LOG" 2>&1
 echo "$(date -Is) refresh done" >> "$LOG"
