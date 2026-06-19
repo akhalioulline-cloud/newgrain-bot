@@ -31,6 +31,18 @@ def test_match_driver_by_surname():
     assert match_driver("Неизвестный", users) is None
 
 
+def test_match_driver_disambiguates_namesakes():
+    users = [{"id": 1, "username": "Шапаренко Евгений Александрович"},
+             {"id": 2, "username": "Шапаренко Сергей Петрович"}]
+    # bare surname → first match (unchanged behaviour)
+    assert match_driver("Шапаренко", users)["id"] == 1
+    # given name picks the right namesake
+    assert match_driver("Шапаренко Сергей", users)["id"] == 2
+    assert match_driver("Шапаренко Евгений", users)["id"] == 1
+    # an initial works too
+    assert match_driver("Шапаренко С", users)["id"] == 2
+
+
 def test_area_of():
     assert _area_of("167/104") == 104
     assert _area_of("121") is None
