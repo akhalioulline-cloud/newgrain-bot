@@ -10,7 +10,7 @@ import re
 import requests
 
 from bot.config import settings
-from bot.db import get_registered_products, producer_label
+from bot.db import get_registered_products, producer_label, search_literature
 
 _ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -59,6 +59,9 @@ _SYS = (
     "Corteva, FMC, Adama, Август, Щёлково Агрохим) — указывай производителя рядом с препаратом "
     "в ответе, например «Корсар (Август)». Препараты без метки — другие производители, их тоже "
     "можно рекомендовать. "
+    "Если есть блок «НАУЧНЫЕ ИСТОЧНИКИ» — при ответе по теме можешь кратко сослаться на "
+    "1–2 из них (название + ссылка), но только если они реально относятся к вопросу; не "
+    "выдумывай источники и не приписывай им выводов сверх аннотации. "
     "Не пиши дисклеймеры («разрешённых к применению в РФ», "
     "«зарегистрированных в Госкаталоге») и не отсылай «ознакомьтесь с каталогом» — сразу "
     "давай дельный совет. Если по конкретному препарату или норме не уверен — коротко "
@@ -156,13 +159,33 @@ async def _registry_grounding(question: str) -> str | None:
     return head + "\n" + "\n".join(lines)
 
 
+async def _literature_grounding(question: str) -> str | None:
+    """Relevant open-access (CC BY) agronomy articles for the question — the bot may cite
+    them (author, year, link). Attribution is exactly what the CC BY licence requires."""
+    try:
+        arts = await search_literature(question, limit=3)
+    except Exception:
+        return None
+    if not arts:
+        return None
+    out = ["НАУЧНЫЕ ИСТОЧНИКИ (CyberLeninka, открытый доступ, CC BY) — если по теме, сошлись "
+           "на 1–2 (название, авторы, год, ссылка); не приписывай им выводов сверх аннотации:"]
+    for a in arts:
+        cite = (f"«{a['title']}»" + (f" — {a['authors']}" if a["authors"] else "")
+                + (f", {a['year']}" if a["year"] else "") + f" — {a['url']}")
+        out.append("• " + cite + (f"\n  {a['abstract'][:280]}" if a["abstract"] else ""))
+    return "\n".join(out)
+
+
 async def answer(question: str, context: str | None = None) -> str | None:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
     grounding = await _registry_grounding(question)
+    literature = await _literature_grounding(question)
     parts = [p for p in (
         f"ДАННЫЕ ПО ПОЛЮ:\n{context}" if context else None,
         grounding,
+        literature,
         f"ВОПРОС: {question}",
     ) if p]
     try:

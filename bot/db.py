@@ -371,6 +371,23 @@ def producer_label(registrant: str | None) -> str | None:
     return None
 
 
+async def search_literature(query: str, limit: int = 3):
+    """Top open-access (CC BY) agronomy articles matching a question, by Russian full-text
+    rank over title+abstract. Used to ground the chat assistant with real, citable science."""
+    if not (query or "").strip():
+        return []
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT title, authors, journal, year, url, abstract, license, "
+            "ts_rank(to_tsvector('russian', coalesce(title,'')||' '||coalesce(abstract,'')), "
+            "        plainto_tsquery('russian', :q)) AS rank "
+            "FROM agro_literature "
+            "WHERE to_tsvector('russian', coalesce(title,'')||' '||coalesce(abstract,'')) "
+            "      @@ plainto_tsquery('russian', :q) "
+            "ORDER BY rank DESC LIMIT :lim"),
+            {"q": query, "lim": limit})).mappings().all()
+
+
 async def find_similar_treatment(field_id, treatment_date, op_category, product):
     """Existing op(s) on the same field + date + category with the same product —
     used to warn an agronomist about a likely duplicate (e.g. a colleague already
