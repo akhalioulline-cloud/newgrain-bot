@@ -31,7 +31,7 @@ case $rc in
      # Deliver the annotation reference sheet (thumbnails, Latin name + CVAT
      # code, RU+EN voice, species-in-voice, field/off-pilot) to the annotator.
      echo "--- reference sheet ---"
-     $COMPOSE run --rm -T bot python -m labeling.reference --status in_labeling --deliver
+     $COMPOSE run --rm -T bot python -m labeling.reference --deliver
      echo "reference: rc=$?" ;;
   1) echo "export: nothing pending — skipped." ;;
   *) echo "export: ERROR (rc=$rc)."

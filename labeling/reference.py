@@ -47,20 +47,22 @@ def _thumb_data_uri(image_bytes: bytes) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-async def _fetch(status):
+async def _fetch(statuses):
+    from sqlalchemy import bindparam
+    stmt = text(
+        """
+        SELECT s.id, s.image_url, s.status, s.category, s.subcategory,
+               s.comment_text, s.comment_text_en,
+               s.comment_voice_text, s.comment_voice_text_en,
+               s.field_id, f.name AS field_name, f.crop
+        FROM submissions s
+        LEFT JOIN fields f ON f.id = s.field_id
+        WHERE s.status IN :sts
+        ORDER BY s.status, s.created_at
+        """
+    ).bindparams(bindparam("sts", expanding=True))
     async with engine.connect() as conn:
-        subs = (await conn.execute(text(
-            """
-            SELECT s.id, s.image_url, s.category, s.subcategory,
-                   s.comment_text, s.comment_text_en,
-                   s.comment_voice_text, s.comment_voice_text_en,
-                   s.field_id, f.name AS field_name, f.crop
-            FROM submissions s
-            LEFT JOIN fields f ON f.id = s.field_id
-            WHERE s.status = :st
-            ORDER BY s.created_at
-            """
-        ), {"st": status})).mappings().all()
+        subs = (await conn.execute(stmt, {"sts": list(statuses)})).mappings().all()
         species = (await conn.execute(text(
             "SELECT latin_name, russian_name, common_aliases, cvat_code FROM weed_species"
         ))).mappings().all()
@@ -112,9 +114,15 @@ def _species_lookup(species_rows):
     return lut
 
 
-def _render(subs, lut, status) -> str:
+_STATUS_RU = {"in_labeling": "в CVAT", "ready_for_labeling": "в очереди",
+              "labeled": "размечено", "pending_review": "на проверке"}
+
+
+def _render(subs, lut, label) -> str:
     cards = []
     for r in subs:
+        status_badge = (f'<span class="badge status">'
+                        f'{html.escape(_STATUS_RU.get(r["status"], r["status"] or "—"))}</span>')
         ext = (r["image_url"].rsplit(".", 1)[-1] if "." in r["image_url"] else "jpg")
         fname = f"{r['id']}.{ext}"           # exactly what CVAT shows
         s3_key = r["image_url"].replace(f"s3://{settings.s3_bucket}/", "")
@@ -216,7 +224,7 @@ def _render(subs, lut, status) -> str:
         <div class="card">
           <img src="{thumb}" alt="{fname}">
           <div class="meta">
-            <div class="fname">{fname}</div>
+            <div class="fname">{fname} {status_badge}</div>
             {''.join(meta)}
           </div>
         </div>""")
@@ -231,42 +239,54 @@ def _render(subs, lut, status) -> str:
     .voice{background:#fff7e6;border-left:3px solid #d4a04e;padding:6px 8px;border-radius:4px}
     .badge{padding:2px 8px;border-radius:6px;font-weight:600;font-size:13px}
     .badge.field{background:#e6f0e6;color:#2e5e2e} .badge.off{background:#fde0e0;color:#a11}
+    .badge.status{background:#eef0ff;color:#3a47a0}
     .muted{color:#888} .warn{color:#c0392b;font-weight:600}
     .code{font-family:Menlo,monospace;background:#eef3ff;color:#1a4fa0;padding:1px 6px;border-radius:5px;font-size:13px;font-weight:600}
     """
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
     <title>Flagleaf — справочник разметки</title><style>{css}</style></head><body>
     <h1>Flagleaf — справочник для разметки</h1>
-    <div class="sub">Статус: {html.escape(status)} · фото: {len(subs)}. Имя файла совпадает с тем, что показывает CVAT.</div>
+    <div class="sub">{html.escape(label)} · фото: {len(subs)}. Имя файла совпадает с тем, что показывает CVAT.</div>
     {''.join(cards)}
     </body></html>"""
 
 
+# The un-annotated pipeline backlog: queued for CVAT + currently in CVAT, but NOT yet
+# labeled (done) and NOT skipped (rejected/duplicate) or unfinished (pending_review/
+# awaiting_metadata). Each delivery shows EVERYTHING still awaiting annotation, not one batch.
+_PENDING = ["ready_for_labeling", "in_labeling"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--status", default="in_labeling",
-                    help="submission status to include (default: in_labeling)")
+    ap.add_argument("--status", nargs="+", default=_PENDING,
+                    help="statuses to include (default: the un-annotated backlog: "
+                         "ready_for_labeling + in_labeling)")
     ap.add_argument("--deliver", action="store_true",
-                    help="send the HTML to ADMIN_TG_IDS via Telegram instead of stdout")
+                    help="send the HTML to ADMIN_TG_IDS + annotators via Telegram instead of stdout")
     args = ap.parse_args()
+    statuses = args.status
+    is_pending = set(statuses) == set(_PENDING)
+    label = ("Ожидают разметки (в очереди и в CVAT)" if is_pending
+             else "Статус: " + ", ".join(statuses))
 
     # Fetch photos AND annotator ids in ONE event loop — a second asyncio.run() would
     # reuse the async DB engine bound to the first (closed) loop and silently fail the
     # annotator lookup (which is why the reference reached admins only, never annotators).
     async def _gather():
         from bot.db import get_annotators
-        subs_, species_ = await _fetch(args.status)
+        subs_, species_ = await _fetch(statuses)
         ann_ = await get_annotators() if args.deliver else []
         return subs_, species_, ann_
 
     subs, species, annotator_ids = asyncio.run(_gather())
     if not subs:
-        print(f"No submissions at status={args.status!r}.", file=sys.stderr)
+        print(f"No submissions at status={statuses!r}.", file=sys.stderr)
         return 1
-    print(f"Building reference for {len(subs)} photo(s) at status={args.status!r}…",
+    print(f"Building reference for {len(subs)} photo(s), statuses={statuses!r}…",
           file=sys.stderr)
     lut = _species_lookup(species)
-    html_doc = _render(subs, lut, args.status)
+    html_doc = _render(subs, lut, label)
 
     if args.deliver:
         # Host the HTML in Object Storage (RU, reachable from the annotator's
@@ -276,11 +296,13 @@ def main() -> int:
         from bot.storage import put_object_sync, presigned_url
         from labeling.alert import send
 
-        key = f"reference/flagleaf-reference-{args.status}.html"
+        key = ("reference/flagleaf-reference-pending.html" if is_pending
+               else f"reference/flagleaf-reference-{'-'.join(statuses)}.html")
         put_object_sync(key, html_doc.encode("utf-8"), "text/html; charset=utf-8")
         url = presigned_url(key)
         n = send(
-            f"📋 Справочник для разметки готов: {len(subs)} фото (статус {args.status}).\n"
+            f"📋 Справочник для разметки: {len(subs)} фото ожидают разметки "
+            f"(в очереди и в CVAT, ещё не размечены).\n"
             f"Откройте в браузере рядом с CVAT (ссылка действует 7 дней):\n{url}",
             extra_ids=annotator_ids,          # annotators fetched in the same loop above
         )
