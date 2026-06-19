@@ -719,12 +719,61 @@ async def _start_photo_flow(
     await message.answer("На каком поле?", reply_markup=_fields_kb(fields))
 
 
+# A photo CAPTIONED with a question («что это за сорняк и как бороться?») is a diagnosis
+# request, not a labeling upload → answer it (structured, grounded) instead of the FSM.
+_DIAG_CAPTION_RE = re.compile(
+    r"что это|что за|какой это|какая это|определ|диагноз|распозна|"
+    r"\bсорняк|болезн|вредител|чем\s+(?:обработать|бороться|травить|опрыс)|"
+    r"как\s+(?:бороться|избав|убрать|справит)|\?", re.I)
+_CROP_HINTS = [("подсолнечник", "подсолн"), ("соя", "соя"), ("соя", "сое"), ("соя", "сои"),
+               ("пшеница", "пшениц"), ("кукуруза", "кукуруз"), ("ячмень", "ячмен"),
+               ("рапс", "рапс"), ("сахарная свёкла", "свекл"), ("горох", "горох")]
+
+
+async def _diag_crop(message: Message, state: FSMContext, user):
+    """Best-effort known crop for the photo: named in the caption, else the last field
+    in context (so we skip 'какая культура?' like the competitor can't). (crop, field_name)."""
+    cap = (message.caption or "").lower().replace("ё", "е")
+    for canon, pat in _CROP_HINTS:
+        if pat in cap:
+            return canon, None
+    fn = (await state.get_data()).get("last_field_name")
+    if fn:
+        row = await resolve_field(fn, user["farm_id"])
+        if row and row["crop"]:
+            return row["crop"], row["name"]
+    return None, None
+
+
+async def _handle_photo_diagnosis(message: Message, state: FSMContext, user, file_id) -> None:
+    await message.answer("🔎 Анализирую фото…")
+    try:
+        await message.bot.send_chat_action(message.chat.id, "typing")
+    except Exception:
+        pass
+    try:
+        file = await message.bot.get_file(file_id)
+        img = (await message.bot.download_file(file.file_path)).read()
+        crop, field_name = await _diag_crop(message, state, user)
+        from bot.diagnose import diagnose
+        ans = await diagnose(img, message.caption, crop, field_name)
+    except Exception:
+        logger.exception("photo diagnosis failed")
+        ans = None
+    await message.answer(ans or (
+        "Не смог уверенно распознать по фото. Пришлите более чёткий снимок (всё растение "
+        "+ крупный план листа), или загрузите фото обычным способом для разметки."))
+
+
 @router.message(F.photo)
 async def on_photo(message: Message, state: FSMContext, user) -> None:
     """Photo sent via Telegram's camera/gallery button. Telegram compresses
     to ~1280–2560 px on the long edge; for full original resolution the
     sender should use paperclip → File (see on_photo_document below)."""
     photo = message.photo[-1]  # largest variant Telegram offers
+    if message.caption and _DIAG_CAPTION_RE.search(message.caption):
+        await _handle_photo_diagnosis(message, state, user, photo.file_id)
+        return
     await _start_photo_flow(
         message, state, user,
         file_id=photo.file_id, mime="image/jpeg",
@@ -739,6 +788,9 @@ async def on_photo_document(message: Message, state: FSMContext, user) -> None:
     vs ~1280 px via the camera button. Worth the small extra friction for
     detection on small targets (wide-field shots with many small weeds)."""
     doc = message.document
+    if message.caption and _DIAG_CAPTION_RE.search(message.caption):
+        await _handle_photo_diagnosis(message, state, user, doc.file_id)
+        return
     # Telegram's Document object doesn't expose original image width/height
     # directly (only the thumbnail's). Leave dimensions as None — the
     # submissions.image_{width,height} columns are nullable, and downstream
