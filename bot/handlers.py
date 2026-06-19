@@ -1434,8 +1434,8 @@ async def on_treatment_note_text(message: Message, state: FSMContext) -> None:
 # ---------- operation logging: log a field operation by voice/free text --------
 # The agronomist describes what was done («опрыскал 119 Корсаром 1.5 л/га»);
 # YandexGPT parses it, we resolve the field + active substance, show a one-line
-# confirmation, and on ✓ it lands in field_treatments (source='bot'). The daily
-# nudge (bot/op_nudge.py) drops the agronomist straight into this flow.
+# confirmation, and on ✓ it lands in field_treatments (source='bot'). Entered via /log,
+# the «запись» text alias, or a free-text operation statement.
 
 _OP_CAT_RU = {
     "tillage": "обработка почвы", "sowing": "сев",
