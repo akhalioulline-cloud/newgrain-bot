@@ -46,6 +46,17 @@
   .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:4px 12px;
        font-size:13px;color:var(--muted)}
   .att .x{cursor:pointer;color:#c0392b;font-weight:700}
+  .cropbar{display:flex;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;
+           padding:4px 12px;font-size:13px;color:var(--muted)}
+  .cropbar select{font:inherit;font-size:13px;color:var(--ink);border:1px solid var(--line);
+                  border-radius:10px;padding:6px 10px;background:#fff;outline:none}
+  .cropbar select:focus{border-color:var(--gold)}
+  .actions{display:flex;gap:4px;margin-top:8px}
+  .act{border:none;background:transparent;cursor:pointer;font-size:15px;opacity:.5;
+       padding:3px 6px;border-radius:7px;line-height:1}
+  .act:hover{opacity:1;background:#f0ece2}
+  .act.on{opacity:1}
+  .actnote{font-size:12px;color:var(--muted);align-self:center;margin-left:4px}
   .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
 </style>
 </head>
@@ -64,6 +75,22 @@
 </div>
 
 <div class="att" id="att"><img class="thumb" id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
+
+<div class="cropbar">
+  <label for="crop">🌱 Культура:</label>
+  <select id="crop">
+    <option value="">— не указана —</option>
+    <option>Подсолнечник</option>
+    <option>Соя</option>
+    <option>Пшеница озимая</option>
+    <option>Пшеница яровая</option>
+    <option>Ячмень</option>
+    <option>Кукуруза</option>
+    <option>Рапс</option>
+    <option>Сахарная свёкла</option>
+    <option>Горох</option>
+  </select>
+</div>
 
 <form id="form">
   <input type="file" id="file" accept="image/*" hidden>
@@ -100,22 +127,41 @@ q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min
 document.getElementById('chips').onclick=e=>{ const c=e.target.closest('.chip'); if(!c) return;
   if(c.dataset.photo){ fileInput.click(); } else { q.value=c.dataset.q; form.requestSubmit(); } };
 
+function addActions(el, answerText, question, crop){
+  const bar=document.createElement('div'); bar.className='actions';
+  const copy=document.createElement('button'); copy.className='act'; copy.title='Скопировать'; copy.textContent='📋';
+  copy.onclick=()=>{ navigator.clipboard.writeText(answerText).then(()=>{
+    copy.textContent='✓'; setTimeout(()=>copy.textContent='📋',1200); }).catch(()=>{}); };
+  const up=document.createElement('button'); up.className='act'; up.title='Хороший ответ'; up.textContent='👍';
+  const down=document.createElement('button'); down.className='act'; down.title='Плохой ответ'; down.textContent='👎';
+  const note=document.createElement('span'); note.className='actnote';
+  function vote(v,btn){ if(bar.dataset.voted) return; bar.dataset.voted=v; btn.classList.add('on');
+    note.textContent='Спасибо за отзыв!';
+    fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({vote:v,crop:crop,question:question,answer:answerText})}).catch(()=>{}); }
+  up.onclick=()=>vote('up',up); down.onclick=()=>vote('down',down);
+  bar.append(copy,up,down,note); el.appendChild(bar);
+}
+
 async function ask(){
   const text=q.value.trim(); const file=pendingFile;
   if(!text && !file) return;
+  const crop=document.getElementById('crop').value;
   addUser(text, file?URL.createObjectURL(file):null);
   q.value=''; q.style.height='auto'; setFile(null);
   const t=add('анализирую…','bot typing');
   document.getElementById('send').disabled=true;
   try{
     let r;
-    if(file){ const fd=new FormData(); fd.append('image',file); fd.append('question',text);
+    if(file){ const fd=new FormData(); fd.append('image',file); fd.append('question',text); fd.append('crop',crop);
       r=await fetch('/api/diagnose',{method:'POST',body:fd}); }
     else { r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:text})}); }
+      body:JSON.stringify({question:text,crop:crop})}); }
     if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
     const j=await r.json();
-    t.textContent=j.answer||'Что-то пошло не так, попробуйте ещё раз.'; t.className='msg bot';
+    const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
+    t.textContent=ans; t.className='msg bot';
+    if(j.answer) addActions(t, ans, text, crop);
   }catch(err){ t.textContent='Ошибка сети. Проверьте соединение и попробуйте ещё раз.'; t.className='msg bot'; }
   finally{ document.getElementById('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
 }

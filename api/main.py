@@ -3,10 +3,12 @@
 A thin HTTP layer over the SAME brain the Telegram bot uses — no agronomy logic here:
 - POST /api/chat      text question      → grounded, structured answer (agro_chat)
 - POST /api/diagnose  photo + question   → structured photo diagnosis (diagnose)
+- POST /api/feedback  thumbs up/down     → recorded for answer-quality learning
 
-Read-only (no DB writes, no field data, no secrets exposed). Open demo, rate-limited per IP
-(LLM calls cost money). Runs as the `api` container on the bot VM, bound to localhost; nginx
-terminates TLS for ai.flagleaf.ru and proxies here. See docs/web-phase1-spec.md.
+No field data and no secrets exposed; the only DB write is anonymous answer feedback. Open
+demo, rate-limited per IP (LLM calls cost money). Runs as the `api` container on the bot VM,
+bound to localhost; nginx terminates TLS for ai.flagleaf.ru and proxies here. See
+docs/web-phase1-spec.md.
 """
 import logging
 
@@ -14,9 +16,11 @@ import redis.asyncio as aioredis
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import text as sql_text
 
 from bot.agro_chat import answer as agro_answer
 from bot.config import settings
+from bot.db import engine
 from bot.diagnose import diagnose as diagnose_photo
 
 logger = logging.getLogger("api")
@@ -59,7 +63,15 @@ async def _rate_ok(ip: str, kind: str, limit: int, window: int = 3600) -> bool:
 
 class ChatIn(BaseModel):
     question: str
+    crop: str | None = None
     session: str | None = None
+
+
+class FeedbackIn(BaseModel):
+    vote: str                       # 'up' | 'down'
+    crop: str | None = None
+    question: str | None = None
+    answer: str | None = None
 
 
 @app.get("/api/health")
@@ -76,12 +88,15 @@ async def chat(body: ChatIn, request: Request):
         raise HTTPException(413, "question too long")
     if not await _rate_ok(_client_ip(request), "chat", CHAT_PER_HOUR):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
-    ans = await agro_answer(q)
+    crop = (body.crop or "").strip()
+    full_q = f"Культура: {crop}. {q}" if crop else q   # give the grounding the crop context
+    ans = await agro_answer(full_q)
     return {"answer": ans or "Не понял вопрос — переформулируйте, пожалуйста."}
 
 
 @app.post("/api/diagnose")
-async def diagnose(request: Request, image: UploadFile, question: str = Form("")):
+async def diagnose(request: Request, image: UploadFile, question: str = Form(""),
+                   crop: str = Form("")):
     img = await image.read()
     if not img:
         raise HTTPException(400, "empty image")
@@ -89,8 +104,29 @@ async def diagnose(request: Request, image: UploadFile, question: str = Form("")
         raise HTTPException(413, "image too large")
     if not await _rate_ok(_client_ip(request), "diag", DIAG_PER_HOUR):
         raise HTTPException(429, "Слишком много фото-запросов. Попробуйте позже.")
-    ans = await diagnose_photo(img, question.strip() or None, None, None)
+    ans = await diagnose_photo(img, question.strip() or None, crop.strip() or None, None)
     return {"answer": ans or (
         "Не удалось обработать фото автоматически (возможно, временный сбой распознавания). "
         "Опишите проблему словами — какая культура, после какой обработки, какие симптомы — "
         "и я отвечу по описанию. Либо повторите попытку через минуту.")}
+
+
+@app.post("/api/feedback")
+async def feedback(body: FeedbackIn, request: Request):
+    vote = (body.vote or "").strip()
+    if vote not in ("up", "down"):
+        raise HTTPException(400, "bad vote")
+    # generous cap just to stop abuse; never block the UI on it
+    if not await _rate_ok(_client_ip(request), "fb", 120):
+        return {"ok": True}
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                sql_text("INSERT INTO web_feedback (vote, crop, question, answer, ip) "
+                         "VALUES (:v, :c, :q, :a, :ip)"),
+                {"v": vote, "c": (body.crop or "")[:120] or None,
+                 "q": (body.question or "")[:2000] or None,
+                 "a": (body.answer or "")[:8000] or None, "ip": _client_ip(request)})
+    except Exception:
+        logger.exception("feedback insert failed")
+    return {"ok": True}
