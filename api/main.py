@@ -22,6 +22,7 @@ from bot.agro_chat import answer as agro_answer
 from bot.config import settings
 from bot.db import engine
 from bot.diagnose import diagnose as diagnose_photo
+from bot.transcribe import transcribe_lpcm
 
 logger = logging.getLogger("api")
 
@@ -61,9 +62,15 @@ async def _rate_ok(ip: str, kind: str, limit: int, window: int = 3600) -> bool:
         return True
 
 
+class Turn(BaseModel):
+    role: str                       # 'user' | 'bot'
+    text: str
+
+
 class ChatIn(BaseModel):
     question: str
     crop: str | None = None
+    history: list[Turn] | None = None
     session: str | None = None
 
 
@@ -72,6 +79,21 @@ class FeedbackIn(BaseModel):
     crop: str | None = None
     question: str | None = None
     answer: str | None = None
+    note: str | None = None
+
+
+def _format_history(turns: list[Turn] | None) -> str | None:
+    """Last few turns as a compact transcript for follow-up context (norms, «а если…»)."""
+    if not turns:
+        return None
+    lines = []
+    for t in turns[-6:]:
+        who = "Пользователь" if t.role == "user" else "Ассистент"
+        txt = (t.text or "").strip()
+        if txt:
+            lines.append(f"{who}: {txt[:1500]}")
+    blob = "\n".join(lines)
+    return blob[-4000:] if blob else None
 
 
 @app.get("/api/health")
@@ -90,7 +112,7 @@ async def chat(body: ChatIn, request: Request):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
     crop = (body.crop or "").strip()
     full_q = f"Культура: {crop}. {q}" if crop else q   # give the grounding the crop context
-    ans = await agro_answer(full_q)
+    ans = await agro_answer(full_q, history=_format_history(body.history))
     return {"answer": ans or "Не понял вопрос — переформулируйте, пожалуйста."}
 
 
@@ -122,11 +144,31 @@ async def feedback(body: FeedbackIn, request: Request):
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                sql_text("INSERT INTO web_feedback (vote, crop, question, answer, ip) "
-                         "VALUES (:v, :c, :q, :a, :ip)"),
+                sql_text("INSERT INTO web_feedback (vote, crop, question, answer, note, ip) "
+                         "VALUES (:v, :c, :q, :a, :n, :ip)"),
                 {"v": vote, "c": (body.crop or "")[:120] or None,
                  "q": (body.question or "")[:2000] or None,
-                 "a": (body.answer or "")[:8000] or None, "ip": _client_ip(request)})
+                 "a": (body.answer or "")[:8000] or None,
+                 "n": (body.note or "")[:1000] or None, "ip": _client_ip(request)})
     except Exception:
         logger.exception("feedback insert failed")
     return {"ok": True}
+
+
+@app.post("/api/transcribe")
+async def transcribe_ep(request: Request):
+    """Web mic → text. Body is raw 16-bit mono LPCM @16 kHz (made by the browser's
+    Web Audio API; SpeechKit transcribes it)."""
+    audio = await request.body()
+    if not audio:
+        raise HTTPException(400, "empty audio")
+    if len(audio) > 4 * 1024 * 1024:        # ~2 min of 16k mono PCM
+        raise HTTPException(413, "audio too long")
+    if not await _rate_ok(_client_ip(request), "stt", 40):
+        raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
+    try:
+        text = await transcribe_lpcm(audio)
+    except Exception:
+        logger.exception("web transcribe failed")
+        text = ""
+    return {"text": text}

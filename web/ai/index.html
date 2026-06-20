@@ -53,6 +53,14 @@
   .act:hover{opacity:1;background:#f0ece2}
   .act.on{opacity:1}
   .actnote{font-size:12px;color:var(--muted);align-self:center;margin-left:4px}
+  .iconbtn.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+  .fbnote{display:flex;gap:6px;margin-top:6px}
+  .fbnote input{flex:1;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;
+                padding:6px 8px;outline:none}
+  .fbnote input:focus{border-color:var(--gold)}
+  .fbnote button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;
+                 cursor:pointer;font-size:13px}
   .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
 </style>
 </head>
@@ -85,6 +93,7 @@
 <form id="form">
   <input type="file" id="file" accept="image/*" hidden>
   <button type="button" class="iconbtn" id="attach" title="Прикрепить фото">📎</button>
+  <button type="button" class="iconbtn" id="mic" title="Голосовой ввод">🎤</button>
   <textarea id="q" rows="1" placeholder="Ваш вопрос агроному…"></textarea>
   <button type="submit" class="iconbtn send" id="send" title="Отправить">➤</button>
 </form>
@@ -96,7 +105,9 @@ const q = document.getElementById('q');
 const form = document.getElementById('form');
 const fileInput = document.getElementById('file');
 const att = document.getElementById('att'), thumb = document.getElementById('thumb'), attname = document.getElementById('attname');
+const cropSel = document.getElementById('crop');
 let pendingFile = null;
+const history = [];   // {role:'user'|'bot', text} — sent for follow-up context
 
 function add(text, who){ const d=document.createElement('div'); d.className='msg '+who; d.textContent=text;
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d; }
@@ -105,7 +116,7 @@ function addUser(text, imgUrl){ const d=document.createElement('div'); d.classNa
   if(text){ d.appendChild(document.createTextNode(text)); }
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; }
 
-add('Здравствуйте! Я ИИ-агроном Flagleaf. Пришлите фото сорняка/болезни с вопросом — определю и подскажу, чем обработать. Можно и просто спросить текстом.', 'bot');
+add('Здравствуйте! Я ИИ-агроном Flagleaf. Пришлите фото сорняка/болезни с вопросом — определю и подскажу, чем обработать. Можно спросить текстом или голосом 🎤.', 'bot');
 
 function setFile(f){ pendingFile=f; if(f){ thumb.src=URL.createObjectURL(f); attname.textContent=f.name; att.style.display='flex'; }
   else { att.style.display='none'; fileInput.value=''; } }
@@ -115,28 +126,50 @@ document.getElementById('attx').onclick=()=>setFile(null);
 
 q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,120)+'px'; });
 
+function sendFeedback(vote, note, question, answer, crop){
+  fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vote,note,question,answer,crop})}).catch(()=>{});
+}
+function mkAct(label,title){ const b=document.createElement('button'); b.className='act'; b.title=title; b.textContent=label; return b; }
+
+// per-answer row: 📋 copy · 👍 · 👎(+optional note) · 🧮 calc (only when there are products)
 function addActions(el, answerText, question, crop){
   const bar=document.createElement('div'); bar.className='actions';
-  const copy=document.createElement('button'); copy.className='act'; copy.title='Скопировать'; copy.textContent='📋';
+  const note=document.createElement('span'); note.className='actnote';
+  let voted=false;
+  const copy=mkAct('📋','Скопировать');
   copy.onclick=()=>{ navigator.clipboard.writeText(answerText).then(()=>{
     copy.textContent='✓'; setTimeout(()=>copy.textContent='📋',1200); }).catch(()=>{}); };
-  const up=document.createElement('button'); up.className='act'; up.title='Хороший ответ'; up.textContent='👍';
-  const down=document.createElement('button'); down.className='act'; down.title='Плохой ответ'; down.textContent='👎';
-  const note=document.createElement('span'); note.className='actnote';
-  function vote(v,btn){ if(bar.dataset.voted) return; bar.dataset.voted=v; btn.classList.add('on');
-    note.textContent='Спасибо за отзыв!';
-    fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({vote:v,crop:crop,question:question,answer:answerText})}).catch(()=>{}); }
-  up.onclick=()=>vote('up',up); down.onclick=()=>vote('down',down);
-  bar.append(copy,up,down,note); el.appendChild(bar);
+  const up=mkAct('👍','Хороший ответ');
+  up.onclick=()=>{ if(voted)return; voted=true; up.classList.add('on'); note.textContent='Спасибо за отзыв!';
+    sendFeedback('up',null,question,answerText,crop); };
+  const down=mkAct('👎','Плохой ответ');
+  down.onclick=()=>{ if(voted)return; voted=true; down.classList.add('on');
+    sendFeedback('down',null,question,answerText,crop);          // capture the vote right away
+    const box=document.createElement('div'); box.className='fbnote';
+    const inp=document.createElement('input'); inp.placeholder='Что не так? (необязательно)';
+    const snd=document.createElement('button'); snd.textContent='Отправить';
+    let sent=false;
+    const post=()=>{ if(sent)return; sent=true; const v=inp.value.trim();
+      if(v) sendFeedback('down',v,question,answerText,crop);     // richer correction
+      box.remove(); note.textContent='Спасибо за отзыв!'; };
+    snd.onclick=post; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); post(); } });
+    box.append(inp,snd); el.appendChild(box); inp.focus(); };
+  bar.append(copy,up,down);
+  if(/л\/га|кг\/га|мл\/га|г\/га|норма|препарат/i.test(answerText)){
+    const calc=mkAct('🧮','Рассчитать на площадь');
+    calc.onclick=()=>{ const ha=(prompt('На какую площадь рассчитать препараты, га?')||'').replace(',','.');
+      if(parseFloat(ha)>0) runChat('Рассчитай, сколько нужно каждого препарата из предыдущего ответа на '+ha
+        +' га: общий объём препарата и рабочего раствора, по нормам расхода из предыдущего ответа.', cropSel.value, null); };
+    bar.append(calc);
+  }
+  bar.append(note); el.appendChild(bar);
 }
 
-async function ask(){
-  const text=q.value.trim(); const file=pendingFile;
+async function runChat(text, crop, file){
   if(!text && !file) return;
-  const crop=document.getElementById('crop').value;
   addUser(text, file?URL.createObjectURL(file):null);
-  q.value=''; q.style.height='auto'; setFile(null);
+  const hist = history.slice(-6);
   const t=add('анализирую…','bot typing');
   document.getElementById('send').disabled=true;
   try{
@@ -144,17 +177,65 @@ async function ask(){
     if(file){ const fd=new FormData(); fd.append('image',file); fd.append('question',text); fd.append('crop',crop);
       r=await fetch('/api/diagnose',{method:'POST',body:fd}); }
     else { r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:text,crop:crop})}); }
+      body:JSON.stringify({question:text,crop:crop,history:hist})}); }
     if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
     const j=await r.json();
     const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
     t.textContent=ans; t.className='msg bot';
-    if(j.answer) addActions(t, ans, text, crop);
+    if(j.answer){ addActions(t, ans, text, crop);
+      history.push({role:'user',text:text||'[фото поля]'}); history.push({role:'bot',text:ans}); }
   }catch(err){ t.textContent='Ошибка сети. Проверьте соединение и попробуйте ещё раз.'; t.className='msg bot'; }
   finally{ document.getElementById('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
 }
+
+function ask(){
+  const text=q.value.trim(); const file=pendingFile; const crop=cropSel.value;
+  if(!text && !file) return;
+  q.value=''; q.style.height='auto'; setFile(null);
+  runChat(text, crop, file);
+}
 form.addEventListener('submit', e=>{ e.preventDefault(); ask(); });
 q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+
+// ---- voice: Web Audio capture → 16 kHz mono LPCM → /api/transcribe (SpeechKit) ----
+const micBtn=document.getElementById('mic');
+let recording=false, audioCtx=null, micStream=null, micProc=null, micChunks=[];
+micBtn.onclick=async()=>{
+  if(recording){ stopRec(); return; }
+  try{ micStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ alert('Нет доступа к микрофону — разрешите его в браузере.'); return; }
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=audioCtx.createMediaStreamSource(micStream);
+  micProc=audioCtx.createScriptProcessor(4096,1,1); micChunks=[];
+  micProc.onaudioprocess=e=>{ micChunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  src.connect(micProc); micProc.connect(audioCtx.destination);
+  recording=true; micBtn.classList.add('rec'); micBtn.textContent='⏹'; q.placeholder='Говорите… нажмите ⏹';
+};
+function stopRec(){
+  recording=false; micBtn.classList.remove('rec'); micBtn.textContent='🎤'; q.placeholder='Ваш вопрос агроному…';
+  try{ micProc.disconnect(); }catch(e){}
+  if(micStream) micStream.getTracks().forEach(t=>t.stop());
+  const inRate=audioCtx.sampleRate;
+  let len=micChunks.reduce((a,c)=>a+c.length,0); const buf=new Float32Array(len); let off=0;
+  for(const c of micChunks){ buf.set(c,off); off+=c.length; }
+  try{ audioCtx.close(); }catch(e){}
+  if(len<inRate*0.3){ return; }                       // <0.3 s — ignore stray taps
+  sendAudio(to16kInt16(buf,inRate));
+}
+function to16kInt16(buf,inRate){
+  const ratio=inRate/16000, outLen=Math.floor(buf.length/ratio), out=new Int16Array(outLen);
+  for(let i=0;i<outLen;i++){ const s=Math.max(-1,Math.min(1,buf[Math.floor(i*ratio)]||0)); out[i]=s<0?s*0x8000:s*0x7FFF; }
+  return out.buffer;
+}
+async function sendAudio(pcm){
+  q.placeholder='Распознаю речь…';
+  try{
+    const r=await fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:pcm});
+    const j=await r.json();
+    if(j.text){ q.value=(q.value?q.value+' ':'')+j.text; q.dispatchEvent(new Event('input')); q.focus(); q.placeholder='Ваш вопрос агроному…'; }
+    else { q.placeholder='Не расслышал — повторите'; setTimeout(()=>q.placeholder='Ваш вопрос агроному…',2500); }
+  }catch(e){ q.placeholder='Ошибка распознавания'; setTimeout(()=>q.placeholder='Ваш вопрос агроному…',2500); }
+}
 </script>
 </body>
 </html>

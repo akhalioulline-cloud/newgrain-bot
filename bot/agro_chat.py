@@ -204,13 +204,17 @@ _REC_SYS = (
 )
 
 
-async def answer(question: str, context: str | None = None) -> str | None:
+async def answer(question: str, context: str | None = None,
+                 history: str | None = None) -> str | None:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
     grounding = await _registry_grounding(question)
     literature = await _literature_grounding(question)
     parts = [p for p in (
         f"ДАННЫЕ ПО ПОЛЮ:\n{context}" if context else None,
+        (f"ПРЕДЫДУЩИЙ ДИАЛОГ (контекст для уточняющих вопросов и расчётов; "
+         f"опирайся на него, если вопрос ссылается на «предыдущий ответ»):\n{history}"
+         if history else None),
         grounding,
         literature,
         f"ВОПРОС: {question}",
