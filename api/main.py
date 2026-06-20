@@ -3,13 +3,16 @@
 A thin HTTP layer over the SAME brain the Telegram bot uses — no agronomy logic here:
 - POST /api/chat      text question      → grounded, structured answer (agro_chat)
 - POST /api/diagnose  photo + question   → structured photo diagnosis (diagnose)
+- POST /api/transcribe  mic audio (LPCM) → text (SpeechKit)
 - POST /api/feedback  thumbs up/down     → recorded for answer-quality learning
+- POST /api/contact   «связаться» form   → stored + pushed to ADMIN_TG_IDS
 
 No field data and no secrets exposed; the only DB write is anonymous answer feedback. Open
 demo, rate-limited per IP (LLM calls cost money). Runs as the `api` container on the bot VM,
 bound to localhost; nginx terminates TLS for ai.flagleaf.ru and proxies here. See
 docs/web-phase1-spec.md.
 """
+import asyncio
 import logging
 
 import redis.asyncio as aioredis
@@ -23,6 +26,7 @@ from bot.config import settings
 from bot.db import engine
 from bot.diagnose import diagnose as diagnose_photo
 from bot.transcribe import transcribe_lpcm
+from labeling import alert
 
 logger = logging.getLogger("api")
 
@@ -80,6 +84,12 @@ class FeedbackIn(BaseModel):
     question: str | None = None
     answer: str | None = None
     note: str | None = None
+
+
+class ContactIn(BaseModel):
+    name: str | None = None
+    phone: str
+    message: str | None = None
 
 
 def _format_history(turns: list[Turn] | None) -> str | None:
@@ -172,3 +182,31 @@ async def transcribe_ep(request: Request):
         logger.exception("web transcribe failed")
         text = ""
     return {"text": text}
+
+
+@app.post("/api/contact")
+async def contact(body: ContactIn, request: Request):
+    phone = (body.phone or "").strip()
+    name = (body.name or "").strip()
+    msg = (body.message or "").strip()
+    if len(phone) < 5 or not any(c.isdigit() for c in phone):
+        raise HTTPException(400, "нужен корректный телефон")
+    if not await _rate_ok(_client_ip(request), "contact", 10):
+        raise HTTPException(429, "Слишком много заявок. Попробуйте позже.")
+    notified = False
+    try:
+        text = (f"📞 Заявка с ai.flagleaf.ru\nИмя: {name or '—'}\nТелефон: {phone}\n"
+                f"Вопрос: {msg[:1000] or '—'}")
+        notified = bool(await asyncio.to_thread(alert.send, text))
+    except Exception:
+        logger.exception("contact notify failed")
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                sql_text("INSERT INTO web_leads (name, phone, message, ip, notified) "
+                         "VALUES (:n, :p, :m, :ip, :nf)"),
+                {"n": name[:200] or None, "p": phone[:40],
+                 "m": msg[:2000] or None, "ip": _client_ip(request), "nf": notified})
+    except Exception:
+        logger.exception("lead insert failed")
+    return {"ok": True}

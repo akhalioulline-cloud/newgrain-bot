@@ -61,6 +61,25 @@
   .fbnote input:focus{border-color:var(--gold)}
   .fbnote button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;
                  cursor:pointer;font-size:13px}
+  .contactbar{text-align:center;padding:2px 16px}
+  .contactbtn{font:inherit;font-size:13px;color:var(--gold);background:#fff;border:1px solid var(--gold);
+              border-radius:18px;padding:7px 16px;cursor:pointer}
+  .contactbtn:hover{background:var(--gold);color:#fff}
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;
+         align-items:center;justify-content:center;padding:16px}
+  .modal.open{display:flex}
+  .modalbox{background:#fff;border-radius:14px;padding:18px;width:100%;max-width:380px}
+  .modaltitle{font-family:Oswald;font-weight:600;font-size:18px;margin-bottom:4px}
+  .modalsub{font-size:13px;color:var(--muted);margin:0 0 12px}
+  .modalbox input,.modalbox textarea{width:100%;font:inherit;font-size:15px;border:1px solid var(--line);
+         border-radius:10px;padding:10px;margin-bottom:8px;outline:none;resize:none}
+  .modalbox input:focus,.modalbox textarea:focus{border-color:var(--gold)}
+  .modalrow{display:flex;gap:8px;margin-top:4px}
+  .modalbtn{flex:1;font:inherit;border:1px solid var(--line);background:#fff;border-radius:10px;
+            padding:10px;cursor:pointer}
+  .modalbtn.primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
+  .modalbtn:disabled{opacity:.5;cursor:default}
+  .modalnote{font-size:13px;color:var(--muted);text-align:center;margin-top:8px}
   .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
 </style>
 </head>
@@ -97,7 +116,23 @@
   <textarea id="q" rows="1" placeholder="Ваш вопрос агроному…"></textarea>
   <button type="submit" class="iconbtn send" id="send" title="Отправить">➤</button>
 </form>
+<div class="contactbar"><button type="button" id="contactBtn" class="contactbtn">📞 Связаться с агрономом</button></div>
 <div class="disclaimer">ИИ-помощник. Рекомендации проверяйте перед применением; за окончательным решением — к агроному.</div>
+
+<div class="modal" id="contactModal">
+  <div class="modalbox">
+    <div class="modaltitle">Связаться с агрономом</div>
+    <p class="modalsub">Оставьте контакт — наш агроном свяжется с вами.</p>
+    <input id="cName" placeholder="Имя">
+    <input id="cPhone" placeholder="Телефон *" inputmode="tel" autocomplete="tel">
+    <textarea id="cMsg" rows="3" placeholder="Ваш вопрос (необязательно)"></textarea>
+    <div class="modalrow">
+      <button type="button" id="cCancel" class="modalbtn">Отмена</button>
+      <button type="button" id="cSend" class="modalbtn primary">Отправить</button>
+    </div>
+    <div class="modalnote" id="cNote"></div>
+  </div>
+</div>
 
 <script>
 const chat = document.getElementById('chat');
@@ -140,6 +175,13 @@ function addActions(el, answerText, question, crop){
   const copy=mkAct('📋','Скопировать');
   copy.onclick=()=>{ navigator.clipboard.writeText(answerText).then(()=>{
     copy.textContent='✓'; setTimeout(()=>copy.textContent='📋',1200); }).catch(()=>{}); };
+  const share=mkAct('📤','Поделиться');
+  share.onclick=async()=>{
+    const txt=answerText+'\n\n— ИИ-агроном Flagleaf · ai.flagleaf.ru';
+    if(navigator.share){ try{ await navigator.share({title:'Flagleaf — ИИ-агроном', text:txt}); }catch(e){} }
+    else { navigator.clipboard.writeText(txt).then(()=>{ share.textContent='✓';
+      setTimeout(()=>share.textContent='📤',1200); }).catch(()=>{}); }
+  };
   const up=mkAct('👍','Хороший ответ');
   up.onclick=()=>{ if(voted)return; voted=true; up.classList.add('on'); note.textContent='Спасибо за отзыв!';
     sendFeedback('up',null,question,answerText,crop); };
@@ -155,7 +197,7 @@ function addActions(el, answerText, question, crop){
       box.remove(); note.textContent='Спасибо за отзыв!'; };
     snd.onclick=post; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); post(); } });
     box.append(inp,snd); el.appendChild(box); inp.focus(); };
-  bar.append(copy,up,down);
+  bar.append(copy,share,up,down);
   if(/л\/га|кг\/га|мл\/га|г\/га|норма|препарат/i.test(answerText)){
     const calc=mkAct('🧮','Рассчитать на площадь');
     calc.onclick=()=>{ const ha=(prompt('На какую площадь рассчитать препараты, га?')||'').replace(',','.');
@@ -236,6 +278,28 @@ async function sendAudio(pcm){
     else { q.placeholder='Не расслышал — повторите'; setTimeout(()=>q.placeholder='Ваш вопрос агроному…',2500); }
   }catch(e){ q.placeholder='Ошибка распознавания'; setTimeout(()=>q.placeholder='Ваш вопрос агроному…',2500); }
 }
+
+// ---- «Связаться с агрономом» lead form → /api/contact ----
+const cModal=document.getElementById('contactModal');
+const cName=document.getElementById('cName'), cPhone=document.getElementById('cPhone'),
+      cMsg=document.getElementById('cMsg'), cNote=document.getElementById('cNote');
+document.getElementById('contactBtn').onclick=()=>{ cNote.textContent=''; cModal.classList.add('open'); cName.focus(); };
+document.getElementById('cCancel').onclick=()=>cModal.classList.remove('open');
+cModal.addEventListener('click', e=>{ if(e.target===cModal) cModal.classList.remove('open'); });
+document.getElementById('cSend').onclick=async()=>{
+  const name=cName.value.trim(), phone=cPhone.value.trim(), message=cMsg.value.trim();
+  if(phone.replace(/\D/g,'').length<5){ cNote.textContent='Укажите телефон для связи.'; cPhone.focus(); return; }
+  const btn=document.getElementById('cSend'); btn.disabled=true; cNote.textContent='Отправляю…';
+  try{
+    const r=await fetch('/api/contact',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,phone,message})});
+    if(r.ok){ cNote.textContent='Спасибо! Агроном свяжется с вами.';
+      cName.value=''; cPhone.value=''; cMsg.value='';
+      setTimeout(()=>{ cModal.classList.remove('open'); cNote.textContent=''; }, 1600); }
+    else { cNote.textContent='Не удалось отправить — проверьте телефон и попробуйте ещё раз.'; }
+  }catch(e){ cNote.textContent='Ошибка сети. Попробуйте ещё раз.'; }
+  finally{ btn.disabled=false; }
+};
 </script>
 </body>
 </html>
