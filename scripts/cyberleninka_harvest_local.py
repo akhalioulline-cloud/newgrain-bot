@@ -24,9 +24,23 @@ OAI = "https://cyberleninka.ru/oai"
 H = {"User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
                     "(KHTML, like Gecko) Version/17.4 Safari/605.1.15")}
 KEEP = re.compile(
-    r"агроном|земледел|агрохим|растениевод|защит\w*\s*растен|фитопатолог|селекц|семеновод|"
-    r"почвовед|масличн|зернов|овощ|плодов|виноград|кормопроизвод|мелиорац|агроинженер|"
-    r"сельскохоз|аграрн|агропром|урожай|посев", re.I)
+    r"агроном|земледел|агрохим|растениевод|защит\w*.{0,14}растен|карантин|фитопатолог|"
+    r"селекц|семеновод|почвовед|масличн|зернов|овощ|плодов|виноград|кормопроизвод|мелиорац|"
+    r"агроинженер|сельскохоз|аграрн|агропром|урожай|посев", re.I)
+# Reject journals whose NAME signals an off-topic / mixed feed — these dominated the 20-Jun
+# harvest (economics, medicine, forestry, law, …) because their OAI sets return everything.
+EXCLUDE = re.compile(
+    r"эконом|финанс|бухгалт|менеджмент|предпринимат|право|юридич|медицин|здравоохран|клинич|"
+    r"ветеринар|педагог|психолог|филолог|лингвист|историч|социолог|социальн|философ|политич|"
+    r"богослов|физкультур|спорт|туризм|искусств|архитектур|нефт|газов|геолог|лесн|лесовод", re.I)
+# Per-ARTICLE relevance gate: keep only pieces that actually touch field-crop science / plant
+# protection (agronomy journals still carry off-topic articles). The biggest quality lever.
+CROP_RE = re.compile(
+    r"сорняк|сорн\w*\s*растен|гербицид|фунгицид|инсектицид|пестицид|протрав|вреди?тел|"
+    r"фитопатог|возбудител|болезн\w*\s*(?:растен|культур)|урожайност|сорт[аов]|гибрид|"
+    r"севооборот|удобрен|агротехни|обработк\w*\s*почв|вегетац|всход|подсолнечник|пшениц|"
+    r"ячмен|кукуруз|рапс|свёкл|свекл|зернобобов|масличн|растениевод|защит\w*.{0,14}растен|"
+    r"карантин|агроном|посев\w*\s*(?:со[ия]|подсолн|пшениц|кукуруз|культур)", re.I)
 FALLBACK = [
     ("journal_15642", "Масличные культуры"), ("journal_30234", "Земледелие"),
     ("journal_17681", "Сельскохозяйственная биология"), ("journal_15389", "Агрохимический вестник"),
@@ -67,7 +81,8 @@ def discover():
     if _blocked(r):
         return None
     sets = re.findall(r"<setSpec>(.*?)</setSpec>\s*<setName>(.*?)</setName>", r.text, re.S)
-    found = [(s, _clean(n)) for s, n in sets if s.startswith("journal_") and KEEP.search(n)]
+    found = [(s, _clean(n)) for s, n in sets
+             if s.startswith("journal_") and KEEP.search(n) and not EXCLUDE.search(n)]
     return found or FALLBACK
 
 
@@ -159,7 +174,7 @@ def main():
         sys.exit(1)
     print(f"discovered {len(journals)} agronomy journals", file=sys.stderr)
 
-    added = 0
+    added = skipped = 0
     with open(a.out, "a", encoding="utf-8") as f:
         for spec, jname in journals:
             n_j = 0
@@ -174,15 +189,22 @@ def main():
                 time.sleep(a.delay)
                 if not page or not (page["abstract"] or page["full_text"]):
                     continue
+                # relevance gate: drop off-topic articles (economics/medicine/etc.) that slip
+                # through even agronomy journals — keep only field-crop/plant-protection content.
+                blob = f"{title} {page.get('abstract') or ''} {page.get('full_text') or ''}"
+                if not CROP_RE.search(blob):
+                    skipped += 1
+                    continue
                 f.write(json.dumps({"journal": jname, "title": title, "authors": authors or None,
                                     "publisher": publisher or None, "url": url, **page},
                                    ensure_ascii=False) + "\n")
                 f.flush()
                 added += 1
                 if added % 100 == 0:
-                    print(f"  …{added} new ({jname})", file=sys.stderr, flush=True)
+                    print(f"  …{added} new, {skipped} off-topic skipped ({jname})",
+                          file=sys.stderr, flush=True)
             print(f"✓ {jname}: {added} total new so far", file=sys.stderr, flush=True)
-    print(f"DONE: {added} new articles → {a.out}", file=sys.stderr)
+    print(f"DONE: {added} new articles ({skipped} off-topic skipped) → {a.out}", file=sys.stderr)
 
 
 if __name__ == "__main__":
