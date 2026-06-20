@@ -100,9 +100,18 @@ A second, gated screen (the public chat stays as-is):
 Public/anonymous labeling upload (quality + trust — labels must come from known agronomists);
 replacing Telegram; in-web CVAT/annotation (annotation stays in CVAT).
 
-## 11. Open decisions for the founder
-1. **Auth method** — A (bot code, recommended) / B (Telegram widget) / C (password).
-2. **Driving need** — is the real win *desktop bulk upload*, *original-res + GPS metadata*, or
-   *both*? (Scopes 2a.)
-3. **Species at upload** — required (like Telegram) or optional-but-encouraged (lower friction)?
-4. **Who can upload via web** — all agronomists, or start with a couple of power users?
+## 11. Decisions (locked by founder, 2026-06-20)
+1. **Auth method** — ✅ **A: bot-issued one-time code** (`/weblogin` → 6-digit, Redis TTL → session).
+2. **Driving need** — ✅ **Both** desktop/bulk upload **and** original-resolution + EXIF GPS. So 2a
+   includes multi-file drag-drop AND server-side EXIF GPS capture + a `submissions` lat/lon column.
+3. **Who can upload** — ✅ **All whitelisted agronomists** from the start (gated by login; juniors
+   still go through the review gate).
+4. **Species at upload** — default: **required, same as Telegram** (dictionary + «Другой»); revisit
+   if it proves to add friction.
+
+### Build order (2a)
+1. `/weblogin` bot command + `POST /api/auth/start|verify` + session middleware (`require_user`).
+2. `GET /api/me`, `GET /api/fields`, `GET /api/species`.
+3. `POST /api/submit` (multi-photo + metadata → `upload_bytes` + `create_submission` + review gate);
+   EXIF GPS read + `submissions` lat/lon migration; keep original-ish resolution.
+4. Web: login screen + upload screen (field, drag-drop, category, species-search, comment, progress).
