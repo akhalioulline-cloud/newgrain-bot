@@ -17,8 +17,10 @@ import base64
 import json
 import logging
 import re
+from io import BytesIO
 
 import requests
+from PIL import Image, ImageOps
 
 from bot.agro_chat import _complete, _literature_grounding, _registry_grounding
 from bot.config import settings
@@ -38,8 +40,32 @@ _VISION_SYS = (
     '"symptoms":["видимый признак", ...],'
     '"differential":[{"name":"альтернативный вариант","why":"чем отличается"}],'
     '"weed_class":"двудольный|злаковый|null"}\n'
+    "Учитывай и НЕинфекционные причины — на полях они частые: повреждение гербицидом/"
+    "пестицидом после обработки (краевой ожог и пожелтение листьев, хлороз, скручивание, "
+    "деформация точки роста), дефицит элементов питания, погодный/почвенный стресс. Если на "
+    "фото сама КУЛЬТУРА с такими симптомами (а не сорняк/болезнь) — так и скажи (category "
+    "«иное», diagnosis типа «повреждение гербицидом» / «дефицит питания»).\n"
     "Будь честен с уверенностью: всходы и злаковые трудно различить по фото — не завышай."
 )
+
+
+def _prep_image(img: bytes, max_side: int = 1536) -> bytes:
+    """Downscale + re-encode to JPEG so the vision payload stays within the model's image
+    limits — full-res phone photos uploaded via the web were rejected with HTTP 400 (the
+    Telegram path works because Telegram pre-compresses). Also normalises EXIF orientation
+    and HEIC/PNG/RGBA → RGB. Best-effort: returns the original bytes if anything fails."""
+    try:
+        im = Image.open(BytesIO(img))
+        im = ImageOps.exif_transpose(im)
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        im.thumbnail((max_side, max_side))
+        out = BytesIO()
+        im.save(out, format="JPEG", quality=85, optimize=True)
+        return out.getvalue()
+    except Exception:
+        logger.warning("diagnose: image prep failed, sending original bytes", exc_info=True)
+        return img
 
 _DIAG_SYS = (
     "Ты — опытный агроном-консультант хозяйства «New Grain Co» (ЦЧР). По фото уже выполнено "
@@ -71,6 +97,7 @@ _DIAG_SYS = (
 def _vision_sync(img: bytes) -> dict | None:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
+    img = _prep_image(img)
     body = {
         "model": f"gpt://{settings.yc_folder_id}/{_QWEN_MODEL}/latest",
         "messages": [{"role": "user", "content": [
@@ -80,20 +107,27 @@ def _vision_sync(img: bytes) -> dict | None:
         ]}],
         "temperature": 0, "max_tokens": 2500,
     }
-    try:
-        r = requests.post(_QWEN_URL, headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
-                          json=body, timeout=90)
-        if r.status_code != 200:
-            logger.warning("diagnose vision HTTP %s", r.status_code)
+    for attempt in (1, 2):  # one gentle retry — qwen vision throttles intermittently
+        try:
+            r = requests.post(_QWEN_URL,
+                              headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
+                              json=body, timeout=90)
+            if r.status_code != 200:
+                logger.warning("diagnose vision HTTP %s (attempt %s)", r.status_code, attempt)
+                if r.status_code in (429, 500, 502, 503) and attempt == 1:
+                    continue
+                return None
+            msg = r.json()["choices"][0]["message"]
+            raw = msg.get("content") or msg.get("reasoning_content") or ""
+            s = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
+            m = re.search(r"\{.*\}", s, re.S)
+            return json.loads(m.group(0)) if m else None
+        except Exception:
+            logger.exception("diagnose vision failed (attempt %s)", attempt)
+            if attempt == 1:
+                continue
             return None
-        msg = r.json()["choices"][0]["message"]
-        raw = msg.get("content") or msg.get("reasoning_content") or ""
-        s = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
-        m = re.search(r"\{.*\}", s, re.S)
-        return json.loads(m.group(0)) if m else None
-    except Exception:
-        logger.exception("diagnose vision failed")
-        return None
+    return None
 
 
 def _fmt_vision(vd: dict) -> str:
