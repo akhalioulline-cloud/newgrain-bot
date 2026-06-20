@@ -105,23 +105,35 @@ def _vision_sync(img: bytes) -> dict | None:
             {"type": "image_url",
              "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}},
         ]}],
-        "temperature": 0, "max_tokens": 2500,
+        # qwen3.6 is a REASONING model — it spends ~5-7k tokens on hidden reasoning before
+        # emitting the JSON answer. Too low a ceiling truncates it mid-thought (finish=length,
+        # empty content) → no diagnosis. Yandex ignores Qwen's /no_think switch, so give room.
+        "temperature": 0, "max_tokens": 10000,
     }
     for attempt in (1, 2):  # one gentle retry — qwen vision throttles intermittently
         try:
             r = requests.post(_QWEN_URL,
                               headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
-                              json=body, timeout=90)
+                              json=body, timeout=150)
             if r.status_code != 200:
                 logger.warning("diagnose vision HTTP %s (attempt %s)", r.status_code, attempt)
                 if r.status_code in (429, 500, 502, 503) and attempt == 1:
                     continue
                 return None
-            msg = r.json()["choices"][0]["message"]
+            choice = r.json()["choices"][0]
+            msg = choice["message"]
             raw = msg.get("content") or msg.get("reasoning_content") or ""
             s = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
             m = re.search(r"\{.*\}", s, re.S)
-            return json.loads(m.group(0)) if m else None
+            if m:
+                try:
+                    return json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    pass
+            logger.warning("diagnose vision: no JSON parsed (finish=%s, content=%d, reasoning=%d)",
+                           choice.get("finish_reason"), len(msg.get("content") or ""),
+                           len(msg.get("reasoning_content") or ""))
+            return None
         except Exception:
             logger.exception("diagnose vision failed (attempt %s)", attempt)
             if attempt == 1:
