@@ -31,6 +31,12 @@ _QWEN_URL = "https://llm.api.cloud.yandex.net/v1/chat/completions"
 _QWEN_MODEL = "qwen3.6-35b-a3b"
 
 _VISION_SYS = (
+    # qwen3.6 is a reasoning model; without this it can ramble 10k+ tokens of hidden reasoning
+    # and never emit the answer (finish=length, empty content). A hard brevity instruction cuts
+    # reasoning ~10× (verified: 36k→2.8k chars, 58s→3s) — /no_think and reasoning_effort do NOT
+    # work on Yandex, this prompt directive is what bounds it.
+    "Отвечай БЫСТРО: рассуждай не более 1–2 коротких шагов и СРАЗУ выведи JSON — без длинных "
+    "размышлений, без повторов.\n"
     "На фото — растение или проблема с поля (Центрально-Чернозёмный регион, Белгородская "
     "область). Определи объект как агроном и верни ТОЛЬКО JSON без пояснений:\n"
     '{"diagnosis":"русское название","latin":"Latin name или null",'
@@ -105,10 +111,9 @@ def _vision_sync(img: bytes) -> dict | None:
             {"type": "image_url",
              "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}},
         ]}],
-        # qwen3.6 is a REASONING model — it spends ~5-7k tokens on hidden reasoning before
-        # emitting the JSON answer. Too low a ceiling truncates it mid-thought (finish=length,
-        # empty content) → no diagnosis. Yandex ignores Qwen's /no_think switch, so give room.
-        "temperature": 0, "max_tokens": 10000,
+        # The brevity directive in _VISION_SYS bounds reasoning to ~1k tokens, so this ceiling
+        # is just a safety net (a truncated reasoning = finish=length + empty content → None).
+        "temperature": 0, "max_tokens": 8000,
     }
     for attempt in (1, 2):  # one gentle retry — qwen vision throttles intermittently
         try:
@@ -124,10 +129,10 @@ def _vision_sync(img: bytes) -> dict | None:
             msg = choice["message"]
             raw = msg.get("content") or msg.get("reasoning_content") or ""
             s = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
-            m = re.search(r"\{.*\}", s, re.S)
-            if m:
-                try:
-                    return json.loads(m.group(0))
+            brace = s.find("{")
+            if brace >= 0:
+                try:  # raw_decode: first complete object, tolerate trailing text
+                    return json.JSONDecoder().raw_decode(s[brace:])[0]
                 except json.JSONDecodeError:
                     pass
             logger.warning("diagnose vision: no JSON parsed (finish=%s, content=%d, reasoning=%d)",
