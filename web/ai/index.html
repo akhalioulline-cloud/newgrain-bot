@@ -47,7 +47,8 @@
   .cropbar select{font:inherit;font-size:13px;color:var(--ink);border:1px solid var(--line);
                   border-radius:10px;padding:6px 10px;background:#fff;outline:none}
   .cropbar select:focus{border-color:var(--gold)}
-  .actions{display:flex;gap:4px;margin-top:8px}
+  .actions{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+  .actgrp{display:flex;gap:4px;align-items:center}
   .act{border:none;background:transparent;cursor:pointer;font-size:15px;opacity:.5;
        padding:3px 6px;border-radius:7px;line-height:1}
   .act:hover{opacity:1;background:#f0ece2}
@@ -197,15 +198,18 @@ function addActions(el, answerText, question, crop){
       box.remove(); note.textContent='Спасибо за отзыв!'; };
     snd.onclick=post; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); post(); } });
     box.append(inp,snd); el.appendChild(box); inp.focus(); };
-  bar.append(copy,share,up,down);
+  const left=document.createElement('div'); left.className='actgrp';
+  const right=document.createElement('div'); right.className='actgrp';
+  left.append(copy,share);
   if(/л\/га|кг\/га|мл\/га|г\/га|норма|препарат/i.test(answerText)){
     const calc=mkAct('🧮','Рассчитать на площадь');
     calc.onclick=()=>{ const ha=(prompt('На какую площадь рассчитать препараты, га?')||'').replace(',','.');
       if(parseFloat(ha)>0) runChat('Рассчитай, сколько нужно каждого препарата из предыдущего ответа на '+ha
         +' га: общий объём препарата и рабочего раствора, по нормам расхода из предыдущего ответа.', cropSel.value, null); };
-    bar.append(calc);
+    left.append(calc);
   }
-  bar.append(note); el.appendChild(bar);
+  right.append(note,up,down);
+  bar.append(left,right); el.appendChild(bar);
 }
 
 async function runChat(text, crop, file){
