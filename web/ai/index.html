@@ -29,10 +29,6 @@
   .user{align-self:flex-end;background:var(--usr);color:#fff;border-bottom-right-radius:4px}
   .user img{max-width:200px;border-radius:8px;display:block;margin-bottom:6px}
   .typing{color:var(--muted);font-style:italic}
-  .chips{display:flex;gap:8px;flex-wrap:wrap;max-width:760px;width:100%;margin:0 auto;padding:0 16px 4px}
-  .chip{font-size:13px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:16px;
-        padding:6px 12px;cursor:pointer}
-  .chip:hover{border-color:var(--gold)}
   form{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line);
        background:#fff;max-width:760px;width:100%;margin:0 auto}
   textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
@@ -67,12 +63,6 @@
 </header>
 
 <div id="chat"></div>
-
-<div class="chips" id="chips">
-  <span class="chip" data-q="Чем обработать сою от осота?">Чем обработать сою от осота?</span>
-  <span class="chip" data-q="Чем обработать подсолнечник от двудольных сорняков?">Гербицид для подсолнечника</span>
-  <span class="chip" data-photo="1">📷 Определить по фото</span>
-</div>
 
 <div class="att" id="att"><img class="thumb" id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
 
@@ -124,8 +114,6 @@ fileInput.onchange=e=>{ if(e.target.files[0]) setFile(e.target.files[0]); };
 document.getElementById('attx').onclick=()=>setFile(null);
 
 q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,120)+'px'; });
-document.getElementById('chips').onclick=e=>{ const c=e.target.closest('.chip'); if(!c) return;
-  if(c.dataset.photo){ fileInput.click(); } else { q.value=c.dataset.q; form.requestSubmit(); } };
 
 function addActions(el, answerText, question, crop){
   const bar=document.createElement('div'); bar.className='actions';
