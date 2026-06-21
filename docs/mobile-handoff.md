@@ -30,13 +30,20 @@ markdown). To pick up:
 Plan, draft, write code/answers. It **cannot run, test, or deploy** — treat its output as a
 *proposal*, not finished work.
 
-## 3. Hand off from the iPhone (bring it back)
-The phone can't `git push`. Two ways:
-- **GitHub connector with write access:** ask it to commit its changes to a new branch; a Mac
-  then `git pull` + merges and runs `make handoff`.
-- **Otherwise (default):** ask it to output its files **plus a short "what I did / what's next"
-  note**. On a Mac: drop the files in, then `make handoff`. (This is the paste flow used for the
-  Phase-2 upload page.)
+## 3. Hand off FROM the iPhone (bring it back to a Mac)
+The phone can't `git push`, so its work travels back through **iCloud Drive → `Flagleaf_inbox`**:
+
+1. End of the phone session, ask it:
+   > Write a short handoff note (what we changed/decided, and the next steps), and output any
+   > files you created as separate files.
+2. **Save those into `Flagleaf_inbox`** (Files → iCloud Drive → Flagleaf_inbox): use the share/
+   "Save to Files" on each generated file, and save the note as e.g. `handoff.md`. For a chat-only
+   session, saving just the note is enough.
+3. On a **Mac**, tell Claude: *"I worked on the phone — check `Flagleaf_inbox`."* It reads the
+   note, integrates the files into the repo, runs `make handoff`, and you delete the inbox files.
+
+If it was pure thinking (no files), even simpler: copy the phone's summary and paste it to Claude
+on the Mac — it folds it into memory and hands off.
 
 ---
 
