@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLAGLEAF — загрузка для разметки</title>
+<meta name="description" content="Загрузка фото полей для разметки. Для зарегистрированных агрономов Flagleaf — вход по коду из Telegram-бота.">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<meta name="apple-mobile-web-app-title" content="Flagleaf">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#b9994b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --gold:#b9994b; --ink:#1a1a1a; --bg:#faf8f4; --card:#fff;
+         --muted:#8a8a8a; --line:#e7e2d8; --ok:#3a7d44; --bad:#c0392b; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
+       display:flex;flex-direction:column;min-height:100dvh}
+  header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);
+         background:#fff;position:sticky;top:0;z-index:5}
+  .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
+  .logo b{color:var(--gold)}
+  .sub{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.3}
+  .sub .who{color:var(--ink);font-weight:500}
+  .sub a,.logout{color:var(--gold);text-decoration:none;cursor:pointer;background:none;border:none;font:inherit;padding:0}
+  main{flex:1;width:100%;max-width:640px;margin:0 auto;padding:18px 16px 32px}
+
+  /* ---- shared bits ---- */
+  h1{font-family:Oswald;font-weight:600;font-size:22px;margin:0 0 4px}
+  .lead{font-size:14px;color:var(--muted);line-height:1.5;margin:0 0 18px}
+  label.fld{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+  select,input[type=text],textarea{width:100%;font:inherit;font-size:15px;color:var(--ink);
+        border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:#fff;outline:none}
+  select:focus,input:focus,textarea:focus{border-color:var(--gold)}
+  textarea{resize:none}
+  .section{margin-bottom:18px}
+  .btn{font:inherit;font-weight:600;font-size:15px;border-radius:12px;padding:13px 16px;cursor:pointer;
+        border:1px solid var(--gold);background:var(--gold);color:#fff;width:100%}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+  .note{font-size:13px;margin-top:10px;min-height:18px;line-height:1.45}
+  .note.err{color:var(--bad)}
+  .note.ok{color:var(--ok)}
+
+  /* ---- login ---- */
+  .loginwrap{max-width:380px;margin:6vh auto 0}
+  .code{letter-spacing:.4em;text-align:center;font-size:24px;font-weight:500;font-family:Oswald}
+  .help{font-size:13px;color:var(--muted);line-height:1.55;margin-top:14px;
+        background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .help b{color:var(--ink)}
+  .help code{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:1px 6px;
+        font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+
+  /* ---- category chips ---- */
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font:inherit;font-size:14px;border:1px solid var(--line);background:#fff;color:var(--ink);
+        border-radius:20px;padding:8px 14px;cursor:pointer}
+  .chip.on{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:500}
+
+  /* ---- drop zone ---- */
+  .drop{border:2px dashed var(--line);border-radius:14px;background:#fff;padding:24px 16px;text-align:center;
+        cursor:pointer;transition:border-color .15s,background .15s}
+  .drop:hover{border-color:var(--gold)}
+  .drop.over{border-color:var(--gold);background:#fffdf6}
+  .drop .big{font-size:30px;line-height:1}
+  .drop .t{font-weight:500;margin-top:8px}
+  .drop .s{font-size:13px;color:var(--muted);margin-top:4px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:12px}
+  .tile{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;aspect-ratio:1/1;background:#f3efe6}
+  .tile img{width:100%;height:100%;object-fit:cover;display:block}
+  .tile .rm{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;
+        background:rgba(0,0,0,.55);color:#fff;font-size:13px;cursor:pointer;line-height:22px;padding:0}
+  .tile .gps{position:absolute;bottom:3px;left:3px;font-size:11px;background:rgba(0,0,0,.55);color:#fff;
+        border-radius:5px;padding:0 4px}
+  .count{font-size:13px;color:var(--muted);margin-top:8px;display:flex;justify-content:space-between}
+  .count .clear{color:var(--bad);cursor:pointer}
+
+  /* ---- result ---- */
+  .result{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;text-align:center}
+  .result .em{font-size:34px;line-height:1}
+  .result h2{font-family:Oswald;font-weight:600;font-size:20px;margin:8px 0 4px}
+  .result p{font-size:14px;color:var(--muted);margin:0 0 14px;line-height:1.5}
+  .hidden{display:none}
+  .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:10px 16px}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">FLAG<b>LEAF</b></span>
+  <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span><br><a href="/">демо-чат</a></span>
+</header>
+
+<!-- ============ LOGIN ============ -->
+<main id="loginScreen">
+  <div class="loginwrap">
+    <h1>Вход для агрономов</h1>
+    <p class="lead">Загрузка фото полей для разметки. Доступно зарегистрированным агрономам.</p>
+    <div class="section">
+      <label class="fld" for="code">Код из Telegram-бота</label>
+      <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="6" placeholder="——————">
+    </div>
+    <button class="btn" id="loginBtn">Войти</button>
+    <div class="note" id="loginNote"></div>
+    <div class="help">
+      Чтобы получить код: откройте Telegram-бот Flagleaf, отправьте команду
+      <code>/weblogin</code> — бот пришлёт <b>6-значный код</b>. Введите его здесь.
+      Код действует 5 минут, вход сохраняется на 30 дней.
+    </div>
+  </div>
+</main>
+
+<!-- ============ UPLOAD ============ -->
+<main id="uploadScreen" class="hidden">
+  <h1>Загрузить для разметки</h1>
+  <p class="lead">Фото уходят в тот же набор данных, что и из Telegram, но с оригинальным
+    качеством и GPS из EXIF. Можно загрузить сразу несколько кадров.</p>
+
+  <div class="section">
+    <label class="fld" for="field">Поле</label>
+    <select id="field"></select>
+  </div>
+
+  <div class="section">
+    <label class="fld">Что на фото?</label>
+    <div class="chips" id="cats"></div>
+  </div>
+
+  <div class="section" id="speciesSection">
+    <label class="fld" for="species" id="speciesLabel">Вид</label>
+    <input id="species" list="speciesList" autocomplete="off" placeholder="Можно пропустить">
+    <datalist id="speciesList"></datalist>
+  </div>
+
+  <div class="section">
+    <label class="fld">Фотографии</label>
+    <div class="drop" id="drop">
+      <div class="big">📷</div>
+      <div class="t">Перетащите фото сюда или нажмите, чтобы выбрать</div>
+      <div class="s">JPG/PNG, до 40 кадров за раз. Оригинал — с GPS, если он есть в снимке.</div>
+    </div>
+    <input type="file" id="file" accept="image/*" multiple hidden>
+    <div class="grid" id="grid"></div>
+    <div class="count hidden" id="count"><span id="countTxt"></span><span class="clear" id="clearAll">очистить все</span></div>
+  </div>
+
+  <div class="section">
+    <label class="fld" for="comment">Комментарий <span style="opacity:.7">(необязательно)</span></label>
+    <textarea id="comment" rows="2" placeholder="Например: краевая полоса, после обработки Корсаром…"></textarea>
+  </div>
+
+  <button class="btn" id="submitBtn">Отправить на разметку</button>
+  <div class="note" id="upNote"></div>
+
+  <div class="result hidden" id="result">
+    <div class="em" id="resEm">✅</div>
+    <h2 id="resTitle"></h2>
+    <p id="resText"></p>
+    <button class="btn ghost" id="resMore">Загрузить ещё</button>
+  </div>
+
+  <div class="disclaimer">Загружая фото, вы подтверждаете, что они сняты на полях вашего хозяйства.</div>
+</main>
+
+<script>
+const API = '';                                  // same-origin; nginx proxies /api → api container
+const TOK = 'flagleaf_session';                  // localStorage key for the 30-day session token
+
+const $ = id => document.getElementById(id);
+
+// Category codes ↔ labels — must match bot/handlers.py CATEGORIES.
+const CATEGORIES = [
+  ['weed','Сорняк'], ['disease','Болезнь'], ['pest','Вредитель'],
+  ['stress','Стресс'], ['control','Контроль'], ['treatment_result','Результат обработки'],
+];
+// Species dictionaries — must match bot/taxonomy.py (value sent = code, shown = Russian name).
+const DISEASES = [
+  ['rust_brown','Бурая ржавчина пшеницы'],['rust_yellow','Жёлтая ржавчина'],
+  ['septoria_leaf','Септориоз листьев'],['septoria_glume','Септориоз колоса'],
+  ['powdery_mildew','Мучнистая роса'],['fusarium_head','Фузариоз колоса'],
+  ['fusarium_root','Фузариозная корневая гниль'],['helminthosporium','Гельминтоспориоз'],
+  ['sunflower_phomopsis','Фомопсис подсолнечника'],['sunflower_phoma','Фомоз подсолнечника'],
+  ['sunflower_alternaria','Альтернариоз подсолнечника'],
+];
+const PESTS = [
+  ['sunn_pest','Клоп вредная черепашка'],['oulema','Пьявица красногрудая'],
+  ['anisoplia','Хлебный жук-кузька'],['sitobion','Тля злаковая большая'],
+  ['schizaphis','Тля злаковая обыкновенная'],['rhopalosiphum','Тля черёмухово-злаковая'],
+  ['haplothrips','Трипс пшеничный'],['oscinella_frit','Шведская муха овсяная'],
+  ['hessian_fly','Гессенская муха (комарик)'],['delia_winter','Муха озимая'],
+  ['phyllotreta','Блошка полосатая хлебная'],['cephus','Пилильщик хлебный обыкновенный'],
+  ['agrotis_segetum','Совка озимая'],['agriotes','Щелкун посевной (проволочник)'],
+  ['zabrus','Жужелица хлебная обыкновенная'],
+];
+
+let session = localStorage.getItem(TOK) || '';
+let category = '';                                // selected category code
+let files = [];                                  // {file, url, lat, lon}
+
+// ---------- API helpers ----------
+async function api(path, opts={}){
+  const headers = opts.headers || {};
+  if(session) headers['x-session'] = session;
+  const r = await fetch(API + path, {...opts, headers});
+  let body = null;
+  try{ body = await r.json(); }catch(e){}
+  if(!r.ok){
+    const msg = (body && body.detail) || ('Ошибка ' + r.status);
+    const err = new Error(msg); err.status = r.status; throw err;
+  }
+  return body;
+}
+
+// ---------- screens ----------
+function show(screen){
+  $('loginScreen').classList.toggle('hidden', screen!=='login');
+  $('uploadScreen').classList.toggle('hidden', screen!=='upload');
+}
+
+async function boot(){
+  if(session){
+    try{
+      const me = await api('/api/me');
+      enterApp(me);
+      return;
+    }catch(e){
+      if(e.status===401 || e.status===403){ session=''; localStorage.removeItem(TOK); }
+    }
+  }
+  show('login'); $('code').focus();
+}
+
+// ---------- login ----------
+$('code').addEventListener('input', e=>{
+  e.target.value = e.target.value.replace(/\D/g,'').slice(0,6);
+  if(e.target.value.length===6) doLogin();
+});
+$('loginBtn').onclick = doLogin;
+
+async function doLogin(){
+  const code = $('code').value.trim();
+  const note = $('loginNote'); note.className='note'; note.textContent='';
+  if(code.length!==6){ note.className='note err'; note.textContent='Введите 6 цифр кода.'; return; }
+  $('loginBtn').disabled = true; note.textContent='Проверяю…';
+  try{
+    const r = await api('/api/auth/verify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code})
+    });
+    session = r.token; localStorage.setItem(TOK, session);
+    enterApp(r);
+  }catch(e){
+    note.className='note err'; note.textContent = e.message || 'Не удалось войти.';
+    $('code').value=''; $('code').focus();
+  }finally{ $('loginBtn').disabled = false; }
+}
+
+function roleRu(role){
+  return ({agronomist:'агроном', chief_agronomist:'главный агроном', chief:'главный агроном',
+           admin:'администратор'})[role] || role || '';
+}
+
+async function enterApp(me){
+  const who = me.name ? `${me.name}${me.role ? ' · '+roleRu(me.role) : ''}` : '';
+  $('hdrWho').textContent = who;
+  $('hdrSub').insertAdjacentHTML('beforeend',
+    ' · <button class="logout" id="logoutBtn">выйти</button>');
+  $('logoutBtn').onclick = logout;
+  buildCats();
+  buildSpecies();
+  show('upload');
+  await loadFields();
+}
+
+function logout(){
+  session=''; localStorage.removeItem(TOK);
+  location.reload();
+}
+
+// ---------- fields ----------
+async function loadFields(){
+  const sel = $('field');
+  sel.innerHTML = '<option>Загрузка полей…</option>';
+  try{
+    const r = await api('/api/fields');
+    sel.innerHTML='';
+    (r.fields||[]).forEach(f=>{
+      const o=document.createElement('option');
+      o.value=f.id; o.textContent = f.crop ? `${f.name} — ${f.crop}` : f.name;
+      sel.appendChild(o);
+    });
+    const other=document.createElement('option');
+    other.value=''; other.textContent='Другое поле (не из списка)';
+    sel.appendChild(other);
+  }catch(e){
+    sel.innerHTML='<option value="">Другое поле (не из списка)</option>';
+  }
+}
+
+// ---------- category + species ----------
+function buildCats(){
+  const box=$('cats'); box.innerHTML='';
+  CATEGORIES.forEach(([code,label])=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.type='button'; b.textContent=label; b.dataset.code=code;
+    b.onclick=()=>{ category=code;
+      [...box.children].forEach(c=>c.classList.toggle('on', c.dataset.code===code));
+      buildSpecies(); };
+    box.appendChild(b);
+  });
+}
+
+function buildSpecies(){
+  const sec=$('speciesSection'), label=$('speciesLabel'), list=$('speciesList'), inp=$('species');
+  let dict=null, name='Вид', placeholder='Можно пропустить';
+  if(category==='disease'){ dict=DISEASES; name='Болезнь'; }
+  else if(category==='pest'){ dict=PESTS; name='Вредитель'; }
+  else if(category==='weed'){ name='Сорняк'; placeholder='Название сорняка (можно пропустить)'; }
+  if(category==='' || category==='stress' || category==='control' || category==='treatment_result'){
+    sec.classList.add('hidden');         // no species picker for these
+    inp.value=''; inp.removeAttribute('data-map');
+    return;
+  }
+  sec.classList.remove('hidden');
+  label.textContent=name; inp.placeholder=placeholder; inp.value='';
+  list.innerHTML='';
+  const map={};
+  if(dict){ dict.forEach(([code,ru])=>{
+    const o=document.createElement('option'); o.value=ru; list.appendChild(o); map[ru]=code;
+  }); }
+  inp.dataset.map = JSON.stringify(map);
+}
+
+// Send the RUSSIAN name (what the bot stores in submissions.subcategory — verified:
+// on_disease/on_pest store DISEASE_RU_BY_CODE/PEST_RU_BY_CODE, free-text weeds store the
+// typed Russian). NOT the code — that would split web uploads into a different vocabulary.
+function resolveSpecies(){
+  const inp=$('species'); if($('speciesSection').classList.contains('hidden')) return '';
+  return (inp.value||'').trim();
+}
+
+// ---------- files (EXIF GPS read client-side only for the badge; server re-reads originals) ----------
+const drop=$('drop'), fileInput=$('file');
+drop.onclick=()=>fileInput.click();
+fileInput.onchange=e=>{ addFiles(e.target.files); fileInput.value=''; };
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer.files) addFiles(e.dataTransfer.files); });
+
+function addFiles(list){
+  for(const f of list){
+    if(!f.type.startsWith('image/')) continue;
+    if(files.some(x=>x.file.name===f.name && x.file.size===f.size)) continue;   // dedupe
+    if(files.length>=40){ flashNote('Можно не больше 40 фото за раз — лишние не добавлены.'); break; }
+    const rec={file:f, url:URL.createObjectURL(f), lat:null, lon:null};
+    files.push(rec);
+    readGps(rec);
+  }
+  renderTiles();
+}
+
+function renderTiles(){
+  const grid=$('grid'); grid.innerHTML='';
+  files.forEach((rec,i)=>{
+    const t=document.createElement('div'); t.className='tile';
+    const im=document.createElement('img'); im.src=rec.url; t.appendChild(im);
+    const rm=document.createElement('button'); rm.className='rm'; rm.textContent='✕';
+    rm.onclick=()=>{ URL.revokeObjectURL(rec.url); files.splice(i,1); renderTiles(); };
+    t.appendChild(rm);
+    if(rec.lat!=null){ const g=document.createElement('span'); g.className='gps'; g.textContent='📍 GPS'; t.appendChild(g); }
+    grid.appendChild(t);
+  });
+  const c=$('count'); c.classList.toggle('hidden', files.length===0);
+  if(files.length){
+    const mb=(files.reduce((a,x)=>a+x.file.size,0)/1048576).toFixed(1);
+    const gps=files.filter(x=>x.lat!=null).length;
+    $('countTxt').textContent = `${files.length} фото · ${mb} МБ` + (gps?` · с GPS: ${gps}`:'');
+  }
+}
+$('clearAll').onclick=()=>{ files.forEach(r=>URL.revokeObjectURL(r.url)); files=[]; renderTiles(); };
+
+// Minimal EXIF GPS reader — just for the on-tile badge so the agronomist sees geo was captured.
+// The server reads EXIF authoritatively from the original bytes on /api/submit.
+function readGps(rec){
+  const slice=rec.file.slice(0, 256*1024);
+  const fr=new FileReader();
+  fr.onload=()=>{ try{ const g=parseExifGps(new DataView(fr.result)); if(g){ rec.lat=g[0]; rec.lon=g[1]; renderTiles(); } }catch(e){} };
+  fr.readAsArrayBuffer(slice);
+}
+function parseExifGps(dv){
+  if(dv.getUint16(0)!==0xFFD8) return null;                 // not JPEG
+  let off=2;
+  while(off < dv.byteLength-4){
+    if(dv.getUint8(off)!==0xFF) break;
+    const marker=dv.getUint8(off+1), size=dv.getUint16(off+2);
+    if(marker===0xE1){                                       // APP1 (EXIF)
+      const start=off+4;
+      if(dv.getUint32(start)!==0x45786966) return null;      // "Exif"
+      return readTiffGps(dv, start+6);
+    }
+    off += 2+size;
+  }
+  return null;
+}
+function readTiffGps(dv, base){
+  const le = dv.getUint16(base)===0x4949;
+  const u16=o=>dv.getUint16(base+o, le), u32=o=>dv.getUint32(base+o, le);
+  const ifd0=u32(4); let gpsPtr=0;
+  const n=u16(ifd0);
+  for(let i=0;i<n;i++){ const e=ifd0+2+i*12; if(u16(e)===0x8825){ gpsPtr=u32(e+8); break; } }
+  if(!gpsPtr) return null;
+  const gn=u16(gpsPtr); let latRef='N',lonRef='E',lat=null,lon=null;
+  const rat=o=>u32(o)/ (u32(o+4)||1);
+  for(let i=0;i<gn;i++){
+    const e=gpsPtr+2+i*12, tag=u16(e), vo=base+u32(e+8);
+    if(tag===1) latRef=String.fromCharCode(dv.getUint8(e+8));
+    else if(tag===3) lonRef=String.fromCharCode(dv.getUint8(e+8));
+    else if(tag===2) lat=rat(vo)+rat(vo+8)/60+rat(vo+16)/3600;
+    else if(tag===4) lon=rat(vo)+rat(vo+8)/60+rat(vo+16)/3600;
+  }
+  if(lat==null||lon==null) return null;
+  if(latRef==='S') lat=-lat; if(lonRef==='W') lon=-lon;
+  return [Math.round(lat*1e7)/1e7, Math.round(lon*1e7)/1e7];
+}
+
+// ---------- submit ----------
+let noteTimer=null;
+function flashNote(msg, cls='err'){
+  const n=$('upNote'); n.className='note '+cls; n.textContent=msg;
+  clearTimeout(noteTimer); noteTimer=setTimeout(()=>{ n.textContent=''; n.className='note'; }, 4000);
+}
+
+$('submitBtn').onclick = async ()=>{
+  const note=$('upNote'); note.className='note'; note.textContent='';
+  if(!category){ flashNote('Выберите, что на фото.'); return; }
+  if(files.length===0){ flashNote('Добавьте хотя бы одно фото.'); return; }
+
+  const fd=new FormData();
+  files.forEach(rec=>fd.append('photos', rec.file, rec.file.name));   // originals — preserves EXIF GPS
+  fd.append('field_id', $('field').value || '');                      // '' = другое поле (off-pilot)
+  fd.append('category', category);
+  fd.append('species', resolveSpecies());
+  fd.append('comment', $('comment').value.trim());
+
+  $('submitBtn').disabled=true; note.textContent=`Загружаю ${files.length} фото…`;
+  try{
+    const r = await api('/api/submit', {method:'POST', body:fd});
+    showResult(r);
+  }catch(e){
+    if(e.status===401 || e.status===403){
+      flashNote('Сессия истекла — войдите заново.');
+      setTimeout(logout, 1200);
+    }else{
+      flashNote(e.message || 'Не удалось загрузить. Попробуйте ещё раз.');
+    }
+  }finally{ $('submitBtn').disabled=false; }
+};
+
+function showResult(r){
+  const saved=r.saved||0, skipped=r.skipped||0;
+  $('upNote').textContent='';
+  $('result').classList.remove('hidden');
+  $('resEm').textContent = saved ? (r.review ? '🕓' : '✅') : '⚠️';
+  $('resTitle').textContent = saved
+    ? `Загружено: ${saved}${skipped?`, пропущено: ${skipped}`:''}`
+    : 'Ничего не загружено';
+  $('resText').textContent = saved
+    ? (r.review
+        ? 'Фото отправлены главному агроному на проверку. После подтверждения они уйдут в разметку.'
+        : 'Фото сохранены и отправлены в разметку. Спасибо!')
+    : (skipped
+        ? 'Все кадры пропущены — возможно, дубликаты или слишком большой размер.'
+        : 'Попробуйте ещё раз.');
+  files.forEach(rec=>URL.revokeObjectURL(rec.url)); files=[]; renderTiles();
+  $('result').scrollIntoView({behavior:'smooth'});
+}
+$('resMore').onclick=()=>{ $('result').classList.add('hidden'); window.scrollTo({top:0,behavior:'smooth'}); };
+
+boot();
+</script>
+</body>
+</html>
