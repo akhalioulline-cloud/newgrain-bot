@@ -19,3 +19,11 @@ are intentionally excluded.)
 - [newgrain-prod-deploy](newgrain-prod-deploy.md) — Yandex Cloud VM, prod compose, Object Storage, backups, deploy routine
 - [newgrain-labeling-pipeline](newgrain-labeling-pipeline.md) — CVAT, schema, export/import/recycle, reference sheet, voice/text RU+EN, pests, dedup
 - [newgrain-photo-attribution](newgrain-photo-attribution.md) — Alexey-uploaded submissions are Almas-originated (proxy uploads)
+- [newgrain-continuity-portability](newgrain-continuity-portability.md) — offsite cold-archive (inert, needs bucket) + dual-market/relocation plan; farms.data_residency
+- [newgrain-weedid-llm-bakeoff](newgrain-weedid-llm-bakeoff.md) — vision-LLM weed-ID: in-RU model qwen3.6, Gemini geo-blocked, both mediocre on seedlings/grasses
+- [newgrain-roles-review-gate](newgrain-roles-review-gate.md) — bot roles + chief-agronomist (Almas) review gate on juniors' photos
+- [newgrain-architecture-audit](newgrain-architecture-audit.md) — Jun 2026 audit: verdict, deferred-by-design vs real debt, ARCHITECTURE.md + tests/CI + CropWise sync flag
+- [newgrain-oplog-freetext](newgrain-oplog-freetext.md) — free-text op logging: routing fix, multi-field fan-out, local-fields vs CropWise-catalog gap, КамАЗ open question
+- [newgrain-knowledge-corpus](newgrain-knowledge-corpus.md) — competitor «Андрей Тимофеевич» + CyberLeninka CC-BY literature RAG pilot (sources, licensing, limits)
+- [feedback-announce-entries](feedback-announce-entries.md) — add an _ANNOUNCEMENTS entry when shipping a user-facing feature (/announce has lagged 3×)
+- [newgrain-web-ai](newgrain-web-ai.md) — public web AI demo at ai.flagleaf.ru (FastAPI api service + static chat UI on the bot VM, Phase 1)
