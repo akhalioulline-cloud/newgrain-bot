@@ -11,16 +11,20 @@ Repo: `github.com/akhalioulline-cloud/newgrain-bot`
 
 ---
 
-## 1. Pick up on the iPhone — paste this into a new chat
+## 1. Pick up on the iPhone — attach the memory from iCloud
 
-> I'm continuing the Flagleaf / newgrain-bot project from another machine. The repo is
-> `github.com/akhalioulline-cloud/newgrain-bot`. Read `docs/claude-context/MEMORY.md` and the
-> memory files it links, plus the recent git log, then brief me on the open threads and what's
-> in progress before we continue.
+The iPhone Claude has **no GitHub connector**, so it can't read the repo. Instead, every
+`make handoff` mirrors the memory snapshot to **iCloud Drive → `Flagleaf_context`** (plain
+markdown). To pick up:
 
-- If your iPhone Claude has a **GitHub connector**, it'll read those files directly.
-- If not, it can't reach the repo — open `docs/claude-context/MEMORY.md` (it's short) and paste
-  its contents into the chat instead.
+1. New chat in the Claude app → tap 📎 → **attach `MEMORY.md`** from Files → iCloud Drive →
+   `Flagleaf_context` (attach a detail file too, e.g. `newgrain-web-ai.md`, if you need depth).
+2. Say:
+   > This is the current project memory for Flagleaf (newgrain-bot). Read it and brief me on the
+   > open threads and what's in progress before we continue.
+
+(If a GitHub connector ever appears in your Claude app, you can instead point it at
+`github.com/akhalioulline-cloud/newgrain-bot` and have it read `docs/claude-context/` directly.)
 
 ## 2. Work on the phone
 Plan, draft, write code/answers. It **cannot run, test, or deploy** — treat its output as a
