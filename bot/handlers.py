@@ -328,7 +328,7 @@ async def cmd_weblogin(message: Message, user) -> None:
     await message.answer(
         "🔑 Код для входа на сайт Flagleaf:\n\n"
         f"      {code}\n\n"
-        "Введите его на ai.flagleaf.ru → «Войти». Код действует 5 минут.")
+        "Откройте 👉 ai.flagleaf.ru/app и введите код. Действует 5 минут.")
 
 
 @router.message(Command("field"))
