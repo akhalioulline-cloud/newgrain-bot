@@ -13,19 +13,33 @@ bound to localhost; nginx terminates TLS for ai.flagleaf.ru and proxies here. Se
 docs/web-phase1-spec.md.
 """
 import asyncio
+import hashlib
 import logging
 import secrets
+from datetime import date
+from io import BytesIO
+from uuid import uuid4
 
 import redis.asyncio as aioredis
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
 
 from bot.agro_chat import answer as agro_answer
 from bot.config import settings
-from bot.db import engine, get_active_user, get_pilot_fields
+from bot.db import (
+    create_submission,
+    engine,
+    find_duplicate_submission,
+    get_active_user,
+    get_chief_agronomists,
+    get_pilot_fields,
+    update_submission,
+)
 from bot.diagnose import diagnose as diagnose_photo
+from bot.storage import upload_bytes
 from bot.transcribe import transcribe_lpcm
 from labeling import alert
 
@@ -159,6 +173,97 @@ async def me(user=Depends(require_user)):
 async def my_fields(user=Depends(require_user)):
     fs = await get_pilot_fields(user["farm_id"])
     return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"]} for f in fs]}
+
+
+MAX_PHOTO = 25 * 1024 * 1024        # keep original-resolution phone photos
+
+
+def _exif_gps(im):
+    """(lat, lon) from EXIF GPS or (None, None). Telegram strips EXIF; web keeps it —
+    that's a key reason to allow web upload (geo-tagged training photos)."""
+    try:
+        gps = im.getexif().get_ifd(0x8825)
+        if not gps or 2 not in gps or 4 not in gps:
+            return None, None
+        dms = lambda v: float(v[0]) + float(v[1]) / 60 + float(v[2]) / 3600
+        lat, lon = dms(gps[2]), dms(gps[4])
+        if str(gps.get(1, "N")).upper().startswith("S"):
+            lat = -lat
+        if str(gps.get(3, "E")).upper().startswith("W"):
+            lon = -lon
+        return round(lat, 7), round(lon, 7)
+    except Exception:
+        return None, None
+
+
+@app.post("/api/submit")
+async def submit(user=Depends(require_user),
+                 photos: list[UploadFile] = File(...),
+                 field_id: str = Form(""), category: str = Form(""),
+                 species: str = Form(""), comment: str = Form("")):
+    """Web photo upload for the labeling pipeline — same destination as the Telegram flow
+    (S3 + submissions), but keeps original resolution + EXIF GPS, and accepts many at once."""
+    fid = int(field_id) if field_id.strip().isdigit() else None
+    is_junior = user["role"] == "agronomist"          # plain agronomist → chief review
+    status = "pending_review" if is_junior else "ready_for_labeling"
+    saved, skipped, sids = 0, 0, []
+    for ph in photos[:40]:
+        img = await ph.read()
+        if not img or len(img) > MAX_PHOTO:
+            skipped += 1
+            continue
+        h = hashlib.sha256(img).hexdigest()
+        if await find_duplicate_submission(user["id"], h):
+            skipped += 1
+            continue
+        w = ht = lat = lon = None
+        try:
+            im = Image.open(BytesIO(img))
+            w, ht = im.size
+            lat, lon = _exif_gps(im)
+        except Exception:
+            pass
+        sid = str(uuid4())
+        ctype = ph.content_type or "image/jpeg"
+        ext = "png" if "png" in ctype else "jpg"
+        key = f"raw/{user['farm_id']}/{fid or 'other'}/{date.today():%Y-%m-%d}/{sid}.{ext}"
+        try:
+            url = await upload_bytes(key, img, ctype)
+        except Exception:
+            logger.exception("submit: S3 upload failed")
+            skipped += 1
+            continue
+        await create_submission(sid, user["id"], fid, url, w, ht, h)
+        upd = {"category": category.strip() or None, "subcategory": species.strip() or None,
+               "comment_text": comment.strip() or None, "status": status}
+        if lat is not None:
+            upd.update(gps_lat=lat, gps_lon=lon, gps_source="exif")
+        await update_submission(sid, **upd)
+        saved += 1
+        sids.append(sid)
+    # Junior uploads → review cards to the chief agronomist(s), reusing the bot's flow.
+    if is_junior and sids:
+        try:
+            cas = await get_chief_agronomists(user["farm_id"])
+            if cas:
+                from aiogram import Bot
+                from aiogram.client.session.aiohttp import AiohttpSession
+                from aiogram.client.telegram import TelegramAPIServer
+                from bot.handlers import _send_review_card
+                if settings.telegram_api_base:
+                    server = TelegramAPIServer.from_base(settings.telegram_api_base.rstrip("/"))
+                    rbot = Bot(settings.bot_token, session=AiohttpSession(api=server))
+                else:
+                    rbot = Bot(settings.bot_token)
+                try:
+                    for sid in sids:
+                        for ca in cas:
+                            await _send_review_card(rbot, ca["tg_user_id"], sid)
+                finally:
+                    await rbot.session.close()
+        except Exception:
+            logger.exception("submit: review-card delivery failed")
+    return {"saved": saved, "skipped": skipped, "review": is_junior}
 
 
 @app.post("/api/chat")

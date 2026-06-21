@@ -606,6 +606,9 @@ async def update_submission(submission_id: str, **fields) -> None:
         "treatment_note",          # free-text/voice treatment ("Другое")
         "field_id",                # CA review can re-assign the field
         "status",
+        "gps_lat",                 # EXIF GPS from web uploads (Telegram strips it)
+        "gps_lon",
+        "gps_source",
     }
     sets = [f"{key} = :{key}" for key in fields if key in allowed]
     if not sets:
