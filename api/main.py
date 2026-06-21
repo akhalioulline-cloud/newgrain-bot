@@ -14,16 +14,17 @@ docs/web-phase1-spec.md.
 """
 import asyncio
 import logging
+import secrets
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
 
 from bot.agro_chat import answer as agro_answer
 from bot.config import settings
-from bot.db import engine
+from bot.db import engine, get_active_user, get_pilot_fields
 from bot.diagnose import diagnose as diagnose_photo
 from bot.transcribe import transcribe_lpcm
 from labeling import alert
@@ -109,6 +110,55 @@ def _format_history(turns: list[Turn] | None) -> str | None:
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── Authenticated surface (web photo upload for labeling, Phase 2) ──────────────
+# Login = a one-time 6-digit code the Telegram bot issues via /weblogin (Redis, 5-min TTL),
+# exchanged here for a 30-day session token tied to the agronomist's users record.
+SESSION_TTL = 30 * 24 * 3600
+
+
+class AuthIn(BaseModel):
+    code: str
+
+
+@app.post("/api/auth/verify")
+async def auth_verify(body: AuthIn):
+    code = (body.code or "").strip()
+    if not (code.isdigit() and len(code) == 6):
+        raise HTTPException(400, "Код должен состоять из 6 цифр.")
+    tg = await _redis.get(f"flagleaf:weblogin:{code}")
+    if not tg:
+        raise HTTPException(401, "Код неверный или истёк. Получите новый в боте командой /weblogin.")
+    await _redis.delete(f"flagleaf:weblogin:{code}")           # one-time use
+    user = await get_active_user(int(tg))
+    if not user:
+        raise HTTPException(403, "Нет доступа.")
+    token = secrets.token_urlsafe(24)
+    await _redis.set(f"flagleaf:session:{token}", str(user["tg_user_id"]), ex=SESSION_TTL)
+    return {"token": token, "name": user["full_name"], "role": user["role"]}
+
+
+async def require_user(request: Request):
+    token = request.headers.get("x-session", "")
+    tg = await _redis.get(f"flagleaf:session:{token}") if token else None
+    if not tg:
+        raise HTTPException(401, "Не авторизованы — войдите заново.")
+    user = await get_active_user(int(tg))
+    if not user:
+        raise HTTPException(403, "Нет доступа.")
+    return user
+
+
+@app.get("/api/me")
+async def me(user=Depends(require_user)):
+    return {"name": user["full_name"], "role": user["role"], "farm_id": user["farm_id"]}
+
+
+@app.get("/api/fields")
+async def my_fields(user=Depends(require_user)):
+    fs = await get_pilot_fields(user["farm_id"])
+    return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"]} for f in fs]}
 
 
 @app.post("/api/chat")

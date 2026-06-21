@@ -2,9 +2,11 @@ import asyncio
 import hashlib
 import logging
 import re
+import secrets
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 
+import redis.asyncio as aioredis
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -313,6 +315,20 @@ async def cmd_help(message: Message, user) -> None:
 @router.message(Command("fields"))
 async def cmd_fields(message: Message, user) -> None:
     await _show_fields(message, user["farm_id"])
+
+
+_web_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+
+
+@router.message(Command("weblogin"))
+async def cmd_weblogin(message: Message, user) -> None:
+    """Issue a one-time 6-digit code to log in on ai.flagleaf.ru (web photo upload for labeling)."""
+    code = f"{secrets.randbelow(900000) + 100000}"
+    await _web_redis.set(f"flagleaf:weblogin:{code}", str(user["tg_user_id"]), ex=300)
+    await message.answer(
+        "🔑 Код для входа на сайт Flagleaf:\n\n"
+        f"      {code}\n\n"
+        "Введите его на ai.flagleaf.ru → «Войти». Код действует 5 минут.")
 
 
 @router.message(Command("field"))

@@ -61,6 +61,7 @@ async def main() -> None:
         BotCommand(command="finish", description="Закончить незавершённое фото"),
         BotCommand(command="cancel", description="Отменить текущую загрузку"),
         BotCommand(command="problem", description="Сообщить о проблеме"),
+        BotCommand(command="weblogin", description="Код для входа на сайт Flagleaf"),
         BotCommand(command="announce", description="Что нового в боте"),
         BotCommand(command="help", description="Справка"),
     ]
