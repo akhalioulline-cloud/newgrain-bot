@@ -27,3 +27,4 @@ are intentionally excluded.)
 - [newgrain-knowledge-corpus](newgrain-knowledge-corpus.md) — competitor «Андрей Тимофеевич» + CyberLeninka CC-BY literature RAG pilot (sources, licensing, limits)
 - [feedback-announce-entries](feedback-announce-entries.md) — add an _ANNOUNCEMENTS entry when shipping a user-facing feature (/announce has lagged 3×)
 - [newgrain-web-ai](newgrain-web-ai.md) — public web AI demo at ai.flagleaf.ru (FastAPI api service + static chat UI on the bot VM, Phase 1)
+- [feedback-auto-handoff](feedback-auto-handoff.md) — run `make handoff` proactively when a unit of work is done; don't wait to be asked
