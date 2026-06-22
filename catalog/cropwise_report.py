@@ -457,7 +457,29 @@ def create_machine_task(plan):
         body["implement_id"] = plan["implement"]["id"]
     r = requests.post(f"{BASE}/machine_tasks", headers={**HEADERS, "Content-Type": "application/json"},
                       json={"data": body}, timeout=60)
-    return r.status_code, r.text[:300]
+    if r.status_code in (200, 201):
+        return r.status_code, "created"
+    # Idempotency: external_id already exists (same wt+machine+date+operation) → the task is
+    # already in CropWise. Not a failure. If we now have an implement the existing task lacks,
+    # add it via PATCH (the existing one was likely logged before the implement was captured).
+    txt = r.text
+    if r.status_code == 422 and "external_id" in txt and ("taken" in txt or "существ" in txt):
+        if plan.get("implement"):
+            try:
+                ex = requests.get(f"{BASE}/machine_tasks", headers=HEADERS,
+                                  params={"external_id": body["external_id"]}, timeout=30
+                                  ).json().get("data", [])
+                if ex and not ex[0].get("implement_id"):
+                    pr = requests.patch(
+                        f"{BASE}/machine_tasks/{ex[0]['id']}",
+                        headers={**HEADERS, "Content-Type": "application/json"},
+                        json={"data": {"implement_id": plan["implement"]["id"]}}, timeout=60)
+                    if pr.status_code in (200, 201):
+                        return 200, "implement_added"
+            except Exception:
+                pass
+        return 409, "exists"
+    return r.status_code, txt[:300]
 
 
 async def main():

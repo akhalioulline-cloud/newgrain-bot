@@ -1874,9 +1874,10 @@ async def _save_machine_batch(message: Message, batch: list) -> None:
         except Exception:
             logger.exception("batch machine task create failed")
             code = 0
-        if code in (200, 201):
+        if code in (200, 201, 409):
             ok += 1
-            lines.append(f"✅ {plan['operation']} — {plan['machine']['name']}")
+            tag = " (уже было)" if code == 409 else ""
+            lines.append(f"✅ {plan['operation']} — {plan['machine']['name']}{tag}")
         else:
             lines.append(f"⚠️ {plan['operation']} — не принято (код {code})")
     await message.answer(f"Готово: создано {ok} из {len(batch)}.\n" + "\n".join(lines))
@@ -2034,9 +2035,14 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
             logger.exception("machine task create failed")
             code, detail = 0, "ошибка"
         if code in (200, 201):
+            extra = " (добавил оборудование)" if detail == "implement_added" else ""
             await callback.message.answer(
-                f"✅ Задание машины создано: «{op['work_type']['name']}», "
+                f"✅ Задание машины создано{extra}: «{op['work_type']['name']}», "
                 f"{op['machine']['name']}. Проверьте в CropWise.")
+        elif code == 409:
+            await callback.message.answer(
+                f"✅ Это задание уже было создано ранее — оно есть в CropWise: "
+                f"«{op['work_type']['name']}», {op['machine']['name']}.")
         else:
             logger.warning("machine task rejected (code %s): %s", code, detail)
             await callback.message.answer(
