@@ -48,7 +48,7 @@
   .note{font-size:13px;margin-top:10px;min-height:18px;line-height:1.45}
   .note.err{color:var(--bad)}
   .note.ok{color:var(--ok)}
-  .divider{display:flex;align-items:center;gap:10px;margin:18px 0 4px;color:#9aa3ab;font-size:12px}
+  .divider{display:flex;align-items:center;gap:10px;margin:14px 0 16px;color:#9aa3ab;font-size:12px}
   .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 
   /* ---- login ---- */
@@ -109,11 +109,11 @@
     <h1>Вход для агрономов</h1>
     <p class="lead">Загрузка фото полей для разметки. Доступно зарегистрированным агрономам.</p>
 
-    <div class="section">
+    <div class="section" style="margin-bottom:8px">
       <label class="fld" for="email">Получить код на почту</label>
       <input id="email" type="email" inputmode="email" autocomplete="email"
              placeholder="email">
-      <button class="btn ghost" id="emailBtn" style="margin-top:8px">Отправить код на почту</button>
+      <button class="btn" id="emailBtn" style="margin-top:8px">Отправить код на почту</button>
     </div>
 
     <div class="divider"><span>затем введите код</span></div>
