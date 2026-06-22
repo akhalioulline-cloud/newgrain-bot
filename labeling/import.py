@@ -40,10 +40,12 @@ import zipfile
 from collections import defaultdict
 from xml.etree import ElementTree as ET
 
+import requests
 from sqlalchemy import text
 
 from bot.config import settings
 from bot.db import engine
+from bot.push import send_push
 
 
 def _sid_from_name(name: str) -> str:
@@ -406,6 +408,17 @@ async def _import_zip(zip_bytes: bytes) -> int:
     valid_sids = sorted(existing_ids)
     total_boxes = sum(len(by_sid[s]) for s in valid_sids)
 
+    # Loop-closing recognition (NOT points — see no-gamification spec): capture who
+    # transitions to 'labeled' for the FIRST time so each agronomist is thanked once,
+    # not again on idempotent re-imports.
+    async with engine.connect() as conn:
+        thank_rows = [dict(r) for r in (await conn.execute(text(
+            "SELECT u.tg_user_id AS tg, s.subcategory AS sub "
+            "FROM submissions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.id::text = ANY(:ids) AND s.status <> 'labeled' "
+            "  AND u.tg_user_id IS NOT NULL"
+        ), {"ids": valid_sids})).mappings().all()]
+
     async with engine.begin() as conn:
         # Idempotent re-import: drop prior labels for these submissions.
         await conn.execute(text(
@@ -434,7 +447,45 @@ async def _import_zip(zip_bytes: bytes) -> int:
     if no_boxes:
         print(f"Note: {no_boxes} image(s) in the batch had zero boxes — "
               f"they stay at status=in_labeling for follow-up.", file=sys.stderr)
+    if thank_rows:
+        try:
+            await _thank_uploaders(thank_rows)
+        except Exception as exc:
+            print(f"thank uploaders failed: {exc}", file=sys.stderr)
     return 0
+
+
+def _tg_send(chat_id: int, msg: str) -> None:
+    """Direct Telegram sendMessage to one chat (through the relay if set)."""
+    if not settings.bot_token:
+        return
+    base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
+    requests.post(f"{base}/bot{settings.bot_token}/sendMessage",
+                  json={"chat_id": chat_id, "text": msg}, timeout=20)
+
+
+async def _thank_uploaders(rows) -> None:
+    """Tell each agronomist their photo(s) were annotated and now train the AI — push
+    + Telegram, best-effort, one grouped message per person. Recognition, not points."""
+    by_tg = defaultdict(list)
+    for r in rows:
+        by_tg[r["tg"]].append((r.get("sub") or "").strip())
+    for tg, subs in by_tg.items():
+        if len(subs) == 1:
+            what = f" «{subs[0]}»" if subs[0] else ""
+            msg = (f"🎓 Ваше фото{what} прошло разметку и теперь обучает ИИ Flagleaf. "
+                   f"Спасибо за вклад!")
+        else:
+            msg = (f"🎓 {len(subs)} ваших фото прошли разметку и теперь обучают ИИ Flagleaf. "
+                   f"Спасибо за вклад!")
+        try:
+            await send_push(tg, "Фото обучает ИИ 🎓", msg)
+        except Exception as exc:
+            print(f"thank: push to {tg} failed: {exc}", file=sys.stderr)
+        try:
+            _tg_send(tg, msg)
+        except Exception as exc:
+            print(f"thank: tg to {tg} failed: {exc}", file=sys.stderr)
 
 
 def main() -> int:

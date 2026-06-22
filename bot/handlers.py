@@ -47,6 +47,7 @@ from bot.db import (
     get_top_species,
     find_similar_treatment,
     get_user_history,
+    get_team_progress,
     get_user_stats,
     get_unsynced_bot_treatments,
     insert_bot_treatment,
@@ -435,6 +436,8 @@ async def cmd_scan(message: Message, user) -> None:
 @router.message(Command("stats"))
 async def cmd_stats(message: Message, user) -> None:
     s = await get_user_stats(user["id"])
+    collected, trained = await get_team_progress()
+    goal = settings.team_photo_goal
     week = int(s["week"])
     # Weekly goal is 15–30 photos (the single success metric).
     if week >= 15:
@@ -446,7 +449,10 @@ async def cmd_stats(message: Message, user) -> None:
         f"• Сегодня: {int(s['today'])}\n"
         f"• За эту неделю: {week} — {progress}\n"
         f"• Дней с фото на этой неделе: {int(s['active_days'])}\n"
-        f"• Всего сохранено: {int(s['total'])}"
+        f"• Всего сохранено: {int(s['total'])}\n"
+        f"• 🎓 Уже обучают ИИ (прошли разметку): {int(s['labeled'])}\n\n"
+        f"🌱 Вклад команды: собрано {collected} из {goal} фото к модели "
+        f"(в обучении ИИ: {trained}). Спасибо за общий результат!"
     )
 
 

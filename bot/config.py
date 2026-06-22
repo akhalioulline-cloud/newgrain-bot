@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:flagleaf@flagleaf.ru"
 
+    # Collective photo goal shown in /stats + the app ("команда собрала N из M").
+    team_photo_goal: int = 1000
+
     s3_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""

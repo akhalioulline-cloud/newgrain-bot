@@ -37,7 +37,9 @@ from bot.db import (
     get_active_user,
     get_chief_agronomists,
     get_pilot_fields,
+    get_team_progress,
     get_user_by_email,
+    get_user_stats,
     update_submission,
 )
 from bot.diagnose import diagnose as diagnose_photo
@@ -234,6 +236,18 @@ async def push_test(user=Depends(require_user)):
 async def my_fields(user=Depends(require_user)):
     fs = await get_pilot_fields(user["farm_id"])
     return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"]} for f in fs]}
+
+
+@app.get("/api/stats")
+async def my_stats(user=Depends(require_user)):
+    """Personal contribution + the collective team goal (for the «ваш вклад» line)."""
+    s = await get_user_stats(user["id"])
+    collected, trained = await get_team_progress()
+    return {
+        "total": int(s["total"]), "week": int(s["week"]), "labeled": int(s["labeled"]),
+        "team_collected": collected, "team_trained": trained,
+        "team_goal": settings.team_photo_goal,
+    }
 
 
 MAX_PHOTO = 25 * 1024 * 1024        # keep original-resolution phone photos

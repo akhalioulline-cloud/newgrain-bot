@@ -744,6 +744,7 @@ async def get_user_stats(user_id: int):
                     count(*) FILTER (WHERE created_at::date = CURRENT_DATE) AS today,
                     count(*) FILTER (WHERE created_at >= date_trunc('week', CURRENT_DATE)) AS week,
                     count(*) AS total,
+                    count(*) FILTER (WHERE status = 'labeled') AS labeled,
                     count(DISTINCT created_at::date)
                         FILTER (WHERE created_at >= date_trunc('week', CURRENT_DATE)) AS active_days
                 FROM submissions
@@ -826,6 +827,18 @@ async def get_all_recent_submissions(limit: int = 15):
             {"limit": limit},
         )
         return result.mappings().all()
+
+
+async def get_team_progress():
+    """Team-wide totals for the collective goal: photos collected toward the model
+    (everything not draft/rejected/duplicate) and how many reached training (labeled)."""
+    async with engine.connect() as conn:
+        row = (await conn.execute(text(
+            "SELECT count(*) FILTER (WHERE status NOT IN ('draft','rejected','duplicate')) AS collected, "
+            "       count(*) FILTER (WHERE status = 'labeled') AS trained "
+            "FROM submissions"
+        ))).mappings().first()
+        return int(row["collected"]), int(row["trained"])
 
 
 async def get_team_week_counts():

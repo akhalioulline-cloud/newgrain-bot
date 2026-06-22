@@ -65,6 +65,11 @@
   .pendrow{display:flex;gap:8px;font-size:13px;color:var(--muted);padding-top:5px;margin-top:5px;
         border-top:1px solid var(--line)}
   .pendrow .pendt{margin-left:auto;white-space:nowrap}
+  .contrib{font-size:12.5px;color:#6b6b6b;background:#f6f1e6;border-radius:10px;padding:9px 12px;
+        margin-bottom:16px;line-height:1.55}
+  .contrib b{color:var(--ink)}
+  .contrib .bar{height:6px;background:#e7ddc4;border-radius:4px;margin-top:6px;overflow:hidden}
+  .contrib .bar i{display:block;height:100%;background:var(--gold);border-radius:4px}
   .divider{display:flex;align-items:center;gap:10px;margin:14px 0 16px;color:#9aa3ab;font-size:12px}
   .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 
@@ -177,6 +182,8 @@
     <div class="pendhead">🔔 Уведомления о проверке фото
       <button class="flushbtn" id="pushEnable">включить</button></div>
   </div>
+
+  <div class="contrib hidden" id="contrib"></div>
 
   <div class="section">
     <label class="fld" for="field">Поле</label>
@@ -353,6 +360,7 @@ async function enterApp(me){
   show('upload');
   refreshPending(); flushQueue();                // surface + auto-send anything queued offline
   maybeShowPushBanner(); ensurePushIfGranted();  // offer / refresh push subscription
+  loadContrib();                                 // «ваш вклад» + team goal
   await loadFields();
 }
 
@@ -559,6 +567,20 @@ async function flushQueue(){
 }
 function clearPhotos(){ files.forEach(r=>URL.revokeObjectURL(r.url)); files=[]; renderTiles(); $('comment').value=''; }
 
+// ---------- contribution line (personal + collective goal) ----------
+async function loadContrib(){
+  try{
+    const s=await api('/api/stats');
+    const pct=Math.min(100, Math.round(100*s.team_collected/Math.max(1,s.team_goal)));
+    $('contrib').innerHTML =
+      `🌱 Ваш вклад: <b>${s.total}</b> фото` +
+      (s.labeled ? ` · <b>${s.labeled}</b> уже обучают ИИ` : '') +
+      `<br>Команда: собрано <b>${s.team_collected}</b> из ${s.team_goal} фото к модели` +
+      `<div class="bar"><i style="width:${pct}%"></i></div>`;
+    $('contrib').classList.remove('hidden');
+  }catch(_){}
+}
+
 // ---------- push notifications ----------
 function pushSupported(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
 function urlB64ToU8(b64){
@@ -658,6 +680,7 @@ function showResult(r){
         ? 'Все кадры пропущены — возможно, дубликаты или слишком большой размер.'
         : 'Попробуйте ещё раз.');
   files.forEach(rec=>URL.revokeObjectURL(rec.url)); files=[]; renderTiles();
+  loadContrib();                                 // reflect the new upload in «ваш вклад»
   $('result').scrollIntoView({behavior:'smooth'});
 }
 $('resMore').onclick=()=>{ $('result').classList.add('hidden'); window.scrollTo({top:0,behavior:'smooth'}); };
