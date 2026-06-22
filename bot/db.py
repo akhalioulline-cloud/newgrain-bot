@@ -78,6 +78,38 @@ async def deactivate_user(tg_id: int):
         return result.mappings().first()
 
 
+async def get_user_by_email(email: str):
+    """Active user whose email matches (case-insensitive), or None. Used by the
+    web email-login flow to resolve an address → the user the code belongs to."""
+    e = (email or "").strip().lower()
+    if not e:
+        return None
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT id, tg_user_id, full_name, phone, farm_id, role "
+                "FROM users WHERE lower(email) = :e AND is_active"
+            ),
+            {"e": e},
+        )
+        return result.mappings().first()
+
+
+async def set_user_email(tg_id: int, email: str) -> bool:
+    """Attach an email to a user (for email login). Returns False if the address
+    is already taken by another user (unique index violation)."""
+    e = (email or "").strip().lower()
+    try:
+        async with engine.begin() as conn:
+            res = await conn.execute(
+                text("UPDATE users SET email = :e WHERE tg_user_id = :tg AND is_active"),
+                {"e": e, "tg": tg_id},
+            )
+            return res.rowcount > 0
+    except Exception:
+        return False
+
+
 async def set_user_phone(tg_id: int, phone: str) -> None:
     async with engine.begin() as conn:
         await conn.execute(

@@ -36,9 +36,11 @@ from bot.db import (
     get_active_user,
     get_chief_agronomists,
     get_pilot_fields,
+    get_user_by_email,
     update_submission,
 )
 from bot.diagnose import diagnose as diagnose_photo
+from bot.email_send import email_enabled, send_login_code
 from bot.storage import upload_bytes
 from bot.transcribe import transcribe_lpcm
 from labeling import alert
@@ -151,6 +153,35 @@ async def auth_verify(body: AuthIn):
     token = secrets.token_urlsafe(24)
     await _redis.set(f"flagleaf:session:{token}", str(user["tg_user_id"]), ex=SESSION_TTL)
     return {"token": token, "name": user["full_name"], "role": user["role"]}
+
+
+class EmailIn(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/email/start")
+async def auth_email_start(body: EmailIn, request: Request):
+    """Email a 6-digit login code to a registered agronomist's address. The code lands
+    in the SAME Redis slot /weblogin uses, so /api/auth/verify handles it unchanged.
+    Always returns a generic ok (no address enumeration)."""
+    if not email_enabled():
+        raise HTTPException(503, "Вход по email пока недоступен. Получите код в Telegram-боте: /weblogin")
+    email = (body.email or "").strip().lower()
+    if "@" not in email or len(email) > 254:
+        raise HTTPException(400, "Введите корректный email.")
+    if not await _rate_ok(_client_ip(request), "emailcode", 5):
+        raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
+    generic = {"ok": True, "message": "Если этот адрес зарегистрирован, мы отправили код на почту."}
+    user = await get_user_by_email(email)
+    if not user:
+        return generic                                  # don't reveal whether the email exists
+    code = f"{secrets.randbelow(900000) + 100000}"
+    await _redis.set(f"flagleaf:weblogin:{code}", str(user["tg_user_id"]), ex=300)
+    sent = await asyncio.to_thread(send_login_code, email, code)
+    if not sent:
+        await _redis.delete(f"flagleaf:weblogin:{code}")
+        raise HTTPException(502, "Не удалось отправить письмо. Попробуйте Telegram-бот: /weblogin")
+    return generic
 
 
 async def require_user(request: Request):

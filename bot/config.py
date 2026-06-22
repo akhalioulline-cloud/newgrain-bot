@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     cvat_api_token: str = ""  # generated under Settings → Personal access tokens
     cvat_project_name: str = "weeds-diseases-stress"
 
+    # SMTP for email login codes (sender = noreply@flagleaf.ru via Yandex Mail
+    # for Domain). Empty smtp_host = email login disabled (Telegram /weblogin still works).
+    smtp_host: str = ""
+    smtp_port: int = 465          # Yandex: 465 SSL
+    smtp_user: str = ""           # full mailbox, e.g. noreply@flagleaf.ru
+    smtp_password: str = ""       # app-password from Yandex 360
+    smtp_from: str = ""           # defaults to smtp_user if empty
+
     s3_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""

@@ -47,6 +47,8 @@
   .note{font-size:13px;margin-top:10px;min-height:18px;line-height:1.45}
   .note.err{color:var(--bad)}
   .note.ok{color:var(--ok)}
+  .divider{display:flex;align-items:center;gap:10px;margin:18px 0 4px;color:#9aa3ab;font-size:12px}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 
   /* ---- login ---- */
   .loginwrap{max-width:380px;margin:6vh auto 0}
@@ -101,17 +103,27 @@
   <div class="loginwrap">
     <h1>Вход для агрономов</h1>
     <p class="lead">Загрузка фото полей для разметки. Доступно зарегистрированным агрономам.</p>
+
     <div class="section">
-      <label class="fld" for="code">Код из Telegram-бота</label>
+      <label class="fld" for="email">Получить код на почту</label>
+      <input id="email" type="email" inputmode="email" autocomplete="email"
+             placeholder="вас@example.ru">
+      <button class="btn ghost" id="emailBtn" style="margin-top:8px">Отправить код на почту</button>
+    </div>
+
+    <div class="divider"><span>затем введите код</span></div>
+
+    <div class="section">
+      <label class="fld" for="code">Код для входа</label>
       <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code"
              maxlength="6" placeholder="——————">
     </div>
     <button class="btn" id="loginBtn">Войти</button>
     <div class="note" id="loginNote"></div>
     <div class="help">
-      Чтобы получить код: откройте Telegram-бот Flagleaf, отправьте команду
-      <code>/weblogin</code> — бот пришлёт <b>6-значный код</b>. Введите его здесь.
-      Код действует 5 минут, вход сохраняется на 90 дней.
+      Код придёт на почту (если ваш email привязан). Нет почты в системе — получите код
+      в Telegram-боте Flagleaf командой <code>/weblogin</code>, или привяжите email там же
+      командой <code>/myemail вас@example.ru</code>. Код действует 5 минут, вход сохраняется на 90 дней.
     </div>
   </div>
 </main>
@@ -242,6 +254,25 @@ $('code').addEventListener('input', e=>{
   if(e.target.value.length===6) doLogin();
 });
 $('loginBtn').onclick = doLogin;
+$('emailBtn').onclick = sendEmailCode;
+
+async function sendEmailCode(){
+  const email = $('email').value.trim();
+  const note = $('loginNote'); note.className='note'; note.textContent='';
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){
+    note.className='note err'; note.textContent='Введите корректный email.'; return; }
+  $('emailBtn').disabled = true; note.textContent='Отправляю код…';
+  try{
+    const r = await api('/api/auth/email/start', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})
+    });
+    note.className='note ok'; note.textContent = r.message || 'Код отправлен на почту.';
+    $('code').focus();
+  }catch(e){
+    note.className='note err'; note.textContent = e.message || 'Не удалось отправить код.';
+  }finally{ $('emailBtn').disabled = false; }
+}
 
 async function doLogin(){
   const code = $('code').value.trim();

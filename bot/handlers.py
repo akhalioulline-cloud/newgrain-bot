@@ -54,6 +54,7 @@ from bot.db import (
     mark_treatment_synced,
     ndvi_scan,
     resolve_field,
+    set_user_email,
     set_user_phone,
     update_submission,
 )
@@ -329,6 +330,44 @@ async def cmd_weblogin(message: Message, user) -> None:
         "🔑 Код для входа на сайт Flagleaf:\n\n"
         f"      {code}\n\n"
         "Откройте 👉 ai.flagleaf.ru/app и введите код. Действует 5 минут.")
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@router.message(Command("myemail"))
+async def cmd_myemail(message: Message, command: CommandObject, user) -> None:
+    """Let an agronomist attach their own email so they can get login codes by email
+    (no Telegram/VPN needed afterwards)."""
+    email = (command.args or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        await message.answer(
+            "Укажите ваш email, например:\n/myemail ivan@example.ru\n\n"
+            "После этого код для входа на сайт можно получать на почту — без Telegram.")
+        return
+    if await set_user_email(user["tg_user_id"], email):
+        await message.answer(
+            f"Готово ✓ Привязал {email}.\n"
+            "Теперь на ai.flagleaf.ru/app можно войти по email — код придёт на почту.")
+    else:
+        await message.answer("Этот email уже привязан к другому пользователю. Укажите другой.")
+
+
+@router.message(Command("setemail"))
+async def cmd_setemail(message: Message, command: CommandObject, user) -> None:
+    """Admin: attach an email to another user — /setemail <tg_id> <email>."""
+    if not _is_admin(user):
+        await message.answer("Эта команда доступна только администратору.")
+        return
+    parts = (command.args or "").split()
+    if len(parts) != 2 or not parts[0].lstrip("-").isdigit() or not _EMAIL_RE.match(parts[1].lower()):
+        await message.answer("Как привязать email агроному:\n/setemail 123456789 ivan@example.ru")
+        return
+    tg_id, email = int(parts[0]), parts[1].strip().lower()
+    if await set_user_email(tg_id, email):
+        await message.answer(f"Готово ✓ {email} привязан к {tg_id}.")
+    else:
+        await message.answer("Не вышло: такого активного пользователя нет, или email уже занят.")
 
 
 @router.message(Command("field"))
