@@ -58,6 +58,13 @@
   .note{font-size:13px;margin-top:10px;min-height:18px;line-height:1.45}
   .note.err{color:var(--bad)}
   .note.ok{color:var(--ok)}
+  .pending{background:#fff;border:1px solid var(--gold);border-radius:12px;padding:11px 14px;margin-bottom:18px}
+  .pendhead{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+  .pendhead .flushbtn{margin-left:auto;color:var(--gold);background:none;border:none;font:inherit;
+        font-weight:600;cursor:pointer;padding:0}
+  .pendrow{display:flex;gap:8px;font-size:13px;color:var(--muted);padding-top:5px;margin-top:5px;
+        border-top:1px solid var(--line)}
+  .pendrow .pendt{margin-left:auto;white-space:nowrap}
   .divider{display:flex;align-items:center;gap:10px;margin:14px 0 16px;color:#9aa3ab;font-size:12px}
   .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 
@@ -159,6 +166,12 @@
   <h1>Загрузить для разметки</h1>
   <p class="lead">Фото уходят в тот же набор данных, что и из Telegram, но с оригинальным
     качеством и GPS из EXIF. Можно загрузить сразу несколько кадров.</p>
+
+  <div class="pending hidden" id="pending">
+    <div class="pendhead">📥 Ожидают отправки: <span id="pendN">0</span>
+      <button class="flushbtn" id="flushNow">отправить сейчас</button></div>
+    <div id="pendList"></div>
+  </div>
 
   <div class="section">
     <label class="fld" for="field">Поле</label>
@@ -333,6 +346,7 @@ async function enterApp(me){
   buildCats();
   buildSpecies();
   show('upload');
+  refreshPending(); flushQueue();                // surface + auto-send anything queued offline
   await loadFields();
 }
 
@@ -487,6 +501,58 @@ function readTiffGps(dv, base){
   return [Math.round(lat*1e7)/1e7, Math.round(lon*1e7)/1e7];
 }
 
+// ---------- offline queue (IndexedDB) — capture in the field with no signal, auto-send later ----------
+const DBN='flagleaf-q';
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open(DBN,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('q',{keyPath:'id'});
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+async function qAdd(it){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('q','readwrite');
+  t.objectStore('q').put(it); t.oncomplete=res; t.onerror=()=>rej(t.error);});}
+async function qAll(){const db=await idb();return new Promise((res,rej)=>{const rq=db.transaction('q','readonly').objectStore('q').getAll();
+  rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error);});}
+async function qDel(id){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('q','readwrite');
+  t.objectStore('q').delete(id); t.oncomplete=res; t.onerror=()=>rej(t.error);});}
+
+function buildFd(it){
+  const fd=new FormData();
+  it.photos.forEach((f,i)=>fd.append('photos', f, f.name||('photo'+(i+1)+'.jpg')));
+  fd.append('field_id', it.field_id||'');
+  fd.append('category', it.category);
+  fd.append('species', it.species||'');
+  fd.append('comment', it.comment||'');
+  return fd;
+}
+async function refreshPending(){ renderPending(await qAll()); }
+function renderPending(items){
+  const p=$('pending');
+  if(!items.length){ p.classList.add('hidden'); return; }
+  p.classList.remove('hidden');
+  $('pendN').textContent=items.length;
+  $('pendList').innerHTML=items.map(it=>{
+    const w=new Date(it.ts).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `<div class="pendrow"><span>${it.fieldLabel||'поле не указано'} · ${it.photos.length} фото</span><span class="pendt">${w}</span></div>`;
+  }).join('');
+}
+let flushing=false;
+async function flushQueue(){
+  if(flushing || !session || !navigator.onLine) return;
+  const items=await qAll();
+  if(!items.length){ refreshPending(); return; }
+  flushing=true;
+  for(const it of items){
+    try{
+      await api('/api/submit',{method:'POST',body:buildFd(it)});
+      await qDel(it.id); await refreshPending();
+    }catch(e){
+      if(e.status===401 || e.status===403) break;       // session expired → keep, retry after re-login
+      if(!e.status || e.status>=500) break;              // offline again / server down → keep, retry later
+      await qDel(it.id); await refreshPending();         // 4xx permanent reject → drop so it can't loop
+    }
+  }
+  flushing=false; await refreshPending();
+}
+function clearPhotos(){ files.forEach(r=>URL.revokeObjectURL(r.url)); files=[]; renderTiles(); $('comment').value=''; }
+
 // ---------- submit ----------
 let noteTimer=null;
 function flashNote(msg, cls='err'){
@@ -499,21 +565,33 @@ $('submitBtn').onclick = async ()=>{
   if(!category){ flashNote('Выберите, что на фото.'); return; }
   if(files.length===0){ flashNote('Добавьте хотя бы одно фото.'); return; }
 
-  const fd=new FormData();
-  files.forEach(rec=>fd.append('photos', rec.file, rec.file.name));   // originals — preserves EXIF GPS
-  fd.append('field_id', $('field').value || '');                      // '' = другое поле (off-pilot)
-  fd.append('category', category);
-  fd.append('species', resolveSpecies());
-  fd.append('comment', $('comment').value.trim());
+  const item={
+    id: Date.now()+'-'+Math.random().toString(36).slice(2,7),
+    ts: Date.now(),
+    field_id: $('field').value || '',                                 // '' = другое поле (off-pilot)
+    fieldLabel: ($('field').selectedOptions[0]||{}).textContent || '',
+    category, species: resolveSpecies(),
+    comment: $('comment').value.trim(),
+    photos: files.map(r=>r.file)                                      // originals — preserves EXIF GPS
+  };
+
+  if(!navigator.onLine){                                              // no signal → queue on the phone
+    await qAdd(item); clearPhotos(); await refreshPending();
+    flashNote('Нет сети — сохранили на телефоне. Отправим автоматически, когда появится интернет.','ok');
+    return;
+  }
 
   $('submitBtn').disabled=true; note.textContent=`Загружаю ${files.length} фото…`;
   try{
-    const r = await api('/api/submit', {method:'POST', body:fd});
+    const r = await api('/api/submit', {method:'POST', body:buildFd(item)});
     showResult(r);
   }catch(e){
     if(e.status===401 || e.status===403){
       flashNote('Сессия истекла — войдите заново.');
       setTimeout(logout, 1200);
+    }else if(!e.status || e.status>=500){                             // network dropped / server down → queue
+      await qAdd(item); clearPhotos(); await refreshPending();
+      flashNote('Сеть пропала — сохранили на телефоне, отправим позже.','ok');
     }else{
       flashNote(e.message || 'Не удалось загрузить. Попробуйте ещё раз.');
     }
@@ -543,6 +621,9 @@ $('resMore').onclick=()=>{ $('result').classList.add('hidden'); window.scrollTo(
 $('navBack').onclick = () => history.back();
 $('navFwd').onclick = () => history.forward();
 $('navRefresh').onclick = () => location.reload();
+
+$('flushNow').onclick = flushQueue;                  // manual «отправить сейчас»
+window.addEventListener('online', flushQueue);       // auto-send the moment signal returns
 
 boot();
 </script>
