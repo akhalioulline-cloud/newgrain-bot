@@ -91,3 +91,42 @@ async def parse_operation(note: str) -> dict | None:
         return data if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+_MULTI_HINT = (
+    "\nВ ОДНОМ сообщении может быть НЕСКОЛЬКО операций (например, несколько рейсов КамАЗ — "
+    "«КамАЗ 799 Шапаренко подвоз воды / КамАЗ 691 Рощупкин подвоз воды»). Верни JSON-МАССИВ "
+    "объектов — по одному на каждую операцию. Если операция одна — массив из одного объекта. "
+    "Строки-заголовки и неразборчивый мусор пропусти."
+)
+
+
+async def parse_operations(note: str) -> list:
+    """Parse a note that may hold SEVERAL operations into a list of op dicts (same shape as
+    parse_operation). [] if unparseable. One op → a one-element list."""
+    note = (note or "").strip()
+    if not note or not (settings.yc_api_key and settings.yc_folder_id):
+        return []
+    body = {
+        "modelUri": f"gpt://{settings.yc_folder_id}/{settings.yc_translate_model}",
+        "completionOptions": {"stream": False, "temperature": 0, "maxTokens": 1200},
+        "messages": [
+            {"role": "system", "text": _system_text() + _MULTI_HINT},
+            {"role": "user", "text": note},
+        ],
+    }
+
+    def _call() -> str:
+        r = requests.post(
+            _ENDPOINT, headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
+            json=body, timeout=40)
+        r.raise_for_status()
+        return r.json()["result"]["alternatives"][0]["message"]["text"]
+
+    try:
+        data = json.loads(_clean(await asyncio.to_thread(_call)))
+    except Exception:
+        return []
+    if isinstance(data, list):
+        return [d for d in data if isinstance(d, dict)]
+    return [data] if isinstance(data, dict) else []

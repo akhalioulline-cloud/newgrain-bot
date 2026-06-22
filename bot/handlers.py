@@ -60,7 +60,7 @@ from bot.db import (
 from bot import fieldmap
 from bot.ndvi_watch import format_digest
 from bot.oplog_match import is_fieldless_op, looks_like_oplog
-from bot.parse_op import parse_operation
+from bot.parse_op import parse_operation, parse_operations
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
 from bot.weed_suggest import suggest_species
@@ -1831,13 +1831,74 @@ async def on_mt_driver_pick(callback: CallbackQuery, state: FSMContext) -> None:
     await _mt_proceed(callback.message, state, op)
 
 
+async def _handle_machine_batch(message: Message, state: FSMContext, user, ops: list) -> None:
+    """Several logistics ops in one message → build each machine task, show a combined summary,
+    create them all on one confirm. Best-effort (no per-task prompts); unparsable ones are flagged."""
+    from catalog.cropwise_report import build_machine_task
+    plans, lines = [], []
+    for i, p in enumerate(ops, 1):
+        plan = await asyncio.to_thread(
+            build_machine_task, p.get("operation") or "подвоз", p.get("machine"),
+            p.get("driver"), _op_date(p.get("date")).isoformat(), p.get("implement"))
+        plan["operator"] = user["full_name"]
+        ok = bool(plan.get("work_type") and plan.get("machine"))
+        m, d = plan.get("machine"), plan.get("driver")
+        impl = f" + «{plan['implement']['name']}»" if plan.get("implement") else ""
+        line = (f"{'•' if ok else '⚠️'} {i}) {plan['operation']} — "
+                f"{(m['name'] if m else (plan.get('machine_raw') or '?'))}{impl}, "
+                f"{(d['name'] if d else 'водитель?')}")
+        lines.append(line if ok else line + " — не разобрал машину/вид работ")
+        if ok:
+            plans.append(plan)
+    head = f"🚚 Нашёл {len(ops)} заданий машин (без поля):"
+    if not plans:
+        await state.clear()
+        await message.answer(head + "\n" + "\n".join(lines)
+                             + "\n\nНи одно не распозналось — повторите по образцу "
+                             "«КамАЗ 286 Двулучанский подвоз воды».")
+        return
+    await state.update_data(batch=plans, op=None, await_impl=False)
+    await state.set_state(OpLogForm.confirm)
+    foot = f"\nСоздам {len(plans)} из {len(ops)}." if len(plans) != len(ops) else ""
+    await message.answer(head + "\n" + "\n".join(lines) + foot + "\n\nСоздать все?",
+                         reply_markup=_oplog_confirm_kb())
+
+
+async def _save_machine_batch(message: Message, batch: list) -> None:
+    from catalog.cropwise_report import create_machine_task
+    await message.answer(f"Создаю {len(batch)} заданий машин в CropWise…")
+    ok, lines = 0, []
+    for plan in batch:
+        try:
+            code, _ = await asyncio.to_thread(create_machine_task, plan)
+        except Exception:
+            logger.exception("batch machine task create failed")
+            code = 0
+        if code in (200, 201):
+            ok += 1
+            lines.append(f"✅ {plan['operation']} — {plan['machine']['name']}")
+        else:
+            lines.append(f"⚠️ {plan['operation']} — не принято (код {code})")
+    await message.answer(f"Готово: создано {ok} из {len(batch)}.\n" + "\n".join(lines))
+
+
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:
-    parsed = await parse_operation(note)
-    if not parsed:
+    ops = await parse_operations(note)
+    if not ops:
         await message.answer(
             "Не понял. Повторите, например: «опрыскал 119 Корсаром 1.5 л/га от сорняков»."
         )
         return
+    # Several operations in one message → batch them. For now: machine tasks (logistics);
+    # a mix with field sprays processes the first and asks for those one at a time.
+    if len(ops) > 1:
+        if all(is_fieldless_op(o.get("operation") or "") for o in ops):
+            await _handle_machine_batch(message, state, user, ops)
+            return
+        await message.answer(
+            f"Вижу {len(ops)} операций. Несколько сразу пока умею только для машинных заданий "
+            "(подвоз/перевоз и т.п.) — обработаю первую, полевые операции пришлите по одной.")
+    parsed = ops[0]
     if is_fieldless_op(parsed.get("operation") or "") or is_fieldless_op(note):
         await _handle_machine_task(message, state, user, parsed)
         return
@@ -1955,8 +2016,12 @@ async def on_oplog_fill_text(message: Message, state: FSMContext, user) -> None:
 async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
     await _ack(callback)
     await _drop_kb(callback)
-    op = (await state.get_data()).get("op")
+    data = await state.get_data()
+    op, batch = data.get("op"), data.get("batch")
     await state.clear()
+    if batch:                                       # several machine tasks at once
+        await _save_machine_batch(callback.message, batch)
+        return
     if not op:
         await callback.message.answer("Нечего сохранять.")
         return
