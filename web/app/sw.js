@@ -5,10 +5,11 @@
  *   - other GETs (icons, fonts, css) → cache-first, then network (and cache it).
  * Bump CACHE to ship a new shell; old caches are pruned on activate.
  */
-const CACHE = 'flagleaf-shell-v3';
+const CACHE = 'flagleaf-shell-v4';
 const SHELL = [
   '/app/',
   '/app/index.html',
+  '/app/assistant.html',
   '/app/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -36,8 +37,10 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.pathname.startsWith('/api/')) return;           // API is always live
 
-  if (req.mode === 'navigate') {                          // page loads: fresh if online, shell if not
-    e.respondWith(fetch(req).catch(() => caches.match('/app/index.html')));
+  if (req.mode === 'navigate') {                          // page loads: fresh if online, cached tab if not
+    e.respondWith(
+      fetch(req).catch(() => caches.match(req).then((c) => c || caches.match('/app/index.html')))
+    );
     return;
   }
 
