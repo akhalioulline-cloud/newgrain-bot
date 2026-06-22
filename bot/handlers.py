@@ -2225,6 +2225,25 @@ async def on_location(message: Message, state: FSMContext, user) -> None:
         + ".\nСпросите что-нибудь о нём — например «какая обработка была недавно?».")
 
 
+async def _chat_history_get(tg_id) -> str | None:
+    """Recent assistant Q&A for this user (30-min window) so follow-ups like «предложите
+    варианты» keep context. Best-effort — None on any Redis hiccup."""
+    try:
+        return (await _web_redis.get(f"flagleaf:chat:{tg_id}")) or None
+    except Exception:
+        return None
+
+
+async def _chat_history_push(tg_id, q: str, a: str) -> None:
+    try:
+        prev = (await _web_redis.get(f"flagleaf:chat:{tg_id}")) or ""
+        turns = prev.split("\n\n") if prev else []
+        turns.append(f"Пользователь: {q[:1500]}\nАссистент: {a[:1500]}")
+        await _web_redis.set(f"flagleaf:chat:{tg_id}", "\n\n".join(turns[-4:]), ex=1800)
+    except Exception:
+        pass
+
+
 @router.message(StateFilter(None), F.text)   # LAST text handler — free-text → a question
 async def on_question(message: Message, state: FSMContext, user) -> None:
     q = (message.text or "").strip()
@@ -2246,8 +2265,11 @@ async def on_question(message: Message, state: FSMContext, user) -> None:
         await message.bot.send_chat_action(message.chat.id, "typing")
     except Exception:
         pass
-    ans = await agro_answer(q, context)
+    hist = await _chat_history_get(message.from_user.id)
+    ans = await agro_answer(q, context, hist)
     await message.answer(ans or "Не понял вопрос — переформулируйте, пожалуйста.")
+    if ans:
+        await _chat_history_push(message.from_user.id, q, ans)
 
 
 # ---------- contact / phone (onboarding fallback). Keep LAST so it never

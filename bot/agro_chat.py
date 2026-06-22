@@ -208,8 +208,15 @@ async def answer(question: str, context: str | None = None,
                  history: str | None = None) -> str | None:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
-    grounding = await _registry_grounding(question)
-    literature = await _literature_grounding(question)
+    # Follow-ups («предложите варианты», «а норма?») carry the crop/target in the PREVIOUS turn —
+    # fold the last user question from history into the grounding query so products still resolve.
+    ground_q = question
+    if history:
+        prev_qs = re.findall(r"Пользователь:\s*(.+)", history)
+        if prev_qs:
+            ground_q = f"{prev_qs[-1].strip()}. {question}"
+    grounding = await _registry_grounding(ground_q)
+    literature = await _literature_grounding(ground_q)
     parts = [p for p in (
         f"ДАННЫЕ ПО ПОЛЮ:\n{context}" if context else None,
         (f"ПРЕДЫДУЩИЙ ДИАЛОГ (контекст для уточняющих вопросов и расчётов; "
