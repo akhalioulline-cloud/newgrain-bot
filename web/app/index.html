@@ -54,6 +54,10 @@
   /* ---- login ---- */
   .loginwrap{max-width:380px;margin:6vh auto 0}
   .code{letter-spacing:.4em;text-align:center;font-size:24px;font-weight:500;font-family:Oswald}
+  /* email field: match the «Отправить код» button's box exactly (same padding/font/radius → same height) */
+  #email{width:100%;font:inherit;font-size:15px;color:var(--ink);border:1px solid var(--line);
+        border-radius:12px;padding:13px 16px;background:#fff;outline:none}
+  #email::placeholder{font-size:13px;color:var(--muted);opacity:1}      /* hint sized like the .fld label */
   .help{font-size:13px;color:var(--muted);line-height:1.55;margin-top:14px;
         background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
   .help b{color:var(--ink)}
@@ -108,7 +112,7 @@
     <div class="section">
       <label class="fld" for="email">Получить код на почту</label>
       <input id="email" type="email" inputmode="email" autocomplete="email"
-             placeholder="вас@example.ru">
+             placeholder="email">
       <button class="btn ghost" id="emailBtn" style="margin-top:8px">Отправить код на почту</button>
     </div>
 
