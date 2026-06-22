@@ -325,7 +325,7 @@ function roleRu(role){
 }
 
 async function enterApp(me){
-  const who = me.name ? `${me.name}${me.role ? ' · '+roleRu(me.role) : ''}` : '';
+  const who = me.name || '';                     // name only — role didn't fit the header
   $('hdrWho').textContent = who;
   $('hdrSub').insertAdjacentHTML('beforeend',
     ' · <button class="logout" id="logoutBtn">выйти</button>');
