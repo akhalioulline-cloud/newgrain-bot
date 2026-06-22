@@ -129,7 +129,7 @@ async def health():
 # ── Authenticated surface (web photo upload for labeling, Phase 2) ──────────────
 # Login = a one-time 6-digit code the Telegram bot issues via /weblogin (Redis, 5-min TTL),
 # exchanged here for a 30-day session token tied to the agronomist's users record.
-SESSION_TTL = 30 * 24 * 3600
+SESSION_TTL = 90 * 24 * 3600
 
 
 class AuthIn(BaseModel):
