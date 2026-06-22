@@ -13,8 +13,14 @@ from RU; RuStore only covers Android) and solo-founder upkeep. Add-to-Home-Scree
 both iPhone (Safari) and Android (Chrome), no store, no VPN. See [[newgrain-web-email-login]]
 (the login it sits behind) and [[newgrain-web-ai]] (the public chat it reuses).
 
-**Roadmap:** A installable foundation ✅ · B one app/two tabs ✅ · C offline field capture ⬜ ·
+**Roadmap:** A installable foundation ✅ · B one app/two tabs ✅ · C offline field capture ✅ ·
 D push notifications ⬜.
+
+**Phase C (offline capture):** `web/app/index.html` queues submissions in IndexedDB (`flagleaf-q`,
+store `q`; photos stored as File blobs) when `navigator.onLine` is false OR the POST fails with no
+status / 5xx. A gold «Ожидают отправки» panel lists pending items; `flushQueue()` auto-sends on the
+`online` event, on app entry (enterApp), and via «отправить сейчас». 4xx → dropped (won't loop);
+401/403 or transient → kept. NO background sync (iOS unsupported) — flush is foreground-only.
 
 **Built (Jun 2026):**
 - `web/app/manifest.json` (standalone, gold theme, icons 192/512/maskable in web/ai/, served at root).
