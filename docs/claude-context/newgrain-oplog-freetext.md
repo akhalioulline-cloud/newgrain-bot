@@ -30,6 +30,14 @@ metadata:
    turns, 30-min) passed to `agro_answer`; `answer()` folds the last user question into the grounding
    query. Plus `_REC_RE` now matches падалиц/самосев and `_extract` maps падалица подсолнечника/рапса/
    сои → «двудольн», зерновых → «злаков» → so «падалица в сое» pulls real soy broadleaf herbicides.
+6. **Machine-task 422 = duplicate, NOT failure** (6485867): покос/грейдир showed «CropWise не принял
+   (422). Запись не создана» but the task was ALREADY there — 422 «external_id taken» is the idempotency
+   guard (external_id = sha1(wt|machine|date|operation), no implement). Bot now treats it as success
+   «уже создано ранее» (code 409). And because those tasks were logged BEFORE the implement was captured
+   (implement_id=None), on re-send the bot looks the task up by `?external_id=` (this PLAIN param returns
+   exactly the one task; `filter[external_id]` is IGNORED — returns all) and PATCHes implement_id onto it
+   → «добавил оборудование». Best-effort; falls back to «уже создано» if the PATCH is rejected. Confirmed
+   working by founder. Lesson: surface CropWise's error `detail` (the handler was discarding it).
 
 **Bug (Евгения, 18 Jun 2026):** typed operations were "accepted" by the bot but never
 reached CropWise. Two causes, both fixed & deployed (commit 58afab0):
