@@ -1848,6 +1848,14 @@ async def _fill_slot(message: Message, state: FSMContext, user, reply: str) -> N
     if not reply:
         await message.answer(_SLOT_Q[slot])
         return
+    # Escape hatch: if they typed a NEW operation instead of answering the slot — e.g. a
+    # field-less «подвоз воды … КамАЗ» while we're asking for a field — re-route it as a fresh
+    # op (→ machine task for logistics) instead of forcing it into the slot, which would loop
+    # on «Не нашёл такое поле». Real field answers («119», «Двулучанский») aren't oplog-shaped.
+    if looks_like_oplog(reply):
+        await state.clear()
+        await _handle_op_note(message, state, user, reply)
+        return
     if slot == "field":
         choices = data.get("field_choices")
         if choices:                       # we asked which отделение — match the reply
