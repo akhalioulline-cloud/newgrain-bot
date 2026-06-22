@@ -28,4 +28,5 @@ are intentionally excluded.)
 - [feedback-announce-entries](feedback-announce-entries.md) — add an _ANNOUNCEMENTS entry when shipping a user-facing feature (/announce has lagged 3×)
 - [newgrain-web-ai](newgrain-web-ai.md) — public web AI demo at ai.flagleaf.ru (FastAPI api service + static chat UI on the bot VM, Phase 1)
 - [newgrain-web-email-login](newgrain-web-email-login.md) — web upload login by email (reg.ru SMTP, no Telegram/VPN); SMTP_PASSWORD in Lockbox
+- [newgrain-pwa](newgrain-pwa.md) — installable Flagleaf PWA (ai.flagleaf.ru/app): one app, two tabs; phases A/B done, C/D pending
 - [feedback-auto-handoff](feedback-auto-handoff.md) — run `make handoff` proactively when a unit of work is done; don't wait to be asked
