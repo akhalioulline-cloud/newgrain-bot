@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
 <meta name="apple-mobile-web-app-title" content="Flagleaf">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#b9994b">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,9 +23,13 @@
   html,body{height:100%;margin:0}
   body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
        display:flex;flex-direction:column;min-height:100dvh}
-  header{display:block;padding:0;border-bottom:1px solid var(--line);
+  header{display:block;padding:0;padding-top:env(safe-area-inset-top);border-bottom:1px solid var(--line);
          background:#fff;position:sticky;top:0;z-index:5}
-  .hrow{display:flex;align-items:center;gap:10px;padding:14px 16px}
+  .hrow{display:flex;align-items:center;gap:10px;padding:12px 16px}
+  .navbtns{display:flex;gap:3px;margin-right:2px;flex:none}
+  .navb{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;
+        font-size:17px;line-height:1;color:var(--ink);cursor:pointer;padding:0}
+  .navb:active{background:#f0ece2}
   .tabs{display:none;border-top:1px solid var(--line)}     /* shown after login */
   .tabs.show{display:flex}
   .tab{flex:1;text-align:center;padding:10px 8px;font-size:14px;font-weight:600;color:var(--muted);
@@ -106,6 +110,11 @@
 <body>
 <header>
   <div class="hrow">
+    <div class="navbtns">
+      <button class="navb" id="navBack" title="Назад">‹</button>
+      <button class="navb" id="navFwd" title="Вперёд">›</button>
+      <button class="navb" id="navRefresh" title="Обновить">⟳</button>
+    </div>
     <span class="logo">FLAG<b>LEAF</b></span>
     <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span><br><a href="/">демо-чат</a></span>
   </div>
@@ -530,6 +539,10 @@ function showResult(r){
   $('result').scrollIntoView({behavior:'smooth'});
 }
 $('resMore').onclick=()=>{ $('result').classList.add('hidden'); window.scrollTo({top:0,behavior:'smooth'}); };
+
+$('navBack').onclick = () => history.back();
+$('navFwd').onclick = () => history.forward();
+$('navRefresh').onclick = () => location.reload();
 
 boot();
 </script>
