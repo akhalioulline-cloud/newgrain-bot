@@ -2038,8 +2038,10 @@ async def on_oplog_save(callback: CallbackQuery, state: FSMContext) -> None:
                 f"✅ Задание машины создано: «{op['work_type']['name']}», "
                 f"{op['machine']['name']}. Проверьте в CropWise.")
         else:
+            logger.warning("machine task rejected (code %s): %s", code, detail)
             await callback.message.answer(
-                f"⚠️ CropWise не принял задание машины (код {code}). Запись не создана.")
+                f"⚠️ CropWise не принял задание машины (код {code}). Запись не создана.\n"
+                f"Причина: {(detail or '')[:250]}")
         return
     fields = op.get("fields") or ([_field_entry_from_op(op)] if op.get("field_id") else [])
     if not fields:
