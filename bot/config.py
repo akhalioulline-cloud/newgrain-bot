@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     smtp_password: str = ""       # app-password from Yandex 360
     smtp_from: str = ""           # defaults to smtp_user if empty
 
+    # Web Push (VAPID). Public key is served to the browser; private key is secret
+    # (Lockbox). Empty private key = push disabled.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:flagleaf@flagleaf.ru"
+
     s3_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""

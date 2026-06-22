@@ -62,6 +62,7 @@ from bot import fieldmap
 from bot.ndvi_watch import format_digest
 from bot.oplog_match import is_fieldless_op, looks_like_oplog
 from bot.parse_op import parse_operation, parse_operations
+from bot.push import send_push
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
 from bot.weed_suggest import suggest_species
@@ -1222,6 +1223,11 @@ async def on_review(callback: CallbackQuery, state: FSMContext, user) -> None:
                     "отправлено на разметку. Спасибо!")
             except Exception:
                 logger.exception("notify submitter (approve) failed")
+            try:
+                await send_push(sub["submitter_tg"], "Фото проверено ✅",
+                                "Старший агроном подтвердил ваше фото — оно ушло в разметку.")
+            except Exception:
+                logger.exception("push submitter (approve) failed")
         return
     attr = _REV_ATTR.get(action)
     if not attr:
@@ -1277,6 +1283,11 @@ async def on_review_edit(message: Message, state: FSMContext, user) -> None:
                 f"«{old or '—'}» → «{newval}». Фото отправлено на разметку.")
         except Exception:
             logger.exception("notify submitter (correction) failed")
+        try:
+            await send_push(sub["submitter_tg"], "Фото исправлено ✏️",
+                            f"Старший агроном поправил {_ATTR_RU[attr]} и отправил ваше фото в разметку.")
+        except Exception:
+            logger.exception("push submitter (correction) failed")
     await message.answer("Исправлено и отправлено на разметку ✓")
 
 

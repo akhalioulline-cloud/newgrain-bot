@@ -110,6 +110,40 @@ async def set_user_email(tg_id: int, email: str) -> bool:
         return False
 
 
+async def add_push_subscription(tg_user_id: int, endpoint: str, p256dh: str, auth: str) -> None:
+    """Store (or refresh) a Web Push subscription for a device. Keyed on the unique
+    endpoint, so re-subscribing the same device just updates its keys/owner."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO push_subscriptions (tg_user_id, endpoint, p256dh, auth)
+                VALUES (:tg, :ep, :p, :a)
+                ON CONFLICT (endpoint)
+                DO UPDATE SET tg_user_id = EXCLUDED.tg_user_id,
+                              p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+                """
+            ),
+            {"tg": tg_user_id, "ep": endpoint, "p": p256dh, "a": auth},
+        )
+
+
+async def get_push_subscriptions(tg_user_id: int):
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text("SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE tg_user_id = :tg"),
+            {"tg": tg_user_id},
+        )
+        return rows.mappings().all()
+
+
+async def delete_push_subscription(endpoint: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("DELETE FROM push_subscriptions WHERE endpoint = :ep"), {"ep": endpoint}
+        )
+
+
 async def set_user_phone(tg_id: int, phone: str) -> None:
     async with engine.begin() as conn:
         await conn.execute(

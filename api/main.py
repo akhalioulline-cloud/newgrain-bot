@@ -30,6 +30,7 @@ from sqlalchemy import text as sql_text
 from bot.agro_chat import answer as agro_answer
 from bot.config import settings
 from bot.db import (
+    add_push_subscription,
     create_submission,
     engine,
     find_duplicate_submission,
@@ -41,6 +42,7 @@ from bot.db import (
 )
 from bot.diagnose import diagnose as diagnose_photo
 from bot.email_send import email_enabled, send_login_code
+from bot.push import push_enabled, send_push
 from bot.storage import upload_bytes
 from bot.transcribe import transcribe_lpcm
 from labeling import alert
@@ -199,6 +201,33 @@ async def require_user(request: Request):
 @app.get("/api/me")
 async def me(user=Depends(require_user)):
     return {"name": user["full_name"], "role": user["role"], "farm_id": user["farm_id"]}
+
+
+# ── Web Push (PWA notifications) ─────────────────────────────────────────────────
+@app.get("/api/push/key")
+async def push_key():
+    """VAPID public key the browser needs to subscribe (and whether push is on)."""
+    return {"key": settings.vapid_public_key, "enabled": push_enabled()}
+
+
+class PushSub(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(body: PushSub, user=Depends(require_user)):
+    await add_push_subscription(
+        user["tg_user_id"], body.endpoint,
+        body.keys.get("p256dh", ""), body.keys.get("auth", ""))
+    return {"ok": True}
+
+
+@app.post("/api/push/test")
+async def push_test(user=Depends(require_user)):
+    n = await send_push(user["tg_user_id"], "Flagleaf",
+                        "Тестовое уведомление — всё работает 🎉", "/app/")
+    return {"ok": True, "sent": n}
 
 
 @app.get("/api/fields")
