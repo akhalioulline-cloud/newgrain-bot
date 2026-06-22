@@ -163,7 +163,8 @@ class EmailIn(BaseModel):
 async def auth_email_start(body: EmailIn, request: Request):
     """Email a 6-digit login code to a registered agronomist's address. The code lands
     in the SAME Redis slot /weblogin uses, so /api/auth/verify handles it unchanged.
-    Always returns a generic ok (no address enumeration)."""
+    Tells the user when the address is unknown (private pilot tool — usability over
+    anti-enumeration)."""
     if not email_enabled():
         raise HTTPException(503, "Вход по email пока недоступен. Получите код в Telegram-боте: /weblogin")
     email = (body.email or "").strip().lower()
@@ -171,17 +172,17 @@ async def auth_email_start(body: EmailIn, request: Request):
         raise HTTPException(400, "Введите корректный email.")
     if not await _rate_ok(_client_ip(request), "emailcode", 5):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
-    generic = {"ok": True, "message": "Если этот адрес зарегистрирован, мы отправили код на почту."}
     user = await get_user_by_email(email)
     if not user:
-        return generic                                  # don't reveal whether the email exists
+        raise HTTPException(404, "Адрес не зарегистрирован. Добавьте его командой "
+                                 "/myemail " + email + " в Telegram-боте Flagleaf.")
     code = f"{secrets.randbelow(900000) + 100000}"
     await _redis.set(f"flagleaf:weblogin:{code}", str(user["tg_user_id"]), ex=300)
     sent = await asyncio.to_thread(send_login_code, email, code)
     if not sent:
         await _redis.delete(f"flagleaf:weblogin:{code}")
         raise HTTPException(502, "Не удалось отправить письмо. Попробуйте Telegram-бот: /weblogin")
-    return generic
+    return {"ok": True, "message": "Код отправлен на почту."}
 
 
 async def require_user(request: Request):
