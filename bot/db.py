@@ -180,23 +180,29 @@ async def find_fields_by_number(farm_id: int | None, number: str):
     """Resolve a typed field number ('125', '76/108', '31-1') to field rows.
     Fields are named 'Поле <номер> · <группа>' (or 'Поле <номер>' for pilots),
     so we compare the typed value to the number part. Usually one match; can be
-    several when the same number exists in more than one field group."""
+    several when the same number exists in more than one field group.
+
+    Agronomists often write '<номер>/<площадь, га>' (e.g. '124/92' = поле 124, 92 га) to
+    disambiguate, so if the full value doesn't match, retry on the field-number part before
+    the '/'. Real slash-named fields ('Поле 121/140') match the full value first, unaffected."""
     if not farm_id or not number:
         return []
+    number = re.sub(r"\s*/\s*", "/", number.strip())          # «124 / 92» → «124/92»
+    sql = text(
+        r"""
+        SELECT id, name, crop, area_ha FROM fields
+        WHERE farm_id = :farm
+          AND btrim(regexp_replace(
+                split_part(name, ' · ', 1), '^Поле\s+', '')) = :n
+        ORDER BY is_pilot DESC, id
+        """
+    )
     async with engine.connect() as conn:
-        result = await conn.execute(
-            text(
-                r"""
-                SELECT id, name, crop, area_ha FROM fields
-                WHERE farm_id = :farm
-                  AND btrim(regexp_replace(
-                        split_part(name, ' · ', 1), '^Поле\s+', '')) = :n
-                ORDER BY is_pilot DESC, id
-                """
-            ),
-            {"farm": farm_id, "n": number},
-        )
-        return result.mappings().all()
+        rows = (await conn.execute(sql, {"farm": farm_id, "n": number})).mappings().all()
+        if not rows and "/" in number:                        # «124/92» → field 124 (after / is га)
+            rows = (await conn.execute(
+                sql, {"farm": farm_id, "n": number.split("/", 1)[0]})).mappings().all()
+        return rows
 
 
 async def get_pending_submission(user_id: int):
