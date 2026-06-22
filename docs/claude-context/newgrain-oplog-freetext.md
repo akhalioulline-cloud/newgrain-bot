@@ -7,6 +7,30 @@ metadata:
   originSessionId: f6ba0ea2-f3cc-48c0-898d-52d7a10271dd
 ---
 
+**22 Jun 2026 bug batch (Almas/Evgenia) — all fixed & deployed:**
+1. **Stuck field-prompt** (4052bcc): users trapped in OpLogForm.filling (field slot) had every
+   later message — incl. a fresh field-less «подвоз/покос/грейдир» — read as a field number,
+   looping «Не нашёл поле». Fix: in `_fill_slot`, if a reply `looks_like_oplog`, re-route it as a
+   new op instead of forcing it into the slot. (General escape hatch; also added to the confirm-
+   state text handler.)
+2. **«номер/площадь» field refs** (e9d9701): agronomists write field as «<номер>/<площадь, га>»
+   (124/92 = поле 124, 92 га). `find_fields_by_number` now normalises «124 / 92»→«124/92», tries
+   the full value first (real slash-named fields like «Поле 121/140» still match), then falls back
+   to the part before «/». 
+3. **Implement (навесное/прицепное) capture** (773e241): CropWise machine_tasks have `implement_id`
+   + an `/implements` catalog (Грейдер сд-105, Косилка КРН-2,1Б). `parse_op` now extracts
+   `implement`; `build_machine_task` resolves it (`match_implement`, punctuation-insensitive) and
+   flags `needs_implement` for покос/грейдир/культив/дисков/…; bot ASKS «какое оборудование?» when
+   missing, sends `implement_id` on create. Transport (подвоз) doesn't ask.
+4. **Multi-task batch** (ff6411c): several machine tasks in one message. `parse_operations` returns
+   a LIST; >1 all-fieldless → `_handle_machine_batch` builds each, one «Создать все?», per-task
+   ✅/⚠️. Field-spray batching still TODO.
+5. **Assistant follow-ups** (f365709/c80ecd7): Telegram `on_question` had no history → bare follow-up
+   «Предложите варианты» was deflected. Added a per-user Redis Q&A buffer (`flagleaf:chat:<tg>`, 4
+   turns, 30-min) passed to `agro_answer`; `answer()` folds the last user question into the grounding
+   query. Plus `_REC_RE` now matches падалиц/самосев and `_extract` maps падалица подсолнечника/рапса/
+   сои → «двудольн», зерновых → «злаков» → so «падалица в сое» pulls real soy broadleaf herbicides.
+
 **Bug (Евгения, 18 Jun 2026):** typed operations were "accepted" by the bot but never
 reached CropWise. Two causes, both fixed & deployed (commit 58afab0):
 
