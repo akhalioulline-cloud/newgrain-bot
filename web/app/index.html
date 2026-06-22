@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FLAGLEAF — загрузка для разметки</title>
 <meta name="description" content="Загрузка фото полей для разметки. Для зарегистрированных агрономов Flagleaf — вход по коду из Telegram-бота.">
+<link rel="manifest" href="/app/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
@@ -514,6 +515,15 @@ function showResult(r){
 $('resMore').onclick=()=>{ $('result').classList.add('hidden'); window.scrollTo({top:0,behavior:'smooth'}); };
 
 boot();
+</script>
+<script>
+/* PWA: register the service worker (offline shell + install). updateViaCache:'none'
+   so a new sw.js is always fetched fresh and updates roll out on next launch. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/app/sw.js', { updateViaCache: 'none' }).catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
