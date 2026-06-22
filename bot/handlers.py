@@ -1745,7 +1745,7 @@ async def _handle_machine_task(message: Message, state: FSMContext, user, parsed
     op_date = _op_date(parsed.get("date")).isoformat()
     plan = await asyncio.to_thread(
         build_machine_task, parsed.get("operation") or "подвоз",
-        parsed.get("machine"), parsed.get("driver"), op_date)
+        parsed.get("machine"), parsed.get("driver"), op_date, parsed.get("implement"))
     if not plan.get("work_type") or not plan.get("machine"):
         miss = ([] if plan.get("work_type") else ["вид работ"]) + \
                ([] if plan.get("machine") else ["машину и её номер"])
@@ -1764,7 +1764,52 @@ async def _handle_machine_task(message: Message, state: FSMContext, user, parsed
             f"Несколько водителей с именем «{plan['driver_raw']}» — выберите нужного:",
             reply_markup=kb)
         return
+    await _mt_proceed(message, state, plan)
+
+
+async def _mt_proceed(message: Message, state: FSMContext, plan: dict) -> None:
+    """Show the machine-task summary for confirmation — but for implement work (покос/
+    грейдирование/…) with no implement resolved yet, ask which one first."""
+    from catalog.cropwise_report import mt_summary
+    if plan.get("needs_implement") and not plan.get("implement"):
+        await state.update_data(op=plan, await_impl=True)
+        await message.answer(
+            "Какое навесное/прицепное оборудование? Напишите модель или номер "
+            "(например «СД-105» или «КРН-2.1»). Если без оборудования — напишите «нет».")
+        return
+    await state.update_data(op=plan, await_impl=False)
     await message.answer(mt_summary(plan), reply_markup=_oplog_confirm_kb())
+
+
+@router.message(OpLogForm.confirm, F.text)
+async def on_mt_implement(message: Message, state: FSMContext, user) -> None:
+    """Reply to the «какое оборудование?» question (machine-task confirm state)."""
+    data = await state.get_data()
+    reply = (message.text or "").strip()
+    if not data.get("await_impl"):
+        # In confirm with buttons shown but they typed text — if it's a new operation, re-route.
+        if looks_like_oplog(reply):
+            await state.clear()
+            await _handle_op_note(message, state, user, reply)
+        return
+    op = data.get("op")
+    if not op:
+        await state.clear()
+        return
+    from catalog.cropwise_report import mt_summary, resolve_implement
+    if reply.lower().replace("ё", "е") in ("нет", "-", "без", "не надо", "none", "no", "нету"):
+        op["implement_raw"] = None
+    else:
+        im = await asyncio.to_thread(resolve_implement, reply)
+        if not im:
+            await message.answer(
+                f"Не нашёл оборудование «{reply}» в CropWise. Попробуйте модель/номер ещё раз "
+                "(например «СД-105»), или напишите «нет».")
+            return
+        op["implement"], op["implement_raw"] = {"id": im["id"], "name": im["name"]}, reply
+    op["needs_implement"] = False
+    await state.update_data(op=op, await_impl=False)
+    await message.answer(mt_summary(op), reply_markup=_oplog_confirm_kb())
 
 
 @router.callback_query(OpLogForm.confirm, F.data.startswith("mtdrv:"))
@@ -1783,8 +1828,7 @@ async def on_mt_driver_pick(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.answer("Не нашёл этого водителя, повторите.")
         return
     op["driver"], op["driver_options"] = {"id": chosen["id"], "name": chosen["name"]}, None
-    await state.update_data(op=op)
-    await callback.message.answer(mt_summary(op), reply_markup=_oplog_confirm_kb())
+    await _mt_proceed(callback.message, state, op)
 
 
 async def _handle_op_note(message: Message, state: FSMContext, user, note: str) -> None:

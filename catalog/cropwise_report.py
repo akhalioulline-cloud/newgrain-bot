@@ -128,6 +128,38 @@ def match_machine(number, mtype, machines):
     return None
 
 
+# Work that uses a mounted/towed implement (косилка, грейдер, борона…) — for these the bot asks
+# WHICH implement; transport (подвоз/перевоз/закачка) doesn't need one.
+_IMPL_OP_RE = re.compile(
+    r"покос|обкос|кошен|скашив|сенаж|ворош|грабл|грейдир|культив|дисков|боронов|прикат|"
+    r"вспаш|чизел|глубокорыхл|лущен|катк|подсыпк", re.I)
+
+
+def implement_needed(operation: str) -> bool:
+    return bool(_IMPL_OP_RE.search(operation or ""))
+
+
+def _impl_norm(s):                            # keep only letters+digits → «КРН-2,1Б»≈«КРН 2.1»
+    return re.sub(r"[^0-9a-zа-я]", "", str(s or "").lower().replace("ё", "е"))
+
+
+def match_implement(raw, implements):
+    """Free text ('СД-105', 'КРН-2.1', 'косилка') → a CropWise implement, matched on model/name."""
+    q = _impl_norm(raw)
+    if len(q) < 2:
+        return None
+    for im in implements:
+        for f in (im.get("model"), im.get("name")):
+            if f and q in _impl_norm(f):
+                return im
+    return None
+
+
+def resolve_implement(raw):
+    """Resolve typed implement → CropWise implement dict, or None. Sync — call via to_thread."""
+    return match_implement(raw, _all("implements")) if raw else None
+
+
 def driver_matches(driver_raw, users):
     """Best-ranked driver candidates for «Фамилия [Имя] [Отчество]». Among same-surname
     users the given name AND patronymic narrow in order («Шапаренко Сергей» beats «…Евгений»,
@@ -350,10 +382,11 @@ def create_ops(plan):
 
 
 # ---------- machine task (logistics: КамАЗ подвоз воды — driver+machine, NO field) ----
-def build_machine_task(operation, machine_raw, driver_raw, date_iso):
+def build_machine_task(operation, machine_raw, driver_raw, date_iso, implement_raw=None):
     """Resolve a logistics note into a CropWise machine-task plan: work_type (matched
-    against ALL work types — transport isn't an agri type), machine, driver. No field
-    (one trip serves many). Sync — call via asyncio.to_thread."""
+    against ALL work types — transport isn't an agri type), machine, driver, and (for
+    покос/грейдирование/…) the mounted implement. No field (one trip serves many).
+    Sync — call via asyncio.to_thread."""
     # A machine task is logistics/territory work → match a NON-agri (Транспорт/…) work type,
     # never a field «Внесение/Опрыскивание» type. «подвоз воды и гербицидов» must land on
     # «Подвоз Воды+Гербициды», not «Опрыскивание и внесение гербицидов». Fall back to all
@@ -362,6 +395,7 @@ def build_machine_task(operation, machine_raw, driver_raw, date_iso):
     wt = (match_work_type(operation, [w for w in all_wts if not w.get("agri")])
           or match_work_type(operation, all_wts))
     machine = match_machine(machine_raw, machine_raw, _all("machines")) if machine_raw else None
+    implement = match_implement(implement_raw, _all("implements")) if implement_raw else None
     drivers = driver_matches(driver_raw, _all("users")) if driver_raw else []
     driver = drivers[0] if drivers else None
     return {
@@ -369,6 +403,9 @@ def build_machine_task(operation, machine_raw, driver_raw, date_iso):
         "work_type": {"id": wt["id"], "name": wt["name"]} if wt else None,
         "machine": {"id": machine["id"], "name": machine["name"]} if machine else None,
         "machine_raw": machine_raw,
+        "implement": {"id": implement["id"], "name": implement["name"]} if implement else None,
+        "implement_raw": implement_raw,
+        "needs_implement": implement_needed(operation),
         "driver": {"id": driver["id"], "name": driver.get("username")} if driver else None,
         "driver_raw": driver_raw,
         # >1 only for true active full-namesakes → the bot asks which (no typeable unique id)
@@ -378,15 +415,24 @@ def build_machine_task(operation, machine_raw, driver_raw, date_iso):
 
 
 def mt_summary(plan):
-    wt, m, d = plan["work_type"], plan["machine"], plan["driver"]
-    return "\n".join([
+    wt, m, d, im = plan["work_type"], plan["machine"], plan["driver"], plan.get("implement")
+    lines = [
         "🚚 Задание машины (без поля) → CropWise:",
         f"Операция: {plan['operation']} → " + (f"«{wt['name']}»" if wt else "⚠️ вид работ не определён"),
         f"Машина: {plan['machine_raw'] or '—'} → " + (f"«{m['name']}»" if m else "⚠️ не найдена"),
+    ]
+    if im:
+        lines.append(f"Оборудование: «{im['name']}»")
+    elif plan.get("implement_raw"):
+        lines.append(f"Оборудование: {plan['implement_raw']} → ⚠️ не найдено в CropWise")
+    elif plan.get("needs_implement"):
+        lines.append("Оборудование: — (без навесного)")
+    lines += [
         f"Водитель: {plan['driver_raw'] or '—'} → " + (f"{d['name']}" if d else "не указан"),
         f"Дата: {date.fromisoformat(plan['date']):%d.%m.%Y}",
         "\nСоздать задание машины?",
-    ])
+    ]
+    return "\n".join(lines)
 
 
 def create_machine_task(plan):
@@ -407,6 +453,8 @@ def create_machine_task(plan):
     }
     if d:
         body["driver_id"] = d["id"]
+    if plan.get("implement"):
+        body["implement_id"] = plan["implement"]["id"]
     r = requests.post(f"{BASE}/machine_tasks", headers={**HEADERS, "Content-Type": "application/json"},
                       json={"data": body}, timeout=60)
     return r.status_code, r.text[:300]
