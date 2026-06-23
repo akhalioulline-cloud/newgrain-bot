@@ -95,5 +95,14 @@ sync → transcript = scouting observation; video to S3 (raise 25MB cap). V2 = l
 long-audio (reads audio from Object Storage, poll). Frame extraction (visual field-state) = separate later
 phase. Flag: video storage grows S3 fast. Awaiting founder go on V1.
 
+**Scouting session mode + voice comment (commit e0b8a9a).** App: «🔍 Режим обследования поля» checkbox
+locks category='scouting' across submissions (hides #catPick, persisted in localStorage 'scoutMode',
+restored in enterApp). Bot: `/scout` toggles a 12h Redis session (flagleaf:scoutmode:<tg>); `_save_photo_for_field`
+checks `_scout_mode_on` → auto-tags scouting + skips the category step → comment. **Voice comment in the app:**
+🎤 on the photo comment (cmtMic) — same Web Audio→16k LPCM→/api/transcribe flow as the assistant mic, inserts
+into #comment. (App photo comment was text-only before; bot already had voice via the comment step.) The
+scouting↔diagnostic fork is the CATEGORY choice (explicit, not auto-detected); everything downstream keys off
+category=='scouting' (skip species, skip review, skip CVAT export, feed /plan).
+
 **Open/next:** founder prices the 4 Поле-39 products via /setprice; scout Поле 39; /plan; Almas reviews;
-/savings to log. Video V1 build pending founder decision.
+/savings to log. Frame extraction (video visuals → zone data) still the later drone phase.
