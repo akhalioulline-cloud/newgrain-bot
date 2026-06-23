@@ -330,6 +330,30 @@ async def cmd_fields(message: Message, user) -> None:
 _web_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
 
+async def _scout_mode_on(tg_id: int) -> bool:
+    """Whether the agronomist has a scouting session active (photos auto-tag as scouting)."""
+    try:
+        return bool(await _web_redis.get(f"flagleaf:scoutmode:{tg_id}"))
+    except Exception:
+        return False
+
+
+@router.message(Command("scout"))
+async def cmd_scout(message: Message, user) -> None:
+    """Toggle a scouting session — while on, every photo is auto-tagged «обследование поля»
+    (no species, no review), so the agronomist doesn't re-pick the category each time."""
+    key = f"flagleaf:scoutmode:{user['tg_user_id']}"
+    if await _web_redis.get(key):
+        await _web_redis.delete(key)
+        await message.answer("Режим обследования выключен. Фото снова с выбором вида.")
+    else:
+        await _web_redis.set(key, "1", ex=12 * 3600)        # auto-off after 12 h
+        await message.answer(
+            "🔍 Режим обследования включён.\n"
+            "Все присылаемые фото идут как обследование поля — без выбора вида и без проверки. "
+            "Снимайте всё поле, включая чистые участки.\n\n/scout — выключить (или само через 12 часов).")
+
+
 @router.message(Command("weblogin"))
 async def cmd_weblogin(message: Message, user) -> None:
     """Issue a one-time 6-digit code to log in on ai.flagleaf.ru (web photo upload for labeling)."""
@@ -1026,8 +1050,14 @@ async def _save_photo_for_field(msg: Message, state: FSMContext, user, field_id)
         data.get("width"), data.get("height"), image_hash=img_hash,
     )
     await state.update_data(submission_id=submission_id, field_id=field_id)
-    await state.set_state(PhotoForm.category)
-    await msg.answer("Что на фото?", reply_markup=_category_kb())
+    if await _scout_mode_on(user["tg_user_id"]):       # scouting session → auto-tag, skip category
+        await update_submission(submission_id, category="scouting")
+        await state.update_data(category="scouting")
+        await state.set_state(PhotoForm.comment)
+        await msg.answer("🔍 Обследование. Комментарий? Текстом или голосом. Или /skip.")
+    else:
+        await state.set_state(PhotoForm.category)
+        await msg.answer("Что на фото?", reply_markup=_category_kb())
 
 
 @router.callback_query(PhotoForm.field, F.data.startswith("field:"))

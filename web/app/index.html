@@ -72,6 +72,15 @@
   .contrib .bar i{display:block;height:100%;background:var(--gold);border-radius:4px}
   .scouthint{font-size:12.5px;color:#6b541f;background:#faf6ec;border-left:3px solid var(--gold);
         border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.5}
+  .scoutmode{display:flex;align-items:center;gap:8px;background:#faf6ec;border:1px solid var(--gold);
+        border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:14px;font-weight:600;cursor:pointer}
+  .scoutmode input{width:18px;height:18px;accent-color:var(--gold);flex:none}
+  .cmtrow{display:flex;gap:8px;align-items:flex-start}
+  .cmtrow textarea{flex:1}
+  .micbtn{flex:none;width:44px;height:44px;border:1px solid var(--line);background:#fff;border-radius:12px;
+        font-size:18px;cursor:pointer;line-height:1}
+  .micbtn.rec{background:var(--bad);border-color:var(--bad);color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
   .divider{display:flex;align-items:center;gap:10px;margin:14px 0 16px;color:#9aa3ab;font-size:12px}
   .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 
@@ -192,9 +201,16 @@
     <select id="field"></select>
   </div>
 
+  <label class="scoutmode">
+    <input type="checkbox" id="scoutMode">
+    <span>🔍 Режим обследования поля</span>
+  </label>
+
   <div class="section">
-    <label class="fld">Что на фото?</label>
-    <div class="chips" id="cats"></div>
+    <div id="catPick">
+      <label class="fld">Что на фото?</label>
+      <div class="chips" id="cats"></div>
+    </div>
     <div class="scouthint hidden" id="scoutHint">📋 Снимайте проходом <b>всё поле</b> — и проблемные, и <b>чистые</b> участки (с включённым GPS). Чистый участок тоже важен: он показывает, где обработка не нужна.</div>
   </div>
 
@@ -224,8 +240,11 @@
   </div>
 
   <div class="section">
-    <label class="fld" for="comment">Комментарий <span style="opacity:.7">(необязательно)</span></label>
-    <textarea id="comment" rows="2" placeholder="Например: краевая полоса, после обработки Корсаром…"></textarea>
+    <label class="fld" for="comment">Комментарий <span style="opacity:.7">(можно надиктовать 🎤)</span></label>
+    <div class="cmtrow">
+      <textarea id="comment" rows="2" placeholder="Например: краевая полоса, после обработки Корсаром…"></textarea>
+      <button type="button" class="micbtn" id="cmtMic" title="Надиктовать комментарий">🎤</button>
+    </div>
   </div>
 
   <button class="btn" id="submitBtn">Отправить на разметку</button>
@@ -368,6 +387,7 @@ async function enterApp(me){
   $('logoutBtn').onclick = logout;
   buildCats();
   buildSpecies();
+  applyScoutMode(localStorage.getItem('scoutMode')==='1');   // restore scouting session mode
   show('upload');
   refreshPending(); flushQueue();                // surface + auto-send anything queued offline
   maybeShowPushBanner(); ensurePushIfGranted();  // offer / refresh push subscription
@@ -673,6 +693,57 @@ async function enablePush(){
     flashNote('Уведомления включены ✓','ok');
     try{ await api('/api/push/test',{method:'POST'}); }catch(_){}   // immediate confirmation push
   }catch(e){ flashNote('Не удалось включить уведомления.'); }
+}
+
+// ---------- scouting session mode (auto-tag every photo/video as обследование) ----------
+function applyScoutMode(on){
+  $('scoutMode').checked = on;
+  $('catPick').classList.toggle('hidden', on);          // hide the category picker in session mode
+  if(on){ category='scouting'; }
+  else if(category==='scouting'){ category=''; [...$('cats').children].forEach(c=>c.classList.remove('on')); }
+  buildSpecies();                                        // applies species-hide + scoutHint + scoutVid
+  localStorage.setItem('scoutMode', on?'1':'');
+}
+$('scoutMode').onchange = e=>applyScoutMode(e.target.checked);
+
+// ---------- voice dictation for the comment (same mic flow as the assistant) ----------
+const cmtMic=$('cmtMic'); let cRec=false, cCtx=null, cStream=null, cProc=null, cChunks=[];
+cmtMic.onclick=async()=>{
+  if(cRec){ cStopRec(); return; }
+  try{ cStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ flashNote('Нет доступа к микрофону — разрешите его в браузере.'); return; }
+  cCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=cCtx.createMediaStreamSource(cStream);
+  cProc=cCtx.createScriptProcessor(4096,1,1); cChunks=[];
+  cProc.onaudioprocess=e=>{ cChunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  src.connect(cProc); cProc.connect(cCtx.destination);
+  cRec=true; cmtMic.classList.add('rec'); cmtMic.textContent='⏹'; $('comment').placeholder='Говорите… нажмите ⏹';
+};
+function cStopRec(){
+  cRec=false; cmtMic.classList.remove('rec'); cmtMic.textContent='🎤';
+  try{ cProc.disconnect(); }catch(e){}
+  if(cStream) cStream.getTracks().forEach(t=>t.stop());
+  const inRate=cCtx.sampleRate;
+  let len=cChunks.reduce((a,c)=>a+c.length,0); const buf=new Float32Array(len); let off=0;
+  for(const c of cChunks){ buf.set(c,off); off+=c.length; }
+  try{ cCtx.close(); }catch(e){}
+  if(len<inRate*0.3) return;                             // <0.3 s — stray tap
+  cSendAudio(cTo16k(buf,inRate));
+}
+function cTo16k(buf,inRate){
+  const ratio=inRate/16000, outLen=Math.floor(buf.length/ratio), out=new Int16Array(outLen);
+  for(let i=0;i<outLen;i++){ const s=Math.max(-1,Math.min(1,buf[Math.floor(i*ratio)]||0)); out[i]=s<0?s*0x8000:s*0x7FFF; }
+  return out.buffer;
+}
+async function cSendAudio(pcm){
+  const ph=$('comment').placeholder; $('comment').placeholder='Распознаю речь…';
+  try{
+    const r=await fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:pcm});
+    const j=await r.json();
+    if(j.text){ const c=$('comment'); c.value=(c.value?c.value+' ':'')+j.text; c.focus(); }
+    else flashNote('Не расслышал — повторите.');
+  }catch(e){ flashNote('Ошибка распознавания.'); }
+  finally{ $('comment').placeholder=ph; }
 }
 
 // ---------- submit ----------

@@ -55,6 +55,7 @@ async def main() -> None:
         BotCommand(command="fields", description="Ваши пилотные поля"),
         BotCommand(command="field", description="Сводка по полю: /field 76/108"),
         BotCommand(command="plan", description="План работ по полю: /plan 121/140"),
+        BotCommand(command="scout", description="Режим обследования поля (вкл/выкл)"),
         BotCommand(command="scan", description="Проверка полей по NDVI"),
         BotCommand(command="log", description="Записать обработку (голосом/текстом)"),
         BotCommand(command="export", description="Выгрузить операции по полю: /export 119"),
