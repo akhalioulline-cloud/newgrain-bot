@@ -74,7 +74,8 @@ async def _fetch_pending():
             FROM submissions s
             LEFT JOIN fields f ON f.id = s.field_id
             WHERE s.status = 'ready_for_labeling'
-            ORDER BY s.created_at
+              AND s.category IS DISTINCT FROM 'scouting'   -- Pilot v2: field-scouting passes
+            ORDER BY s.created_at                          -- feed the plan directly, not CVAT
             """
         ))
         return result.mappings().all()
