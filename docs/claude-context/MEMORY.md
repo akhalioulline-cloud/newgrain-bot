@@ -30,4 +30,5 @@ are intentionally excluded.)
 - [newgrain-web-email-login](newgrain-web-email-login.md) — web upload login by email (reg.ru SMTP, no Telegram/VPN); SMTP_PASSWORD in Lockbox
 - [newgrain-pwa](newgrain-pwa.md) — installable Flagleaf PWA (ai.flagleaf.ru/app): one app, two tabs; phases A/B/C/D done
 - [newgrain-motivation-no-gamification](newgrain-motivation-no-gamification.md) — no points/leaderboards; loop-closing recognition + team goal instead (why + what's built)
+- [newgrain-pilot-v2](newgrain-pilot-v2.md) — pivot to field treatment-PLANS + chemical-savings metric; /plan generator, scouting capture, one-pager
 - [feedback-auto-handoff](feedback-auto-handoff.md) — run `make handoff` proactively when a unit of work is done; don't wait to be asked
