@@ -69,8 +69,18 @@ bot=photos) — that's the drone/video phase. Diagnostic photos still go through
 **Evgenia (tg 5872820319) made admin via ADMIN_TG_IDS on prod .env** (kept her annotator role so pipeline
 notifications still reach her) → can run /setprice /prices /savings. See [[newgrain-roles-review-gate]].
 
-**Open/next:** founder prices the 4 Поле-39 products (Когорта/Трейсер/Адью Ж = л, Алсион ВДГ = кг) via
-/setprice → ₽ baseline appears; agronomist scouts Поле 39; /plan Поле 39; Almas reviews; /savings to log.
-RECOMMENDED, not yet done: **scouting should bypass the junior per-photo review gate** (a 30-photo pass =
-30 review cards to Almas otherwise — /api/submit routes role=agronomist → pending_review regardless of
-category); optionally add a scouting button to the Telegram photo flow.
+**Scouting review-bypass + Telegram (commit 4e1f9e1):** scouting now skips the junior review gate in BOTH
+/api/submit (is_scouting → review=False) and the bot `_finalize` (category=='scouting' → ready_for_labeling,
+no card). Scouting category added to the bot photo keyboard (CATEGORIES, last) → on_category else-branch
+(no species) → comment (voice ok). Bot scouting is per-photo (app better for multi-photo passes).
+
+**Video scouting — ASSESSED, not built (key constraint).** Transcription is Yandex SpeechKit SYNC
+(transcribe.py) = **≤30 s / ≤1 MB** — fine for short clips, NOT full field-walk narrations. faster-whisper
+was removed (RAM). Also no ffmpeg in the image (needed to extract a video's audio track). Recommended phasing:
+V1 = short narrated clips (≤~25s): app video input → new /api/scout-video → ffmpeg extract audio → SpeechKit
+sync → transcript = scouting observation; video to S3 (raise 25MB cap). V2 = long video via SpeechKit ASYNC
+long-audio (reads audio from Object Storage, poll). Frame extraction (visual field-state) = separate later
+phase. Flag: video storage grows S3 fast. Awaiting founder go on V1.
+
+**Open/next:** founder prices the 4 Поле-39 products via /setprice; scout Поле 39; /plan; Almas reviews;
+/savings to log. Video V1 build pending founder decision.
