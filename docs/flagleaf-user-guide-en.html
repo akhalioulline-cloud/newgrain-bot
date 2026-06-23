@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1f1f1f; font-size: 11pt; line-height: 1.5; margin: 0; }
+  .gold { color: #b08d38; }
+  .cover { text-align: center; padding-top: 55mm; page-break-after: always; }
+  .cover .logo { font-size: 40pt; font-weight: 800; letter-spacing: .14em; }
+  .cover .logo b { color: #b08d38; }
+  .cover .rule { width: 60mm; height: 3px; background: #b08d38; margin: 10mm auto; }
+  .cover h1 { font-size: 21pt; margin: 0 0 4mm; }
+  .cover .sub { font-size: 13pt; color: #555; margin: 0; }
+  .cover .meta { margin-top: 26mm; font-size: 11pt; color: #777; }
+  h2 { font-size: 14.5pt; margin: 8mm 0 3mm; padding-bottom: 2mm; border-bottom: 2px solid #b08d38; page-break-after: avoid; }
+  h2 .n { color: #b08d38; margin-right: 3mm; }
+  h3 { font-size: 11.5pt; margin: 5mm 0 2mm; page-break-after: avoid; }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin: 0 0 1.5mm; }
+  .lead { color: #444; }
+  .tip { border-left: 3px solid #b08d38; background: #faf6ec; padding: 3mm 4mm; margin: 3mm 0; font-size: 10.4pt; page-break-inside: avoid; }
+  .warn { border-left: 3px solid #c0392b; background: #fcf0ee; padding: 3mm 4mm; margin: 3mm 0; font-size: 10.4pt; page-break-inside: avoid; }
+  .step { page-break-inside: avoid; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; background: #f0ece2; padding: 1px 5px; border-radius: 4px; font-size: 9.6pt; }
+  table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 10.2pt; }
+  th, td { text-align: left; padding: 2mm 3mm; border-bottom: 1px solid #e3ddd0; vertical-align: top; }
+  th { background: #f6f1e6; color: #6b541f; font-weight: 700; }
+  td.c { width: 42mm; white-space: nowrap; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; vertical-align:middle; margin-right:3px; }
+  footer { margin-top: 8mm; padding-top: 3mm; border-top: 1px solid #e3ddd0; color: #999; font-size: 9pt; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="logo">FLAG<b>LEAF</b></div>
+  <div class="rule"></div>
+  <h1>User Guide</h1>
+  <p class="sub">Mobile app &amp; Telegram bot for agronomists</p>
+  <div class="meta">NZK · pilot · 2026</div>
+</div>
+
+<div class="section">
+<h2><span class="n">1.</span>What Flagleaf is</h2>
+<p class="lead">Flagleaf is an agronomist's assistant. Its main goal is to help you treat fields <b>precisely and
+economically</b>: scout the field, get a work plan, and use less chemistry and machinery.</p>
+<ul>
+  <li><b>🔍 Field scouting</b> — walk the field and capture its state (photos or a video with voice narration), <b>including clean areas</b>.</li>
+  <li><b>📋 Field plan</b> — from the field's history, your scouting, and registered products, the bot builds a treatment plan and tells you where treatment is <b>not</b> needed.</li>
+  <li><b>💬 AI assistant</b> — identify a weed/disease from a photo and ask what to treat it with.</li>
+  <li><b>📷 Recognition</b> — photos of individual weeds/diseases to train the AI (when you're unsure what it is).</li>
+</ul>
+<p>You can work via the <b>mobile app</b> or the <b>Telegram bot</b> — whichever suits you.</p>
+</div>
+
+<div class="section">
+<h2><span class="n">2.</span>The app: install &amp; sign in</h2>
+<h3>Install</h3>
+<div class="step">
+<p><b>iPhone</b> (in <b>Safari</b>): open <code>ai.flagleaf.ru/app</code> → <b>Share</b> button → <b>“Add to Home Screen”</b> → <b>Add</b>. A <b>Flagleaf</b> icon appears.</p>
+<p><b>Android</b> (in <b>Chrome</b>): open <code>ai.flagleaf.ru/app</code> → <b>“Install app”</b>.</p>
+</div>
+<h3>Sign in</h3>
+<ol>
+  <li>Enter your work <b>email</b> → <b>“Send code to email”</b>.</li>
+  <li>Take the 6-digit code from the email → enter it → <b>“Log in”</b>. The session lasts 90 days.</li>
+</ol>
+<div class="tip">If the address isn't registered you'll see a red hint. Link your email in the Telegram bot with <code>/myemail you@email</code>, or get a code with <code>/weblogin</code>.</div>
+<p>Turn on <b>🔔 notifications</b> and <b>location</b> — needed for reminders and so photos carry a GPS tag.</p>
+</div>
+
+<div class="section">
+<h2><span class="n">3.</span>Field scouting <span class="gold">— the main task</span></h2>
+<p class="lead">Don't "hunt for a problem" — capture the <b>state of the whole field</b>, clean areas included. A clean
+patch matters just as much: it shows where treatment is <b>not</b> needed.</p>
+
+<h3>3.1. Scouting mode</h3>
+<ol>
+  <li>In the app, on the <b>Upload</b> tab, switch on <b>“🔍 Field scouting mode”</b>.</li>
+  <li>Pick the field (type a number — e.g. <code>39</code> or <code>76/108</code>).</li>
+  <li>Take photos and video — they all go in as scouting; no need to choose a type.</li>
+</ol>
+<div class="tip">In the Telegram bot the same is toggled with <code>/scout</code> (same command turns it off; it also auto-expires after 12 hours).</div>
+
+<h3>3.2. Video with voice narration</h3>
+<p>In scouting mode tap <b>“🎥 Scouting video”</b> and shoot a clip <b>up to 3 minutes</b>, speaking what you see
+(“ragweed here, high density…”). The bot <b>transcribes the speech automatically</b> and adds it to the field's
+data — you don't type anything separately.</p>
+
+<h3>3.3. A good photo / video</h3>
+<ul>
+  <li>Daylight, sharp focus, no flash;</li>
+  <li>walk the field in passes — both problem and clean spots;</li>
+  <li><b>GPS on</b> — so the plan can talk about zones of the field;</li>
+  <li>a photo comment can be <b>dictated</b>: tap 🎤 next to the “Comment” field.</li>
+</ul>
+
+<h3>3.4. Control fields</h3>
+<p>At the top of the screen is a <b>“🎯 Control fields”</b> list — your fields to scout <b>regularly (weekly)</b>.
+The colour shows how long since you were there:</p>
+<p><span class="dot" style="background:#3a7d44"></span> up to 7 days &nbsp;·&nbsp; <span class="dot" style="background:#c8902b"></span> 8–10 days &nbsp;·&nbsp; <span class="dot" style="background:#c0392b"></span> over 10 days — time to go.</p>
+<p>Tap a field in the list — it gets selected and scouting mode turns on. If a field "goes red", you'll get a reminder.</p>
+</div>
+
+<div class="section">
+<h2><span class="n">4.</span>Identify a weed/disease from a photo</h2>
+<p>When you're <b>unsure what it is</b> — switch scouting mode off and upload 2 frames of the single object (wide
+shot + close-up of the leaf), choosing <b>“Weed / Disease / Pest”</b> and the species if you know it. These photos
+go to recognition (AI training).</p>
+<div class="tip">You can also just ask: on the <b>Assistant</b> tab attach the photo and write “what weed is this and how to treat it?”.</div>
+</div>
+
+<div class="section">
+<h2><span class="n">5.</span>The field plan</h2>
+<p>On the <b>Assistant</b> tab tap <b>“📋 Field plan”</b> and enter a field number (or in the bot — <code>/plan 39</code>).
+The bot gathers the field's history, your scouting, and registered products, and returns a plan: <b>where to treat and
+where not</b>, with which products and rates, which machine, and an estimate of the chemical saving vs. a blanket spray.</p>
+<div class="warn">⚠️ The plan is an assistant, not a replacement for the agronomist. You make the decision; use only <b>registered products</b> per their instructions.</div>
+</div>
+
+<div class="section">
+<h2><span class="n">6.</span>AI assistant</h2>
+<ul>
+  <li>Ask in plain words: “What can I treat soybean for sow-thistle with?”, “What was applied on field 119?”;</li>
+  <li>attach a photo with a question — the bot identifies the object and suggests products for your crop;</li>
+  <li>🌱 set the crop, 🎤 speak instead of typing; buttons: copy / share / 👍 👎 / 🧮 dose calculator.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2><span class="n">7.</span>Telegram bot</h2>
+<p>Open the <b>Flagleaf</b> bot, tap <code>/start</code>. Operation logging: just type or speak what you did —
+“sprayed field 119 with Korsar 1.5 l/ha” — the bot parses it and records it in CropWise.</p>
+<table>
+  <tr><th class="c">Command</th><th>What it does</th></tr>
+  <tr><td class="c"><code>/scout</code></td><td>Scouting mode on/off</td></tr>
+  <tr><td class="c"><code>/plan&nbsp;39</code></td><td>Field work plan</td></tr>
+  <tr><td class="c"><code>/field&nbsp;39</code></td><td>Field summary (treatment history)</td></tr>
+  <tr><td class="c"><code>/fields</code></td><td>Your control fields</td></tr>
+  <tr><td class="c"><code>/history</code> · <code>/stats</code></td><td>Your uploads &amp; stats</td></tr>
+  <tr><td class="c"><code>/weblogin</code> · <code>/myemail</code></td><td>Web login / link email</td></tr>
+  <tr><td class="c"><code>/problem</code></td><td>Report a problem</td></tr>
+</table>
+<p>Any field is reachable by number: when uploading a photo choose “Other field” and type the number.</p>
+</div>
+
+<div class="section">
+<h2><span class="n">8.</span>If something doesn't work</h2>
+<ul>
+  <li>No code arriving — check Spam and that your email is linked (<code>/myemail</code>).</li>
+  <li>App “stuck” — the <b>⟳ refresh</b> button at the top.</li>
+  <li>No signal in the field — shoot as usual: photos and video are <b>saved on the phone</b> and sent automatically when you're back online.</li>
+  <li>Any problem — the <code>/problem</code> command in the bot.</li>
+</ul>
+</div>
+
+<footer>Flagleaf · NZK · pilot · 2026</footer>
+</body>
+</html>
