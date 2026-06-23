@@ -35,5 +35,14 @@ execution+history; new field-plan generator = decision layer. See [[newgrain-pwa
 fields. NEXT = one contracted drone flight (field-scale sensing proof, manual analysis, no pipeline).
 LATER = versioned per-field plans that update each pass + measured efficacy (the real moat).
 
-**Open/next:** surface /plan in the app (assistant tab «План по полю»); compute the actual chemical-saving
-number vs CropWise spray records; Almas should review the first generated plans (human-in-loop is the point).
+**In the app (done, commit afcb5ef):** `/api/plan` (auth, farm-scoped) wraps generate_field_plan; the
+assistant tab has a «📋 План по полю» button → asks the field → renders the plan (reads `flagleaf_session`
+from localStorage, sends X-Session). **Savings grounded in CropWise:** `get_field_protection_baseline`
+pulls the season's blanket protection passes (product/dose/area_ha/cost — note: dose & cost are TEXT, no
+numeric rate); the plan header shows "Сплошных обработок СЗР в сезоне N: K (база)" and the ♻️ section
+compares the targeted plan to that real spend. The exact saving % stays an honest estimate until scouting
+gives spatial coverage (GPS passes) — the model says so itself. Verified: field 121/140 = 7 blanket passes/2026.
+
+**Open/next:** as GPS scouting accumulates, tighten the saving % into a real figure (treated-area fraction);
+Almas should review the first generated plans (human-in-loop is the point); consider per-product price table
+for ruble savings (cost field is unreliable text today).
