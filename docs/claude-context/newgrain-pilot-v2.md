@@ -61,6 +61,16 @@ runs; `/savings Поле 39 = точечно, экономия ~30%` records the
 (asyncpg note: nullable-param `(:x IS NULL OR ...)` throws AmbiguousParameterError — build the WHERE
 conditionally instead.) First entry logged: Поле 39, база 8 обр.
 
+**Scouting photo flow (commit 178b499):** app «🔍 Обследование поля» (category=scouting) → /api/submit →
+original to S3 (newgrain-data-prod) + EXIF GPS + submissions row → **excluded from CVAT export**
+(`category IS DISTINCT FROM 'scouting'`) → read directly by /plan via get_field_observations. Scouting is
+**app-only** (bot photo flow has no scouting category yet). **Videos: not supported** (app accept=image/*;
+bot=photos) — that's the drone/video phase. Diagnostic photos still go through CVAT (recognition) as before.
+**Evgenia (tg 5872820319) made admin via ADMIN_TG_IDS on prod .env** (kept her annotator role so pipeline
+notifications still reach her) → can run /setprice /prices /savings. See [[newgrain-roles-review-gate]].
+
 **Open/next:** founder prices the 4 Поле-39 products (Когорта/Трейсер/Адью Ж = л, Алсион ВДГ = кг) via
-/setprice → ₽ baseline appears; agronomist scouts Поле 39 (app «Обследование поля»); /plan Поле 39; Almas
-reviews; record the result with /savings. Loop tooling complete: scout → /plan (auto-logged) → /savings.
+/setprice → ₽ baseline appears; agronomist scouts Поле 39; /plan Поле 39; Almas reviews; /savings to log.
+RECOMMENDED, not yet done: **scouting should bypass the junior per-photo review gate** (a 30-photo pass =
+30 review cards to Almas otherwise — /api/submit routes role=agronomist → pending_review regardless of
+category); optionally add a scouting button to the Telegram photo flow.
