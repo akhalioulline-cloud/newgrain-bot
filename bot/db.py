@@ -829,6 +829,23 @@ async def get_all_recent_submissions(limit: int = 15):
         return result.mappings().all()
 
 
+async def get_field_observations(field_id: int, limit: int = 20):
+    """Recent scouting on a field — what agronomists saw (category, species, where, when).
+    The perception signal the field-plan generator reasons over. GPS, when present, lets
+    it talk about zones instead of the whole field."""
+    async with engine.connect() as conn:
+        rows = await conn.execute(text(
+            """
+            SELECT created_at, category, subcategory, comment_text, comment_voice_text,
+                   gps_lat, gps_lon
+            FROM submissions
+            WHERE field_id = :fid AND status NOT IN ('draft','rejected','duplicate')
+            ORDER BY created_at DESC
+            LIMIT :lim
+            """), {"fid": field_id, "lim": limit})
+        return rows.mappings().all()
+
+
 async def get_team_progress():
     """Team-wide totals for the collective goal: photos collected toward the model
     (everything not draft/rejected/duplicate) and how many reached training (labeled)."""

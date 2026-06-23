@@ -64,6 +64,7 @@ from bot.ndvi_watch import format_digest
 from bot.oplog_match import is_fieldless_op, looks_like_oplog
 from bot.parse_op import parse_operation, parse_operations
 from bot.push import send_push
+from bot.field_plan import generate_field_plan
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
 from bot.weed_suggest import suggest_species
@@ -97,6 +98,7 @@ CATEGORIES = [
 ]
 
 CATEGORY_LABELS = {code: label for label, code in CATEGORIES}
+CATEGORY_LABELS["scouting"] = "🔍 Обследование поля"   # app-only category (Pilot v2 scouting pass)
 
 # Human-readable submission statuses for the admin /all view, so it's clear
 # where each photo is in the pipeline (e.g. already pushed to CVAT).
@@ -370,6 +372,26 @@ async def cmd_setemail(message: Message, command: CommandObject, user) -> None:
         await message.answer(f"Готово ✓ {email} привязан к {tg_id}.")
     else:
         await message.answer("Не вышло: такого активного пользователя нет, или email уже занят.")
+
+
+@router.message(Command("plan"))
+async def cmd_plan(message: Message, command: CommandObject, user) -> None:
+    """Pilot v2: generate a treatment plan for a field from its history + scouting +
+    the registered-product catalog. Favours treating only what needs treating."""
+    q = (command.args or "").strip()
+    if not q:
+        await message.answer(
+            "Составлю план работ по полю. Укажите поле, например:\n/plan 121/140\n\n"
+            "План опирается на историю поля, последние обследования и зарегистрированные "
+            "препараты — и подскажет, что можно НЕ обрабатывать.")
+        return
+    await message.answer("📋 Составляю план по полю — минутку…")
+    try:
+        plan = await generate_field_plan(q, user["farm_id"])
+    except Exception:
+        logger.exception("cmd_plan failed")
+        plan = "Не удалось составить план. Попробуйте позже."
+    await message.answer(plan)
 
 
 @router.message(Command("field"))

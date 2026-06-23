@@ -70,6 +70,8 @@
   .contrib b{color:var(--ink)}
   .contrib .bar{height:6px;background:#e7ddc4;border-radius:4px;margin-top:6px;overflow:hidden}
   .contrib .bar i{display:block;height:100%;background:var(--gold);border-radius:4px}
+  .scouthint{font-size:12.5px;color:#6b541f;background:#faf6ec;border-left:3px solid var(--gold);
+        border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.5}
   .divider{display:flex;align-items:center;gap:10px;margin:14px 0 16px;color:#9aa3ab;font-size:12px}
   .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 
@@ -193,6 +195,7 @@
   <div class="section">
     <label class="fld">Что на фото?</label>
     <div class="chips" id="cats"></div>
+    <div class="scouthint hidden" id="scoutHint">📋 Снимайте проходом <b>всё поле</b> — и проблемные, и <b>чистые</b> участки (с включённым GPS). Чистый участок тоже важен: он показывает, где обработка не нужна.</div>
   </div>
 
   <div class="section" id="speciesSection">
@@ -239,6 +242,7 @@ const $ = id => document.getElementById(id);
 
 // Category codes ↔ labels — must match bot/handlers.py CATEGORIES.
 const CATEGORIES = [
+  ['scouting','🔍 Обследование поля'],
   ['weed','Сорняк'], ['disease','Болезнь'], ['pest','Вредитель'],
   ['stress','Стресс'], ['control','Контроль'], ['treatment_result','Результат обработки'],
 ];
@@ -404,11 +408,12 @@ function buildCats(){
 
 function buildSpecies(){
   const sec=$('speciesSection'), label=$('speciesLabel'), list=$('speciesList'), inp=$('species');
+  $('scoutHint').classList.toggle('hidden', category!=='scouting');   // field-scouting guidance
   let dict=null, name='Вид', placeholder='Можно пропустить';
   if(category==='disease'){ dict=DISEASES; name='Болезнь'; }
   else if(category==='pest'){ dict=PESTS; name='Вредитель'; }
   else if(category==='weed'){ name='Сорняк'; placeholder='Название сорняка (можно пропустить)'; }
-  if(category==='' || category==='stress' || category==='control' || category==='treatment_result'){
+  if(category==='' || category==='stress' || category==='control' || category==='treatment_result' || category==='scouting'){
     sec.classList.add('hidden');         // no species picker for these
     inp.value=''; inp.removeAttribute('data-map');
     return;

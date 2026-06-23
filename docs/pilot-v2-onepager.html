@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 16mm 16mm 14mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1f1f1f; font-size: 10.6pt;
+         line-height: 1.45; margin: 0; }
+  .gold { color: #b08d38; }
+  header { border-bottom: 2px solid #b08d38; padding-bottom: 4mm; margin-bottom: 5mm; }
+  .logo { font-size: 20pt; font-weight: 800; letter-spacing: .12em; }
+  .logo b { color: #b08d38; }
+  h1 { font-size: 15pt; margin: 2mm 0 1mm; }
+  .sub { color: #666; font-size: 10pt; margin: 0; }
+  h2 { font-size: 12pt; color: #1f1f1f; margin: 5mm 0 1.5mm; }
+  h2 .n { color: #b08d38; margin-right: 2mm; }
+  p { margin: 0 0 2mm; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; }
+  li { margin: 0 0 1mm; }
+  .loop { text-align: center; font-weight: 700; color: #6b541f; background: #faf6ec;
+          border-radius: 8px; padding: 3mm; margin: 2.5mm 0; font-size: 10.4pt; }
+  table { width: 100%; border-collapse: collapse; margin: 2.5mm 0; font-size: 9.8pt; }
+  th, td { text-align: left; padding: 2mm 3mm; border-bottom: 1px solid #e3ddd0; vertical-align: top; }
+  th { background: #f6f1e6; color: #6b541f; font-weight: 700; }
+  td.l { width: 46mm; font-weight: 600; }
+  .key { border-left: 3px solid #b08d38; background: #faf6ec; padding: 2.5mm 4mm; margin: 2.5mm 0; }
+  .stage { display: flex; gap: 4mm; margin: 2mm 0; }
+  .stage div { flex: 1; background: #f7f4ee; border-radius: 8px; padding: 3mm; }
+  .stage h3 { margin: 0 0 1mm; font-size: 10pt; color: #b08d38; }
+  .stage p { font-size: 9.4pt; margin: 0; }
+  footer { margin-top: 5mm; padding-top: 2mm; border-top: 1px solid #e3ddd0; color: #999;
+           font-size: 8.5pt; text-align: center; }
+  b.lead { color: #1f1f1f; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">FLAG<b>LEAF</b></div>
+  <h1>Pilot v2 — from weed photos to field plans</h1>
+  <p class="sub">Repositioning the pilot around the product we're actually building · АО «НЗК» · 2026</p>
+</header>
+
+<h2><span class="n">1.</span>The shift</h2>
+<p>Pilot v1 asked: <i>"will agronomists photograph field problems?"</i> — which bootstrapped weed/disease
+recognition. That capability is real, but it is a <b>feature, not a product</b>: general vision models
+(Gemini etc.) are catching up monthly, so "better recognition" is not a defensible business. And the data
+premise breaks as the season cleans the fields — there are fewer problems to shoot (a cleanliness itself
+achieved by <b>over-application of chemicals</b>).</p>
+<p><b class="lead">Pilot v2 repositions around the real product:</b> turning a field's state into an
+<b>efficient chemical &amp; machine plan</b> — and updating that plan as new observations arrive.</p>
+
+<h2><span class="n">2.</span>The product thesis (why this is a product, not a feature)</h2>
+<div class="loop">sense the field → produce / update a plan → execute via machines &amp; chemicals (CropWise) → observe the outcome → revise</div>
+<p>The moat is not recognition — it is this <b>closed loop on a specific field over time</b>. A general AI
+has none of: the field's treatment history, the CropWise execution link, the locally <b>registered-product
+constraints</b> (Госкаталог), local agronomy, or the longitudinal outcome data. Recognition is one
+<i>sensor</i> feeding the loop; the <b>plan is the product.</b></p>
+
+<h2><span class="n">3.</span>The new data unit: a scouting pass, not a hero photo</h2>
+<div class="key">The product's job is to say <b>where to spray and where NOT to</b>. So a clean patch is as
+valuable as a weedy one — it is the data that says "don't treat here." We change the unit of collection from
+<i>"a photo of a weed"</i> to <i>"a scouting pass that covers the field"</i> (geotagged transect/grid or short
+video, clean ground included).</p>
+<p>This fixes both problems at once: there is <b>always a field state to capture</b> (solving "nothing to
+shoot"), and the over-application we fight against becomes the <b>wedge</b> — "treat only the ~12% that needs
+it" is the economic and regulatory story.</p>
+
+<h2><span class="n">4.</span>How today's work fits (nothing is thrown away)</h2>
+<table>
+  <tr><th class="l">Current work</th><th>Becomes, in Pilot v2</th></tr>
+  <tr><td class="l">📷 Photo shooting &amp; recognition</td><td><b>Perception layer</b> — ground-truth that
+     calibrates field-state sensing and feeds the plan. Reframed from "hunt a problem" to "scout the field".</td></tr>
+  <tr><td class="l">📝 CropWise operation logging</td><td><b>Execution &amp; history layer</b> — what was
+     applied, where, by which machine. Already built; it is the loop's "execute + memory".</td></tr>
+  <tr><td class="l">🛰️ NDVI watch / satellite</td><td><b>Field-scale sensing (free tier)</b> — coarse
+     anomaly signal today; the drone layer comes next.</td></tr>
+  <tr><td class="l">💬 Grounded assistant + product catalog + literature</td><td><b>Decision layer</b> — the
+     substrate the new <b>field-plan generator</b> reasons over.</td></tr>
+</table>
+<p>The pilot doesn't restart — it <b>recomposes</b> what exists into the plan loop.</p>
+
+<h2><span class="n">5.</span>New success metric</h2>
+<p>Replace <i>"15–30 photos / week"</i> with: <b class="gold">the measured chemical &amp; cost saving of the
+plan vs. the blanket spray actually applied</b>, on 1–2 pilot fields, plus the agronomist's judgment that the
+plan is useful. This is measurable <b>now</b> — we already hold the actual spray records in CropWise.</p>
+
+<h2><span class="n">6.</span>Roadmap</h2>
+<div class="stage">
+  <div><h3>NOW</h3><p>Field-plan generator on existing data + scouting-pass capture. Quantify the
+     plan-vs-blanket saving on 1–2 fields.</p></div>
+  <div><h3>NEXT</h3><p>One contracted drone flight on one field as a field-scale sensing proof (manual
+     analysis — no pipeline yet).</p></div>
+  <div><h3>LATER</h3><p>Close the loop: versioned per-field plans that update on each pass, with measured
+     efficacy of what was done.</p></div>
+</div>
+
+<h2><span class="n">7.</span>What we need to run it</h2>
+<ul>
+  <li>Pick <b>1–2 pilot fields</b> to run the full loop on.</li>
+  <li>Agronomist runs a <b>scouting pass</b> (covers the field, clean areas included) instead of chasing problems.</li>
+  <li>We generate a <b>treatment plan</b> and compare it to what was actually sprayed → the saving number.</li>
+  <li>Book <b>one drone flight</b> on one field to validate field-scale sensing.</li>
+</ul>
+
+<footer>Flagleaf · Pilot v2 repositioning · АО «НЗК» · 2026 — internal working document</footer>
+
+</body>
+</html>
