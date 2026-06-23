@@ -131,5 +131,17 @@ neutral screen title «Загрузить фото»; bot _fields_kb stale comme
 fixed in code — device test only. **User manual rebuilt for Pilot v2: RU (docs/flagleaf-user-guide.pdf, 5pp) +
 new EN (docs/flagleaf-user-guide-en.pdf, 4pp)** — scouting-centric structure.
 
-**Open/next:** founder prices the 4 Поле-39 products via /setprice; scout Поле 39; /plan; Almas reviews;
-/savings to log. Frame extraction (video visuals → zone data) still the later drone phase.
+**ALMAS'S CORRECTION — area/zonal savings thesis was WRONG (commit ac73565).** Chief agronomist Almas:
+for spring crops (soy) you CANNOT "treat only ~12% of area" — weeds emerge in WAVES from a field-wide seed
+bank, most herbicides are CONTACT (no soil residual, so a new flush survives), there are no variable-rate
+sprayers, and over-dosing to kill overgrown weeds causes crop injury. Treatment is whole-field, timed to ЭПВ
+(экономический порог вредоносности); sometimes 1 pass, sometimes 2. So the savings lever is NOT area — it's the
+DECISION: right ЭПВ timing (1 pass vs 2), right registered product for the observed weed SPECTRUM+stage, right
+dose (no crop injury). `_PLAN_SYS` rewritten accordingly (🌱 spectrum → ⏱ ЭПВ timing → 💊 product/dose → ♻️
+"экономия не в площади, а в решении"); hard rule added: never propose zonal/partial-area herbicide treatment.
+One-pager §3/§5 fixed. Verified: plan now says ЭПВ, never zonal/12%. Scouting still the data unit, but its
+purpose = monitor spectrum/stage over the season for the threshold/product/timing call, NOT a weedy-vs-clean map.
+
+**Open/next:** **get Almas's inputs to encode his method** — his ЭПВ thresholds per crop/weed, go-to registered
+products by spectrum/stage, and 1-vs-2-pass heuristics (Russian note sent). Founder prices 4 Поле-39 products;
+scout Поле 39; /plan; /savings. Frame extraction = later drone phase.
