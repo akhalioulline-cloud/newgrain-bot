@@ -846,15 +846,15 @@ async def log_plan_run(field_id, field_name, season, baseline_passes,
 
 async def get_plan_runs(farm_id: int | None = None, limit: int = 15):
     """Recent plan runs (the savings-log), newest first; farm-scoped when given."""
+    sql = ("SELECT pr.id, pr.created_at, pr.field_name, pr.season, pr.baseline_passes, "
+           "       pr.baseline_cost, pr.outcome FROM plan_runs pr ")
+    params = {"lim": limit}
+    if farm_id is not None:
+        sql += "LEFT JOIN fields f ON f.id = pr.field_id WHERE f.farm_id = :farm "
+        params["farm"] = farm_id
+    sql += "ORDER BY pr.created_at DESC LIMIT :lim"
     async with engine.connect() as conn:
-        rows = await conn.execute(text(
-            "SELECT pr.id, pr.created_at, pr.field_name, pr.season, pr.baseline_passes, "
-            "       pr.baseline_cost, pr.outcome "
-            "FROM plan_runs pr LEFT JOIN fields f ON f.id = pr.field_id "
-            "WHERE (:farm IS NULL OR f.farm_id = :farm) "
-            "ORDER BY pr.created_at DESC LIMIT :lim"),
-            {"farm": farm_id, "lim": limit})
-        return rows.mappings().all()
+        return (await conn.execute(text(sql), params)).mappings().all()
 
 
 async def annotate_latest_plan_run(field_id: int, outcome: str) -> bool:
