@@ -296,7 +296,9 @@ async def submit(user=Depends(require_user),
     (S3 + submissions), but keeps original resolution + EXIF GPS, and accepts many at once."""
     fid = int(field_id) if field_id.strip().isdigit() else None
     is_junior = user["role"] == "agronomist"          # plain agronomist → chief review
-    status = "pending_review" if is_junior else "ready_for_labeling"
+    is_scouting = category.strip() == "scouting"      # field-state pass, not a diagnosis to verify
+    review = is_junior and not is_scouting            # scouting bypasses the per-photo review gate
+    status = "pending_review" if review else "ready_for_labeling"
     saved, skipped, sids = 0, 0, []
     for ph in photos[:40]:
         img = await ph.read()
@@ -332,8 +334,8 @@ async def submit(user=Depends(require_user),
         await update_submission(sid, **upd)
         saved += 1
         sids.append(sid)
-    # Junior uploads → review cards to the chief agronomist(s), reusing the bot's flow.
-    if is_junior and sids:
+    # Junior uploads (except scouting) → review cards to the chief agronomist(s).
+    if review and sids:
         try:
             cas = await get_chief_agronomists(user["farm_id"])
             if cas:
@@ -354,7 +356,7 @@ async def submit(user=Depends(require_user),
                     await rbot.session.close()
         except Exception:
             logger.exception("submit: review-card delivery failed")
-    return {"saved": saved, "skipped": skipped, "review": is_junior}
+    return {"saved": saved, "skipped": skipped, "review": review}
 
 
 @app.post("/api/chat")

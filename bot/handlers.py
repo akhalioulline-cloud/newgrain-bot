@@ -100,10 +100,10 @@ CATEGORIES = [
     ("Стресс", "stress"),
     ("Контроль", "control"),
     ("Результат обработки", "treatment_result"),
+    ("🔍 Обследование поля", "scouting"),   # Pilot v2: field-state pass (no species, no review)
 ]
 
 CATEGORY_LABELS = {code: label for label, code in CATEGORIES}
-CATEGORY_LABELS["scouting"] = "🔍 Обследование поля"   # app-only category (Pilot v2 scouting pass)
 
 # Human-readable submission statuses for the admin /all view, so it's clear
 # where each photo is in the pipeline (e.g. already pushed to CVAT).
@@ -1085,6 +1085,7 @@ async def on_category(callback: CallbackQuery, state: FSMContext) -> None:
     code = callback.data.split(":")[1]
     data = await state.get_data()
     await update_submission(data["submission_id"], category=code)
+    await state.update_data(category=code)        # so _finalize can route scouting past review
 
     if code == "weed":
         species = await get_top_species()
@@ -1289,7 +1290,8 @@ async def _finalize(message: Message, state: FSMContext, user) -> None:
     today, week = await count_user_submissions(user["id"])
     # Junior agronomists' photos go to the chief agronomist for review first;
     # chief agronomist and admins post straight to the labeling pipeline.
-    if user["role"] == "agronomist":
+    # Scouting passes are field-state, not a diagnosis — they skip review entirely.
+    if user["role"] == "agronomist" and data.get("category") != "scouting":
         await update_submission(sid, status="pending_review")
         cas = await get_chief_agronomists(user["farm_id"])
         for ca in cas:
