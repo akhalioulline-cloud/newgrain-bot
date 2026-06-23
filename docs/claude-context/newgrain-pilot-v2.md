@@ -43,6 +43,17 @@ numeric rate); the plan header shows "Сплошных обработок СЗР
 compares the targeted plan to that real spend. The exact saving % stays an honest estimate until scouting
 gives spatial coverage (GPS passes) — the model says so itself. Verified: field 121/140 = 7 blanket passes/2026.
 
-**Open/next:** as GPS scouting accumulates, tighten the saving % into a real figure (treated-area fraction);
-Almas should review the first generated plans (human-in-loop is the point); consider per-product price table
-for ruble savings (cost field is unreliable text today).
+**Ruble savings (done, commit d8640c6):** `product_prices` table (0034) + `/setprice Назв = 1200 л` and
+`/prices` (admin). `field_plan.parse_dose` (мл/л/г/кг → л|кг) × area × price → deterministic ₽ baseline in
+the plan header + ♻️ section. Prices are founder-supplied (never invented); plan computes ₽ only for
+priced+parseable passes, stays qualitative otherwise.
+
+**FIRST LOOP set up — field = Поле 39 · Красное (Соя, 113 га):** chosen data-drivenly (8 blanket passes
+this season + 19 scouting observations — the richest). This-season baseline = 2 spray dates (15.05, 11.06)
+× 4 products → applied volumes: Трейсер 67.8 л, Когорта 452 л, Алсион ВДГ 1.808 кг, Адью Ж 45.2 л.
+**Pricing shortlist = those 4 products** — founder runs /setprice for each, then ₽ baseline computes.
+Runbook: scout Поле 39 (app «Обследование поля», whole field incl. clean, GPS) → /plan Поле 39 → review
+plan-vs-blanket saving (Almas). The saving % still needs GPS scouting coverage to firm up.
+
+**Open/next:** founder prices the 4 products; agronomist scouts Поле 39; Almas reviews the first plan;
+later a formal savings-log table if we want to track loops over time.
