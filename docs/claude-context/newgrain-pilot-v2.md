@@ -142,6 +142,15 @@ dose (no crop injury). `_PLAN_SYS` rewritten accordingly (🌱 spectrum → ⏱ 
 One-pager §3/§5 fixed. Verified: plan now says ЭПВ, never zonal/12%. Scouting still the data unit, but its
 purpose = monitor spectrum/stage over the season for the threshold/product/timing call, NOT a weedy-vs-clean map.
 
-**Open/next:** **get Almas's inputs to encode his method** — his ЭПВ thresholds per crop/weed, go-to registered
-products by spectrum/stage, and 1-vs-2-pass heuristics (Russian note sent). Founder prices 4 Поле-39 products;
-scout Поле 39; /plan; /savings. Frame extraction = later drone phase.
+**Data answers most of Q2 (commit 419b340).** Founder asked "isn't this in CropWise?" — checked: field_treatments
+`target`/`phenophase` are 100% EMPTY (0/11299), but `active_substance` is 82% filled and the product+dose set is
+fully there. So the farm's product practice IS in CropWise; the weed-spectrum mapping is reconstructed from the
+Госкаталог (active substance → registered target). So we DON'T ask Almas for products — only for his **ЭПВ
+thresholds** (genuinely not recorded). **Built:** (1) `get_farm_products_for_crop` grounds /plan on the farm's
+ACTUAL products (frequency+typ dose+a.s.), prompt now PREFERS them over the generic registered list;
+(2) `catalog/product_playbook.py` → `docs/product-playbook.pdf` (5pp): per-crop table of what the farm applies ×
+Госкаталог spectrum × doses, adjuvants flagged, ЭПВ blanks — for Almas to review/correct instead of writing from
+scratch. Russian note to Almas was rewritten to match (ask only ЭПВ + review the draft).
+
+**Open/next:** Almas reviews the playbook + gives ЭПВ thresholds → encode them as plan grounding. Founder prices
+4 Поле-39 products; scout Поле 39; /plan; /savings. Frame extraction = later drone phase.
