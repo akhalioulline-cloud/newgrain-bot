@@ -110,8 +110,10 @@ travel). The original 12 pilots kept as **`is_demo`** = "контрольные/
 scout regularly for the savings proof). App: field picker is now a **searchable datalist** over all 286
 (type a number; demo fields marked ⭐); `currentFieldId()` resolves name/number → id. **Motivation UI
 (built):** «🎯 Контрольные поля» panel (`/api/demo-fields` → get_demo_fields w/ last-observed recency) —
-color dot green ≤7d / amber 8–14 / red >14 or never, "N дн. назад", tap → preselect field + scouting mode;
-weekly cadence ("обследуйте раз в неделю"). Recognition/nudge, NOT points (consistent with
+color dot **green ≤7d (weekly cadence) / amber 8–10 (grace) / red >10 or never**, "N дн. назад", tap →
+preselect field + scouting mode. **Red-field push nudge** (commit 6a0bd64): `labeling/field_nudge.py`
+(daily cron 08:00) pushes whoever LAST scouted a red demo field «вы давно не были на Поле … (N дн.)»,
+throttled 4d per user/field (Redis flagleaf:fieldnudge:tg:fid); needs push enabled (≈0 until agronomists subscribe). Recognition/nudge, NOT points (consistent with
 [[newgrain-motivation-no-gamification]]). Bot keeps a 12-button quick-pick (`get_demo_field_list`) +
 «Другое поле» → any of 286 by number (`find_fields_by_number` searches all fields). /fields shows control fields.
 Decision rationale: opening = breadth (engagement + recognition variety); is_demo preserves DEPTH for the
