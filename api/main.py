@@ -37,6 +37,7 @@ from bot.db import (
     find_duplicate_submission,
     get_active_user,
     get_chief_agronomists,
+    get_demo_fields,
     get_pilot_fields,
     get_team_progress,
     get_user_by_email,
@@ -237,7 +238,16 @@ async def push_test(user=Depends(require_user)):
 @app.get("/api/fields")
 async def my_fields(user=Depends(require_user)):
     fs = await get_pilot_fields(user["farm_id"])
-    return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"]} for f in fs]}
+    return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"],
+                        "demo": bool(f["is_demo"])} for f in fs]}
+
+
+@app.get("/api/demo-fields")
+async def demo_fields(user=Depends(require_user)):
+    """Demonstration fields + days since last observed — drives the «контрольные поля» nudge."""
+    fs = await get_demo_fields(user["farm_id"])
+    return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"],
+                        "last_days": f["last_days"]} for f in fs]}
 
 
 class PlanIn(BaseModel):

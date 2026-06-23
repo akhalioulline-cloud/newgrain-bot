@@ -158,12 +158,45 @@ async def get_pilot_fields(farm_id: int | None):
     async with engine.connect() as conn:
         result = await conn.execute(
             text(
-                "SELECT id, name, crop, area_ha FROM fields "
-                "WHERE farm_id = :farm AND is_pilot ORDER BY id"
+                "SELECT id, name, crop, area_ha, is_demo FROM fields "
+                "WHERE farm_id = :farm AND is_pilot ORDER BY is_demo DESC, id"
             ),
             {"farm": farm_id},
         )
         return result.mappings().all()
+
+
+async def get_demo_field_list(farm_id: int | None):
+    """The demonstration fields (id/name/crop/area) for the bot's quick-pick keyboard —
+    so it stays a short list of 12, not all 286 (any field is still reachable by typing a number)."""
+    if not farm_id:
+        return []
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT id, name, crop, area_ha FROM fields WHERE farm_id = :f AND is_demo ORDER BY id"),
+            {"f": farm_id})).mappings().all()
+
+
+async def get_demo_fields(farm_id: int | None):
+    """The demonstration fields + days since each was last observed (for the motivation
+    panel — most-overdue first; NULL last_days = never observed)."""
+    if not farm_id:
+        return []
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT f.id, f.name, f.crop, "
+                "  EXTRACT(DAY FROM now() - max(s.created_at))::int AS last_days "
+                "FROM fields f "
+                "LEFT JOIN submissions s ON s.field_id = f.id "
+                "  AND s.status NOT IN ('draft','rejected','duplicate') "
+                "WHERE f.farm_id = :farm AND f.is_demo "
+                "GROUP BY f.id, f.name, f.crop "
+                "ORDER BY last_days DESC NULLS FIRST, f.id"
+            ),
+            {"farm": farm_id},
+        )
+        return rows.mappings().all()
 
 
 def _field_number(name: str) -> str:

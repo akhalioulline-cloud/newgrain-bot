@@ -39,6 +39,7 @@ from bot.db import (
     get_submission_image_url,
     get_submission_review,
     get_field_polygons,
+    get_demo_field_list,
     get_pilot_fields,
     get_recent_treatments,
     get_species,
@@ -189,14 +190,14 @@ def _pest_kb() -> InlineKeyboardMarkup:
 # ---------- onboarding ----------
 
 async def _show_fields(message: Message, farm_id: int | None) -> None:
-    fields = await get_pilot_fields(farm_id)
+    fields = await get_demo_field_list(farm_id)
     if not fields:
         await message.answer(
             "Поля ещё не настроены. Их добавит администратор на следующем шаге."
         )
         return
 
-    lines = ["Ваши пилотные поля:"]
+    lines = ["🎯 Ваши контрольные поля (обследуйте их регулярно):"]
     for f in fields:
         meta_parts = []
         if f["crop"]:
@@ -205,7 +206,8 @@ async def _show_fields(message: Message, farm_id: int | None) -> None:
             meta_parts.append(f"{float(f['area_ha']):g} га")
         meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
         lines.append(f"• {f['name']}{meta}")
-    lines.append("\nГотовы начать? Просто отправляйте фото.")
+    lines.append("\nМожно работать с любым полем — при загрузке фото выберите «Другое поле» "
+                 "и введите его номер. Готовы начать? Просто отправляйте фото.")
     await message.answer("\n".join(lines))
 
 
@@ -922,12 +924,13 @@ async def _start_photo_flow(
     await state.update_data(file_id=file_id, mime=mime, width=width, height=height)
     await message.answer("Принял фото. Пара уточнений:")
 
-    fields = await get_pilot_fields(user["farm_id"])
+    fields = await get_demo_field_list(user["farm_id"])
     if not fields:
         await message.answer("Поля не настроены — обратитесь к администратору.")
         await state.clear()
         return
-    await message.answer("На каком поле?", reply_markup=_fields_kb(fields))
+    await message.answer("На каком поле? (или «Другое поле» → введите номер)",
+                         reply_markup=_fields_kb(fields))
 
 
 # A photo CAPTIONED with a question («что это за сорняк и как бороться?») is a diagnosis

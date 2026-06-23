@@ -72,6 +72,13 @@
   .contrib .bar i{display:block;height:100%;background:var(--gold);border-radius:4px}
   .scouthint{font-size:12.5px;color:#6b541f;background:#faf6ec;border-left:3px solid var(--gold);
         border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.5}
+  .demofields{margin-bottom:16px}
+  .demohead{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px}
+  .demorow{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line);
+        border-radius:10px;padding:9px 11px;margin-bottom:6px;cursor:pointer;font-size:13px}
+  .demorow .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .demorow .dname{font-weight:600}
+  .demorow .dwhen{margin-left:auto;color:var(--muted);white-space:nowrap;font-size:12px}
   .scoutmode{display:flex;align-items:center;gap:8px;background:#faf6ec;border:1px solid var(--gold);
         border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:14px;font-weight:600;cursor:pointer}
   .scoutmode input{width:18px;height:18px;accent-color:var(--gold);flex:none}
@@ -196,9 +203,13 @@
 
   <div class="contrib hidden" id="contrib"></div>
 
+  <div class="demofields hidden" id="demoFields"></div>
+
   <div class="section">
     <label class="fld" for="field">Поле</label>
-    <select id="field"></select>
+    <input id="field" type="text" list="fieldList" autocomplete="off"
+           placeholder="Введите номер поля — например 39 или 76/108">
+    <datalist id="fieldList"></datalist>
   </div>
 
   <label class="scoutmode">
@@ -393,6 +404,7 @@ async function enterApp(me){
   maybeShowPushBanner(); ensurePushIfGranted();  // offer / refresh push subscription
   loadContrib();                                 // «ваш вклад» + team goal
   await loadFields();
+  loadDemoFields();                              // «контрольные поля» nudge
 }
 
 function logout(){
@@ -400,24 +412,48 @@ function logout(){
   location.reload();
 }
 
-// ---------- fields ----------
+// ---------- fields (searchable: 286 fields, type-ahead via datalist) ----------
+let fieldsAll = [];
+function fieldNum(name){ return (name||'').split(' · ')[0].replace(/^Поле\s*/i,'').trim(); }
+function currentFieldId(){
+  const v=($('field').value||'').trim(); if(!v) return '';
+  const lv=v.toLowerCase();
+  let f=fieldsAll.find(x=>x.name.toLowerCase()===lv); if(f) return f.id;   // exact field name
+  const num=v.replace(/^поле\s*/i,'').trim();                              // typed a number
+  f=fieldsAll.find(x=>x.num===num) || fieldsAll.find(x=>x.num.startsWith(num));
+  return f ? f.id : '';                                                    // '' = вне списка (off-pilot)
+}
 async function loadFields(){
-  const sel = $('field');
-  sel.innerHTML = '<option>Загрузка полей…</option>';
   try{
     const r = await api('/api/fields');
-    sel.innerHTML='';
-    (r.fields||[]).forEach(f=>{
-      const o=document.createElement('option');
-      o.value=f.id; o.textContent = f.crop ? `${f.name} — ${f.crop}` : f.name;
-      sel.appendChild(o);
+    fieldsAll = (r.fields||[]).map(f=>({id:f.id, name:f.name, crop:f.crop||'', num:fieldNum(f.name), demo:!!f.demo}));
+    const dl=$('fieldList'); dl.innerHTML='';
+    fieldsAll.forEach(f=>{
+      const o=document.createElement('option'); o.value=f.name;
+      o.textContent=(f.demo?'⭐ ':'')+(f.crop||''); dl.appendChild(o);
     });
-    const other=document.createElement('option');
-    other.value=''; other.textContent='Другое поле (не из списка)';
-    sel.appendChild(other);
-  }catch(e){
-    sel.innerHTML='<option value="">Другое поле (не из списка)</option>';
-  }
+  }catch(e){ fieldsAll=[]; }
+}
+
+// ---------- demonstration fields (motivation: scout these regularly) ----------
+async function loadDemoFields(){
+  try{
+    const r = await api('/api/demo-fields'); const fs=r.fields||[];
+    const el=$('demoFields');
+    if(!fs.length){ el.classList.add('hidden'); return; }
+    const color=d=> d==null?'#c0392b' : d<=7?'#3a7d44' : d<=14?'#c8902b':'#c0392b';
+    const when =d=> d==null?'ещё не обследовано' : d<=0?'сегодня' : d+' дн. назад';
+    el.innerHTML='<div class="demohead">🎯 Контрольные поля — обследуйте раз в неделю</div>'+
+      fs.map(f=>`<div class="demorow" data-name="${f.name}">
+        <span class="dot" style="background:${color(f.last_days)}"></span>
+        <span class="dname">${f.name}</span>
+        <span class="dwhen">${when(f.last_days)}</span></div>`).join('');
+    [...el.querySelectorAll('.demorow')].forEach(row=>{
+      row.onclick=()=>{ $('field').value=row.dataset.name; applyScoutMode(true);
+        window.scrollTo({top:0,behavior:'smooth'}); };
+    });
+    el.classList.remove('hidden');
+  }catch(_){}
 }
 
 // ---------- category + species ----------
@@ -626,7 +662,7 @@ $('vidFile').onchange=async e=>{
   if(dur > MAX_VID_SEC){ note.className='note err';
     note.textContent=`Видео ${Math.round(dur)} с — длиннее 3 минут. Снимите покороче.`; return; }
   const item={ kind:'video', id:Date.now()+'-'+Math.random().toString(36).slice(2,7), ts:Date.now(),
-    field_id: $('field').value||'', fieldLabel: ($('field').selectedOptions[0]||{}).textContent||'',
+    field_id: currentFieldId(), fieldLabel: $('field').value||'',
     comment: $('comment').value.trim(), video: f };
   if(!navigator.onLine){ await qAdd(item); await refreshPending(); note.className='note ok';
     note.textContent='Нет сети — видео сохранено на телефоне, отправим автоматически.'; return; }
@@ -761,8 +797,8 @@ $('submitBtn').onclick = async ()=>{
   const item={
     id: Date.now()+'-'+Math.random().toString(36).slice(2,7),
     ts: Date.now(),
-    field_id: $('field').value || '',                                 // '' = другое поле (off-pilot)
-    fieldLabel: ($('field').selectedOptions[0]||{}).textContent || '',
+    field_id: currentFieldId(),                                       // '' = вне списка (off-pilot)
+    fieldLabel: $('field').value || '',
     category, species: resolveSpecies(),
     comment: $('comment').value.trim(),
     photos: files.map(r=>r.file)                                      // originals — preserves EXIF GPS
