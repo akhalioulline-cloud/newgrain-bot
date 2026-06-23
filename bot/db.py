@@ -472,6 +472,25 @@ async def get_registered_products(crop: str, target: str | None = None, limit: i
         return (await conn.execute(text(sql), params)).mappings().all()
 
 
+async def get_farm_products_for_crop(farm_id: int | None, crop: str, limit: int = 15):
+    """Products the farm ACTUALLY uses on a crop (protection passes) — frequency, typical
+    dose, active substance. The agronomist's revealed practice from CropWise, to ground the
+    plan in what they really apply rather than the whole Госкаталог list."""
+    if not farm_id or not crop:
+        return []
+    stem = _catalog_stem(crop) or crop
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT ft.product, count(*) AS passes, "
+            "  mode() WITHIN GROUP (ORDER BY ft.dose) AS typ_dose, "
+            "  max(ft.active_substance) AS active_substance "
+            "FROM field_treatments ft JOIN fields f ON f.id = ft.field_id "
+            "WHERE f.farm_id = :farm AND ft.op_category = 'protection' "
+            "  AND ft.crop ILIKE :stem AND ft.product IS NOT NULL AND ft.product <> '' "
+            "GROUP BY ft.product ORDER BY passes DESC LIMIT :lim"),
+            {"farm": farm_id, "stem": f"%{stem}%", "lim": limit})).mappings().all()
+
+
 # Major producers → short label, matched against the Госкаталог `registrant` field (which
 # is the OFFICIAL, authoritative source — not the producers' copyrighted atlases). Founder
 # decision 2026-06-19, LICENSING.md §2.4. Verified against producer sites: ВЗСП is Август's

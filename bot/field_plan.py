@@ -17,6 +17,7 @@ import re
 
 from bot.db import (
     field_card_text,
+    get_farm_products_for_crop,
     get_field_observations,
     get_field_protection_baseline,
     get_product_prices,
@@ -83,7 +84,9 @@ _PLAN_SYS = (
     "(экономический порог вредоносности), и тогда работают СПЛОШЬ по полю. Оцени: хватит ли ОДНОЙ обработки "
     "или по новой волне понадобится вторая.\n"
     "💊 Препараты и норма: подходящие под наблюдаемый спектр и фазу препараты — ТОЛЬКО из списка "
-    "ЗАРЕГИСТРИРОВАННЫХ (с производителем в [скобках], если указан), с нормой расхода. НЕ завышай норму ради "
+    "ЗАРЕГИСТРИРОВАННЫХ (с производителем в [скобках], если указан), с нормой расхода. ЕСЛИ есть блок "
+    "ПРЕПАРАТЫ ХОЗЯЙСТВА — при прочих равных ПРЕДПОЧИТАЙ препараты из него (хозяйство ими реально работает и "
+    "они в наличии), при условии что они подходят под спектр и зарегистрированы. НЕ завышай норму ради "
     "переросших сорняков — это даёт последействие и угнетает культуру.\n"
     "⚠️ Безопасность культуры: предупреди про последействие/фитотоксичность и условия применения.\n"
     "♻️ Как сэкономить: сравни с блоком БАЗОВАЯ ОБРАБОТКА. Экономия НЕ в обработке части площади — поле "
@@ -144,6 +147,18 @@ def _prod_block(crop: str, prods) -> str:
             + "\n".join(lines))
 
 
+def _farm_products_block(rows) -> str:
+    if not rows:
+        return ""
+    lines = ["ПРЕПАРАТЫ ХОЗЯЙСТВА на этой культуре (реальная практика по CropWise — при прочих равных "
+             "предпочитай их; в списке возможны прилипатели/адъюванты — это добавки, не гербициды):"]
+    for r in rows:
+        a_s = (r["active_substance"] or "").strip()
+        lines.append(f"• {r['product']} — применяли {r['passes']} раз, обычно {r['typ_dose'] or '?'}"
+                     + (f" (д.в. {a_s})" if a_s else ""))
+    return "\n".join(lines)
+
+
 def _baseline_block(season, passes, area_ha) -> str:
     """The blanket-spray baseline the plan's savings are measured against (real CropWise)."""
     if not passes:
@@ -171,6 +186,7 @@ async def generate_field_plan(field_query: str, farm_id: int | None, ran_by=None
     card = await field_card_text(field_query, farm_id)
     obs = await get_field_observations(field["id"])
     prods = await get_registered_products(crop) if crop else []
+    farm_prods = await get_farm_products_for_crop(farm_id, crop) if crop else []
     season, passes = await get_field_protection_baseline(field["id"])
     prices = await get_product_prices()
     cost_rub, priced, n_pass = _baseline_cost(passes, prices, field.get("area_ha"))
@@ -186,6 +202,7 @@ async def generate_field_plan(field_query: str, farm_id: int | None, ran_by=None
         _baseline_block(season, passes, field.get("area_ha")),
         cost_line or None,
         _obs_block(obs),
+        _farm_products_block(farm_prods) or None,
         _prod_block(crop or "—", prods),
         "ЗАДАЧА: составь план работ по этому полю по заданной структуре.",
     ] if p)
