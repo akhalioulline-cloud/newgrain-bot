@@ -250,7 +250,7 @@ async def field_plan(body: PlanIn, user=Depends(require_user)):
     q = (body.field or "").strip()
     if not q:
         raise HTTPException(400, "Укажите поле, например 121/140.")
-    plan = await generate_field_plan(q, user["farm_id"])
+    plan = await generate_field_plan(q, user["farm_id"], ran_by=user["tg_user_id"])
     return {"plan": plan}
 
 

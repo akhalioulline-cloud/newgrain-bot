@@ -21,6 +21,7 @@ from bot.db import (
     get_field_protection_baseline,
     get_product_prices,
     get_registered_products,
+    log_plan_run,
     producer_label,
     resolve_field,
 )
@@ -150,7 +151,7 @@ def _baseline_block(season, passes, area_ha) -> str:
     return "\n".join(lines)
 
 
-async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
+async def generate_field_plan(field_query: str, farm_id: int | None, ran_by=None) -> str:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return "План недоступен: не настроен YandexGPT."
     field = await resolve_field(field_query, farm_id)
@@ -188,4 +189,7 @@ async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
         if priced:
             head += f" · затраты ≈ {cost_rub:,.0f} ₽".replace(",", " ")
         head += " (база для сравнения)"
-    return head + "\n\n" + plan
+    full = head + "\n\n" + plan
+    await log_plan_run(field["id"], field["name"], season, len(passes) if passes else 0,
+                       round(cost_rub, 2) if priced else None, full, ran_by)
+    return full

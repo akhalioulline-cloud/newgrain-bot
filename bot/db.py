@@ -829,6 +829,44 @@ async def get_all_recent_submissions(limit: int = 15):
         return result.mappings().all()
 
 
+async def log_plan_run(field_id, field_name, season, baseline_passes,
+                       baseline_cost, plan_text, ran_by) -> int | None:
+    """Record one generated field plan (the savings-log). Best-effort."""
+    try:
+        async with engine.begin() as conn:
+            return (await conn.execute(text(
+                "INSERT INTO plan_runs (field_id, field_name, season, baseline_passes, "
+                "baseline_cost, plan_text, ran_by) "
+                "VALUES (:fid, :fn, :s, :bp, :bc, :pt, :rb) RETURNING id"),
+                {"fid": field_id, "fn": field_name, "s": season, "bp": baseline_passes,
+                 "bc": baseline_cost, "pt": plan_text, "rb": ran_by})).scalar()
+    except Exception:
+        return None
+
+
+async def get_plan_runs(farm_id: int | None = None, limit: int = 15):
+    """Recent plan runs (the savings-log), newest first; farm-scoped when given."""
+    async with engine.connect() as conn:
+        rows = await conn.execute(text(
+            "SELECT pr.id, pr.created_at, pr.field_name, pr.season, pr.baseline_passes, "
+            "       pr.baseline_cost, pr.outcome "
+            "FROM plan_runs pr LEFT JOIN fields f ON f.id = pr.field_id "
+            "WHERE (:farm IS NULL OR f.farm_id = :farm) "
+            "ORDER BY pr.created_at DESC LIMIT :lim"),
+            {"farm": farm_id, "lim": limit})
+        return rows.mappings().all()
+
+
+async def annotate_latest_plan_run(field_id: int, outcome: str) -> bool:
+    """Attach a realized-outcome note to the most recent plan run for a field."""
+    async with engine.begin() as conn:
+        res = await conn.execute(text(
+            "UPDATE plan_runs SET outcome = :o WHERE id = "
+            "(SELECT id FROM plan_runs WHERE field_id = :fid ORDER BY created_at DESC LIMIT 1)"),
+            {"o": outcome, "fid": field_id})
+        return res.rowcount > 0
+
+
 async def set_product_price(name: str, price: float, unit: str, note: str | None = None) -> None:
     """Upsert a product's unit price (₽ per л or кг). Founder-supplied — never invented."""
     async with engine.begin() as conn:

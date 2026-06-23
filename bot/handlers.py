@@ -47,6 +47,8 @@ from bot.db import (
     get_top_species,
     find_similar_treatment,
     get_user_history,
+    annotate_latest_plan_run,
+    get_plan_runs,
     get_product_prices,
     get_protection_products,
     get_team_progress,
@@ -390,7 +392,7 @@ async def cmd_plan(message: Message, command: CommandObject, user) -> None:
         return
     await message.answer("📋 Составляю план по полю — минутку…")
     try:
-        plan = await generate_field_plan(q, user["farm_id"])
+        plan = await generate_field_plan(q, user["farm_id"], ran_by=user["tg_user_id"])
     except Exception:
         logger.exception("cmd_plan failed")
         plan = "Не удалось составить план. Попробуйте позже."
@@ -439,6 +441,39 @@ async def cmd_prices(message: Message, user) -> None:
         parts.append("❓ Без цены (нужны для расчёта экономии в ₽):\n" + "\n".join(missing)
                      + "\n\nДобавьте: /setprice Название = 1200 л")
     await message.answer("\n\n".join(parts) if parts else "По вашим полям нет препаратов в истории.")
+
+
+@router.message(Command("savings"))
+async def cmd_savings(message: Message, command: CommandObject, user) -> None:
+    """Savings-log (admin). View recent plan runs, or record a realized outcome:
+    /savings — список; /savings Поле 39 = точечно, экономия ~30% — записать результат по полю."""
+    if not _is_admin(user):
+        await message.answer("Команда только для администратора.")
+        return
+    args = (command.args or "").strip()
+    if "=" in args:
+        field_q, outcome = args.split("=", 1)
+        field = await resolve_field(field_q.strip(), user["farm_id"])
+        if not field:
+            await message.answer(f"Поле не найдено: «{field_q.strip()}».")
+            return
+        ok = await annotate_latest_plan_run(field["id"], outcome.strip())
+        await message.answer("✓ Результат записан в журнал." if ok
+                             else "По этому полю ещё нет плана — сначала /plan.")
+        return
+    runs = await get_plan_runs(farm_id=user["farm_id"], limit=15)
+    if not runs:
+        await message.answer("Журнал планов пуст. Составьте план: /plan 121/140")
+        return
+    lines = ["📊 Журнал планов (экономия):"]
+    for r in runs:
+        d = r["created_at"].strftime("%d.%m") if r["created_at"] else ""
+        cost = (f" · {float(r['baseline_cost']):,.0f} ₽".replace(",", " ")
+                if r["baseline_cost"] is not None else "")
+        lines.append(f"• {d} {r['field_name']}: база {r['baseline_passes']} обр.{cost}"
+                     + (f"\n   → {r['outcome']}" if r["outcome"] else ""))
+    lines.append("\nЗаписать результат: /savings Поле 39 = точечно, экономия ~30%")
+    await message.answer("\n".join(lines))
 
 
 @router.message(Command("field"))
