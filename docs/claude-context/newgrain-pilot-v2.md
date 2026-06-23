@@ -74,7 +74,20 @@ notifications still reach her) → can run /setprice /prices /savings. See [[new
 no card). Scouting category added to the bot photo keyboard (CATEGORIES, last) → on_category else-branch
 (no species) → comment (voice ok). Bot scouting is per-photo (app better for multi-photo passes).
 
-**Video scouting — ASSESSED, not built (key constraint).** Transcription is Yandex SpeechKit SYNC
+**Video scouting — BUILT & verified end-to-end (commit d0c846d).** App scouting mode → «🎥 Видео
+обследование» (≤3 min, client-side size+duration pre-check, offline-queued like photos, kind='video' →
+/api/scout-video). `/api/scout-video` stores the video to S3 → creates a scouting submission (bypasses
+review) → `video_jobs` queue (migration 0036). Background collector `labeling/video_collect.py` (cron
+**every 5 min**) downloads the video → `bot.video_transcribe.transcribe_video` → writes narration to the
+submission's `comment_voice_text` (which /plan reads). **Transcription = ffmpeg splits audio into ≤25s
+chunks → SYNC SpeechKit per chunk** (NOT the long-audio API: longRunningRecognize 403'd fetching audio
+from our private bucket — the API-key's SA lacks bucket read; chunked-sync sidesteps OS entirely + reuses
+the proven voice-note path). ffmpeg added to the image; nginx 512M body on /api/scout-video (injected into
+live conf, certbot-managed). Verified: real speech mp4 → "На поле 217 очаги заразихи у южной кромки…".
+Caps: app 3 min / 185 s, backend MAX_VIDEO=400 MB, nginx 512 M. Frame extraction (visual field-state) still
+a later phase. Earlier assessment below superseded.
+
+**[superseded] Video scouting — ASSESSED, not built (key constraint).** Transcription is Yandex SpeechKit SYNC
 (transcribe.py) = **≤30 s / ≤1 MB** — fine for short clips, NOT full field-walk narrations. faster-whisper
 was removed (RAM). Also no ffmpeg in the image (needed to extract a video's audio track). Recommended phasing:
 V1 = short narrated clips (≤~25s): app video input → new /api/scout-video → ffmpeg extract audio → SpeechKit
