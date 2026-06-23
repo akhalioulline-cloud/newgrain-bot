@@ -829,6 +829,24 @@ async def get_all_recent_submissions(limit: int = 15):
         return result.mappings().all()
 
 
+async def get_field_protection_baseline(field_id: int):
+    """This-season blanket protection passes on a field — the baseline the plan's savings
+    are measured against (real CropWise records: product, dose, treated area, target, date).
+    Returns (season, [rows])."""
+    async with engine.connect() as conn:
+        season = (await conn.execute(text(
+            "SELECT max(season) FROM field_treatments WHERE field_id = :i"), {"i": field_id})).scalar()
+        if season is None:
+            return None, []
+        rows = (await conn.execute(text(
+            "SELECT treatment_date, product, dose, area_ha, target, cost "
+            "FROM field_treatments "
+            "WHERE field_id = :i AND op_category = 'protection' AND season = :s "
+            "  AND product IS NOT NULL AND product <> '' "
+            "ORDER BY treatment_date"), {"i": field_id, "s": season})).mappings().all()
+        return season, rows
+
+
 async def get_field_observations(field_id: int, limit: int = 20):
     """Recent scouting on a field — what agronomists saw (category, species, where, when).
     The perception signal the field-plan generator reasons over. GPS, when present, lets

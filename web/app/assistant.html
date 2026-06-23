@@ -65,6 +65,9 @@
                   border-radius:10px;padding:6px 10px;background:#fff;outline:none}
   .cropbar select:focus{border-color:var(--gold)}
   .crophint{font-size:12px;color:var(--gold)}
+  .planbtn{margin-left:auto;font:inherit;font-size:13px;color:var(--gold);background:#fff;
+           border:1px solid var(--gold);border-radius:14px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+  .planbtn:active{background:#faf6ec}
   .actions{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
   .actgrp{display:flex;gap:4px;align-items:center}
   .act{border:none;background:transparent;cursor:pointer;font-size:15px;opacity:.5;
@@ -138,6 +141,7 @@
     <option>Горох</option>
   </select>
   <span class="crophint" id="cropHint"></span>
+  <button type="button" class="planbtn" id="planBtn">📋 План по полю</button>
 </div>
 
 <form id="form">
@@ -271,10 +275,35 @@ function ask(){
   const text=q.value.trim(); const file=pendingFile; const crop=cropSel.value;
   if(!text && !file) return;
   q.value=''; q.style.height='auto'; setFile(null);
+  if(planMode){ planMode=false; runPlan(text); return; }   // «План по полю» captured the field
   runChat(text, crop, file);
 }
 form.addEventListener('submit', e=>{ e.preventDefault(); ask(); });
 q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+
+// ---- «План по полю» (Pilot v2): field → /api/plan (needs the app session) ----
+const planSession = localStorage.getItem('flagleaf_session') || '';
+let planMode = false;
+document.getElementById('planBtn').onclick = ()=>{
+  if(!planSession){ add('Чтобы составить план по полю, войдите в приложение (вкладка «Загрузка»).','bot'); return; }
+  add('По какому полю составить план работ? Введите номер поля, например 121/140.','bot');
+  planMode = true; q.focus();
+};
+async function runPlan(field){
+  if(!field){ planMode=false; return; }
+  addUser(field);
+  const t=add('составляю план по полю…','bot typing');
+  try{
+    const r=await fetch('/api/plan',{method:'POST',
+      headers:{'Content-Type':'application/json','x-session':planSession},
+      body:JSON.stringify({field})});
+    if(r.status===401||r.status===403){
+      t.textContent='Войдите в приложение (вкладка «Загрузка»), чтобы составить план.'; t.className='msg bot'; return; }
+    const j=await r.json();
+    t.textContent=(j && j.plan) || 'Не удалось составить план.'; t.className='msg bot';
+  }catch(e){ t.textContent='Ошибка сети. Попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ chat.scrollTop=chat.scrollHeight; }
+}
 
 // crop menu is active at any point: if the bot asked which crop, picking it answers now;
 // otherwise it just sets the crop for the next question (with a brief confirmation).

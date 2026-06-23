@@ -44,6 +44,7 @@ from bot.db import (
 )
 from bot.diagnose import diagnose as diagnose_photo
 from bot.email_send import email_enabled, send_login_code
+from bot.field_plan import generate_field_plan
 from bot.push import push_enabled, send_push
 from bot.storage import upload_bytes
 from bot.transcribe import transcribe_lpcm
@@ -236,6 +237,21 @@ async def push_test(user=Depends(require_user)):
 async def my_fields(user=Depends(require_user)):
     fs = await get_pilot_fields(user["farm_id"])
     return {"fields": [{"id": f["id"], "name": f["name"], "crop": f["crop"]} for f in fs]}
+
+
+class PlanIn(BaseModel):
+    field: str
+
+
+@app.post("/api/plan")
+async def field_plan(body: PlanIn, user=Depends(require_user)):
+    """Pilot v2: a treatment plan for a field (history + scouting + registered products),
+    scoped to the agronomist's farm. Same engine as the bot's /plan."""
+    q = (body.field or "").strip()
+    if not q:
+        raise HTTPException(400, "Укажите поле, например 121/140.")
+    plan = await generate_field_plan(q, user["farm_id"])
+    return {"plan": plan}
 
 
 @app.get("/api/stats")

@@ -16,6 +16,7 @@ from bot.config import settings
 from bot.db import (
     field_card_text,
     get_field_observations,
+    get_field_protection_baseline,
     get_registered_products,
     producer_label,
     resolve_field,
@@ -37,9 +38,11 @@ _PLAN_SYS = (
     "назови проблемные зоны; если данных по местам нет — так и скажи.\n"
     "💊 План обработок: по каждому мероприятию — объект, препарат (ТОЛЬКО из списка ЗАРЕГИСТРИРОВАННЫХ, с "
     "производителем в [скобках], если указан), норма расхода, машина/способ, оптимальный срок/фаза.\n"
-    "♻️ Экономия химии: оцени, можно ли заменить сплошную обработку точечной/зональной и насколько примерно "
-    "это сократит расход препаратов. Если данных для карты мало — честно скажи, что для точной экономии нужно "
-    "сплошное обследование поля (проход/дрон).\n"
+    "♻️ Экономия химии: сравни план с блоком БАЗОВАЯ ОБРАБОТКА (фактические сплошные обработки этого сезона). "
+    "Оцени, сколько сплошных обработок можно заменить точечными/зональными и насколько примерно это сократит "
+    "расход препаратов и затраты — дай конкретный ориентир в % и, если можешь, в литрах/кг на основе доз и "
+    "площади. ОБЯЗАТЕЛЬНО оговори, что точная доля площади определяется только сплошным обследованием "
+    "(проход/дрон), а пока это оценка.\n"
     "⏭ Что обследовать дальше: какие наблюдения нужны, чтобы уточнить план в следующий заход.\n\n"
     "ЖЁСТКИЕ ПРАВИЛА: безопасность культуры превыше всего — НЕ рекомендуй препараты, повреждающие саму "
     "культуру (глифосат — сплошной; на подсолнечнике/сое имидазолиноны/трибенурон-метил — ТОЛЬКО на "
@@ -89,6 +92,23 @@ def _prod_block(crop: str, prods) -> str:
             + "\n".join(lines))
 
 
+def _baseline_block(season, passes, area_ha) -> str:
+    """The blanket-spray baseline the plan's savings are measured against (real CropWise)."""
+    if not passes:
+        return ("БАЗОВАЯ ОБРАБОТКА (факт, CropWise): записей о сплошных обработках СЗР в этом сезоне нет — "
+                "сравнивать экономию не с чем, опирайся на типовую практику и оговори это.")
+    area = f"{float(area_ha):g} га" if area_ha else "площадь не указана"
+    lines = [f"БАЗОВАЯ ОБРАБОТКА (факт по CropWise, сезон {season}; поле {area}) — это сплошные обработки СЗР, "
+             f"с которыми сравнивается экономия плана. Всего обработок: {len(passes)}."]
+    for p in passes:
+        d = p["treatment_date"].strftime("%d.%m") if p["treatment_date"] else ""
+        ar = f"{float(p['area_ha']):g} га" if p["area_ha"] is not None else (f"{float(area_ha):g} га" if area_ha else "?")
+        lines.append(f"• {d}: {p['product']} — норма {p['dose'] or '?'} на {ar}"
+                     + (f", против {p['target']}" if p["target"] else "")
+                     + (f", затраты {p['cost']}" if p.get("cost") else ""))
+    return "\n".join(lines)
+
+
 async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
     if not (settings.yc_api_key and settings.yc_folder_id):
         return "План недоступен: не настроен YandexGPT."
@@ -99,9 +119,11 @@ async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
     card = await field_card_text(field_query, farm_id)
     obs = await get_field_observations(field["id"])
     prods = await get_registered_products(crop) if crop else []
+    season, passes = await get_field_protection_baseline(field["id"])
 
     user_blob = "\n\n".join([
         f"ДАННЫЕ ПО ПОЛЮ:\n{card}",
+        _baseline_block(season, passes, field.get("area_ha")),
         _obs_block(obs),
         _prod_block(crop or "—", prods),
         "ЗАДАЧА: составь план работ по этому полю по заданной структуре.",
@@ -111,5 +133,7 @@ async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
     except Exception as exc:
         logger.warning("field plan generation failed: %s", exc)
         return "Не удалось составить план (сервис ИИ недоступен). Попробуйте позже."
-    head = f"📋 План работ — {field['name']}" + (f" ({crop})" if crop else "") + "\n\n"
-    return head + plan
+    head = f"📋 План работ — {field['name']}" + (f" ({crop})" if crop else "")
+    if passes:
+        head += f"\nСплошных обработок СЗР в сезоне {season}: {len(passes)} (база для сравнения)"
+    return head + "\n\n" + plan
