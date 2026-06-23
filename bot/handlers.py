@@ -145,9 +145,8 @@ def _fields_kb(fields) -> InlineKeyboardMarkup:
             callback_data=f"field:{f['id']}")]
         for f in fields
     ]
-    # Off-pilot training photos (margins, other parcels of the farm): valuable
-    # for the CV model, but kept out of the 3 pilot fields' records so the
-    # day-90 economic proof + per-field weed maps stay clean.
+    # All farm fields are open now; the quick buttons are just the 12 demonstration
+    # fields. «Другое поле» lets the agronomist tag any of the rest by typing its number.
     rows.append([InlineKeyboardButton(text="Другое поле (по номеру)", callback_data="field:other")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -581,8 +580,8 @@ async def cmd_stats(message: Message, user) -> None:
         f"• Дней с фото на этой неделе: {int(s['active_days'])}\n"
         f"• Всего сохранено: {int(s['total'])}\n"
         f"• 🎓 Уже обучают ИИ (прошли разметку): {int(s['labeled'])}\n\n"
-        f"🌱 Вклад команды: собрано {collected} из {goal} фото к модели "
-        f"(в обучении ИИ: {trained}). Спасибо за общий результат!"
+        f"🌱 Вклад команды: собрано {collected} из {goal} фото "
+        f"(прошли разметку и обучают ИИ: {trained}). Спасибо за общий результат!"
     )
 
 

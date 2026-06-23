@@ -176,10 +176,12 @@ async def get_demo_fields_for_nudge():
                    EXTRACT(DAY FROM now() - max(s.created_at))::int AS last_days,
                    (SELECT u.tg_user_id FROM submissions s2 JOIN users u ON u.id = s2.user_id
                       WHERE s2.field_id = f.id AND s2.status NOT IN ('draft','rejected','duplicate')
+                        AND s2.category = 'scouting'
                       ORDER BY s2.created_at DESC LIMIT 1) AS last_tg
             FROM fields f
             LEFT JOIN submissions s ON s.field_id = f.id
               AND s.status NOT IN ('draft','rejected','duplicate')
+              AND s.category = 'scouting'
             WHERE f.is_demo
             GROUP BY f.id, f.name
             """))
@@ -210,6 +212,7 @@ async def get_demo_fields(farm_id: int | None):
                 "FROM fields f "
                 "LEFT JOIN submissions s ON s.field_id = f.id "
                 "  AND s.status NOT IN ('draft','rejected','duplicate') "
+                "  AND s.category = 'scouting' "       # recency = last SCOUTING pass, not any photo
                 "WHERE f.farm_id = :farm AND f.is_demo "
                 "GROUP BY f.id, f.name, f.crop "
                 "ORDER BY last_days DESC NULLS FIRST, f.id"

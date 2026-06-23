@@ -186,9 +186,9 @@
 
 <!-- ============ UPLOAD ============ -->
 <main id="uploadScreen" class="hidden">
-  <h1>Загрузить для разметки</h1>
-  <p class="lead">Фото уходят в тот же набор данных, что и из Telegram, но с оригинальным
-    качеством и GPS из EXIF. Можно загрузить сразу несколько кадров.</p>
+  <h1 id="upTitle">Загрузить фото</h1>
+  <p class="lead">Фото и видео сохраняют оригинальное качество и GPS-метку. Можно загрузить
+    сразу несколько кадров.</p>
 
   <div class="pending hidden" id="pending">
     <div class="pendhead">📥 Ожидают отправки: <span id="pendN">0</span>
@@ -201,8 +201,6 @@
       <button class="flushbtn" id="pushEnable">включить</button></div>
   </div>
 
-  <div class="contrib hidden" id="contrib"></div>
-
   <div class="demofields hidden" id="demoFields"></div>
 
   <div class="section">
@@ -210,6 +208,7 @@
     <input id="field" type="text" list="fieldList" autocomplete="off"
            placeholder="Введите номер поля — например 39 или 76/108">
     <datalist id="fieldList"></datalist>
+    <div class="note" id="fieldNote"></div>
   </div>
 
   <label class="scoutmode">
@@ -226,7 +225,7 @@
   </div>
 
   <div class="section scoutvid hidden" id="scoutVid">
-    <label class="fld">🎥 Видео обследование <span style="opacity:.7">(до 3 минут, можно комментировать голосом прямо в видео)</span></label>
+    <label class="fld">🎥 Видео обследование <span style="opacity:.7">(до 3 минут, с голосовым комментарием; отправляется сразу, отдельно от фото)</span></label>
     <button type="button" class="btn ghost" id="vidPick">Снять / выбрать видео</button>
     <input type="file" id="vidFile" accept="video/*" capture="environment" hidden>
     <div class="note" id="vidNote"></div>
@@ -258,7 +257,7 @@
     </div>
   </div>
 
-  <button class="btn" id="submitBtn">Отправить на разметку</button>
+  <button class="btn" id="submitBtn">Отправить</button>
   <div class="note" id="upNote"></div>
 
   <div class="result hidden" id="result">
@@ -267,6 +266,8 @@
     <p id="resText"></p>
     <button class="btn ghost" id="resMore">Загрузить ещё</button>
   </div>
+
+  <div class="contrib hidden" id="contrib" style="margin-top:18px"></div>
 
   <div class="disclaimer">Загружая фото, вы подтверждаете, что они сняты на полях вашего хозяйства.</div>
 </main>
@@ -606,6 +607,10 @@ function buildFd(it){
   return fd;
 }
 async function refreshPending(){ renderPending(await qAll()); }
+async function tryQueue(item){                          // never fail silently (e.g. IndexedDB quota)
+  try{ await qAdd(item); await refreshPending(); return true; }
+  catch(e){ return false; }
+}
 function renderPending(items){
   const p=$('pending');
   if(!items.length){ p.classList.add('hidden'); return; }
@@ -664,8 +669,12 @@ $('vidFile').onchange=async e=>{
   const item={ kind:'video', id:Date.now()+'-'+Math.random().toString(36).slice(2,7), ts:Date.now(),
     field_id: currentFieldId(), fieldLabel: $('field').value||'',
     comment: $('comment').value.trim(), video: f };
-  if(!navigator.onLine){ await qAdd(item); await refreshPending(); note.className='note ok';
-    note.textContent='Нет сети — видео сохранено на телефоне, отправим автоматически.'; return; }
+  if(!navigator.onLine){
+    if(await tryQueue(item)){ note.className='note ok';
+      note.textContent='Нет сети — видео сохранено на телефоне, отправим автоматически.'; }
+    else { note.className='note err';
+      note.textContent='Не хватает места на телефоне для офлайн-видео. Подключитесь к сети и отправьте.'; }
+    return; }
   note.textContent='Загружаю видео… (не закрывайте приложение)';
   try{
     await uploadVideo(item);
@@ -673,8 +682,9 @@ $('vidFile').onchange=async e=>{
     loadContrib();
   }catch(err){
     if(err.status===401||err.status===403){ flashNote('Сессия истекла — войдите заново.'); setTimeout(logout,1200); }
-    else if(!err.status || err.status>=500){ await qAdd(item); await refreshPending();
-      note.className='note ok'; note.textContent='Сеть пропала — видео сохранено, отправим позже.'; }
+    else if(!err.status || err.status>=500){
+      if(await tryQueue(item)){ note.className='note ok'; note.textContent='Сеть пропала — видео сохранено, отправим позже.'; }
+      else { note.className='note err'; note.textContent='Сеть пропала, и не хватает места для офлайн-видео.'; } }
     else { note.className='note err'; note.textContent=err.message||'Не удалось отправить видео.'; }
   }
 };
@@ -687,7 +697,7 @@ async function loadContrib(){
     $('contrib').innerHTML =
       `🌱 Ваш вклад: <b>${s.total}</b> фото` +
       (s.labeled ? ` · <b>${s.labeled}</b> уже обучают ИИ` : '') +
-      `<br>Команда: собрано <b>${s.team_collected}</b> из ${s.team_goal} фото к модели` +
+      `<br>Команда: собрано <b>${s.team_collected}</b> из ${s.team_goal} фото` +
       `<div class="bar"><i style="width:${pct}%"></i></div>`;
     $('contrib').classList.remove('hidden');
   }catch(_){}
@@ -738,9 +748,19 @@ function applyScoutMode(on){
   if(on){ category='scouting'; }
   else if(category==='scouting'){ category=''; [...$('cats').children].forEach(c=>c.classList.remove('on')); }
   buildSpecies();                                        // applies species-hide + scoutHint + scoutVid
+  $('upTitle').textContent  = on ? '🔍 Обследование поля' : 'Загрузить фото';   // never-silent indicator
+  $('submitBtn').textContent = on ? 'Сохранить обследование' : 'Отправить';
   localStorage.setItem('scoutMode', on?'1':'');
 }
 $('scoutMode').onchange = e=>applyScoutMode(e.target.checked);
+
+$('field').addEventListener('input', ()=>{               // echo the matched field / warn on a typo
+  const v=$('field').value.trim(), n=$('fieldNote');
+  if(!v){ n.textContent=''; n.className='note'; return; }
+  const id=currentFieldId();
+  if(id){ const f=fieldsAll.find(x=>x.id===id); n.textContent='✓ '+(f?f.name:''); n.className='note ok'; }
+  else { n.textContent='Поле не распознано — выберите из списка или оставьте пустым'; n.className='note err'; }
+});
 
 // ---------- voice dictation for the comment (same mic flow as the assistant) ----------
 const cmtMic=$('cmtMic'); let cRec=false, cCtx=null, cStream=null, cProc=null, cChunks=[];
@@ -793,6 +813,7 @@ $('submitBtn').onclick = async ()=>{
   const note=$('upNote'); note.className='note'; note.textContent='';
   if(!category){ flashNote('Выберите, что на фото.'); return; }
   if(files.length===0){ flashNote('Добавьте хотя бы одно фото.'); return; }
+  if($('field').value.trim() && !currentFieldId()){ flashNote('Поле не распознано — выберите из списка или оставьте пустым.'); return; }
 
   const item={
     id: Date.now()+'-'+Math.random().toString(36).slice(2,7),
@@ -805,8 +826,9 @@ $('submitBtn').onclick = async ()=>{
   };
 
   if(!navigator.onLine){                                              // no signal → queue on the phone
-    await qAdd(item); clearPhotos(); await refreshPending();
-    flashNote('Нет сети — сохранили на телефоне. Отправим автоматически, когда появится интернет.','ok');
+    if(await tryQueue(item)){ clearPhotos();
+      flashNote('Нет сети — сохранили на телефоне. Отправим автоматически, когда появится интернет.','ok'); }
+    else flashNote('Не хватает места на телефоне для офлайн-сохранения.');
     return;
   }
 
@@ -819,8 +841,8 @@ $('submitBtn').onclick = async ()=>{
       flashNote('Сессия истекла — войдите заново.');
       setTimeout(logout, 1200);
     }else if(!e.status || e.status>=500){                             // network dropped / server down → queue
-      await qAdd(item); clearPhotos(); await refreshPending();
-      flashNote('Сеть пропала — сохранили на телефоне, отправим позже.','ok');
+      if(await tryQueue(item)){ clearPhotos(); flashNote('Сеть пропала — сохранили на телефоне, отправим позже.','ok'); }
+      else flashNote('Сеть пропала, и не хватает места на телефоне.');
     }else{
       flashNote(e.message || 'Не удалось загрузить. Попробуйте ещё раз.');
     }
