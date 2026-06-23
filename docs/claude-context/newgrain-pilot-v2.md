@@ -120,5 +120,16 @@ Decision rationale: opening = breadth (engagement + recognition variety); is_dem
 savings demo. NOT done: full CropWise refresh to ~443 (the ~157 missing are archived/old-season; tooling
 exists — catalog/ingest_fields.py + scripts/cropwise-sync.sh — run if a field doesn't resolve).
 
+**UX audit + fixes (commit 4ae41c7).** Full audit of the Pilot-v2 surface; all 12 issues fixed:
+field box now echoes the matched field / warns + blocks submit on an unresolved typo (was silently off-pilot);
+offline photo+video queue can't fail silently (tryQueue wraps qAdd — IndexedDB quota → clear message);
+scouting mode is now LOUD (h1 → «🔍 Обследование поля», submit → «Сохранить обследование») so the persisted
+toggle isn't a silent footgun; video labelled "отправляется сразу, отдельно от фото"; control-field recency
+counts SCOUTING submissions only (get_demo_fields/_for_nudge filter category='scouting'); dropped misleading
+«к модели» from team-goal copy (app + bot /stats); «ваш вклад» moved below the form to declutter the top;
+neutral screen title «Загрузить фото»; bot _fields_kb stale comment fixed. iOS datalist/mic flakiness can't be
+fixed in code — device test only. **User manual rebuilt for Pilot v2: RU (docs/flagleaf-user-guide.pdf, 5pp) +
+new EN (docs/flagleaf-user-guide-en.pdf, 4pp)** — scouting-centric structure.
+
 **Open/next:** founder prices the 4 Поле-39 products via /setprice; scout Поле 39; /plan; Almas reviews;
 /savings to log. Frame extraction (video visuals → zone data) still the later drone phase.
