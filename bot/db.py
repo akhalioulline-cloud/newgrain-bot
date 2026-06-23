@@ -829,6 +829,43 @@ async def get_all_recent_submissions(limit: int = 15):
         return result.mappings().all()
 
 
+async def create_video_job(submission_id: str, video_key: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO video_jobs (submission_id, video_key) VALUES (:s, :k)"),
+            {"s": submission_id, "k": video_key})
+
+
+async def get_pending_video_jobs(limit: int = 10):
+    async with engine.connect() as conn:
+        rows = await conn.execute(text(
+            "SELECT id, submission_id::text AS submission_id, video_key FROM video_jobs "
+            "WHERE status = 'pending' AND attempts < 5 ORDER BY created_at LIMIT :lim"),
+            {"lim": limit})
+        return rows.mappings().all()
+
+
+async def finish_video_job(job_id: int, submission_id: str, transcript: str) -> None:
+    """Write the narration into the submission's observation and mark the job done."""
+    async with engine.begin() as conn:
+        if transcript:
+            await conn.execute(text(
+                "UPDATE submissions SET comment_voice_text = :t, updated_at = NOW() WHERE id = :s"),
+                {"t": transcript, "s": submission_id})
+        await conn.execute(text(
+            "UPDATE video_jobs SET status = 'done', attempts = attempts + 1, updated_at = now() "
+            "WHERE id = :j"), {"j": job_id})
+
+
+async def fail_video_job(job_id: int) -> None:
+    """Bump attempts; flip to 'failed' after the 5th try so it stops retrying."""
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "UPDATE video_jobs SET attempts = attempts + 1, "
+            "status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END, "
+            "updated_at = now() WHERE id = :j"), {"j": job_id})
+
+
 async def log_plan_run(field_id, field_name, season, baseline_passes,
                        baseline_cost, plan_text, ran_by) -> int | None:
     """Record one generated field plan (the savings-log). Best-effort."""

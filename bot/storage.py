@@ -62,6 +62,18 @@ def put_object_sync(key: str, data: bytes, content_type: str) -> str:
     return _upload_sync(key, data, content_type)
 
 
+def presigned_get(key: str, expires: int = 24 * 3600) -> str:
+    """Plain time-limited GET URL for an object (no content-type override). Used to hand
+    SpeechKit long-audio recognition a readable link to the extracted audio."""
+    if key.startswith("s3://"):
+        key = key.split("/", 3)[3]
+    return _client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.s3_bucket, "Key": key},
+        ExpiresIn=expires,
+    )
+
+
 def presigned_url(key: str, expires: int = 7 * 24 * 3600) -> str:
     """Time-limited GET URL for an object, served inline (so the annotation
     reference HTML opens in the browser). Object Storage is in RU and reachable

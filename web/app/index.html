@@ -198,6 +198,13 @@
     <div class="scouthint hidden" id="scoutHint">📋 Снимайте проходом <b>всё поле</b> — и проблемные, и <b>чистые</b> участки (с включённым GPS). Чистый участок тоже важен: он показывает, где обработка не нужна.</div>
   </div>
 
+  <div class="section scoutvid hidden" id="scoutVid">
+    <label class="fld">🎥 Видео обследование <span style="opacity:.7">(до 3 минут, можно комментировать голосом прямо в видео)</span></label>
+    <button type="button" class="btn ghost" id="vidPick">Снять / выбрать видео</button>
+    <input type="file" id="vidFile" accept="video/*" capture="environment" hidden>
+    <div class="note" id="vidNote"></div>
+  </div>
+
   <div class="section" id="speciesSection">
     <label class="fld" for="species" id="speciesLabel">Вид</label>
     <input id="species" list="speciesList" autocomplete="off" placeholder="Можно пропустить">
@@ -409,6 +416,7 @@ function buildCats(){
 function buildSpecies(){
   const sec=$('speciesSection'), label=$('speciesLabel'), list=$('speciesList'), inp=$('species');
   $('scoutHint').classList.toggle('hidden', category!=='scouting');   // field-scouting guidance
+  $('scoutVid').classList.toggle('hidden', category!=='scouting');    // video option only when scouting
   let dict=null, name='Вид', placeholder='Можно пропустить';
   if(category==='disease'){ dict=DISEASES; name='Болезнь'; }
   else if(category==='pest'){ dict=PESTS; name='Вредитель'; }
@@ -549,7 +557,8 @@ function renderPending(items){
   $('pendN').textContent=items.length;
   $('pendList').innerHTML=items.map(it=>{
     const w=new Date(it.ts).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-    return `<div class="pendrow"><span>${it.fieldLabel||'поле не указано'} · ${it.photos.length} фото</span><span class="pendt">${w}</span></div>`;
+    const what = it.kind==='video' ? '🎥 видео' : `${(it.photos||[]).length} фото`;
+    return `<div class="pendrow"><span>${it.fieldLabel||'поле не указано'} · ${what}</span><span class="pendt">${w}</span></div>`;
   }).join('');
 }
 let flushing=false;
@@ -560,7 +569,8 @@ async function flushQueue(){
   flushing=true;
   for(const it of items){
     try{
-      await api('/api/submit',{method:'POST',body:buildFd(it)});
+      if(it.kind==='video') await uploadVideo(it);       // scouting video → /api/scout-video
+      else await api('/api/submit',{method:'POST',body:buildFd(it)});
       await qDel(it.id); await refreshPending();
     }catch(e){
       if(e.status===401 || e.status===403) break;       // session expired → keep, retry after re-login
@@ -571,6 +581,47 @@ async function flushQueue(){
   flushing=false; await refreshPending();
 }
 function clearPhotos(){ files.forEach(r=>URL.revokeObjectURL(r.url)); files=[]; renderTiles(); $('comment').value=''; }
+
+// ---------- scouting video (uploaded separately to /api/scout-video; transcribed server-side) ----------
+const MAX_VID_MB = 400, MAX_VID_SEC = 185;            // ~3 min + small margin
+function videoDuration(file){
+  return new Promise((res,rej)=>{ const v=document.createElement('video'); v.preload='metadata';
+    v.onloadedmetadata=()=>{ const d=v.duration; URL.revokeObjectURL(v.src); res(d||0); };
+    v.onerror=()=>{ URL.revokeObjectURL(v.src); rej(); }; v.src=URL.createObjectURL(file); });
+}
+async function uploadVideo(item){
+  const fd=new FormData();
+  fd.append('video', item.video, item.video.name||'scout.mp4');
+  fd.append('field_id', item.field_id||'');
+  fd.append('comment', item.comment||'');
+  await api('/api/scout-video', {method:'POST', body:fd});
+}
+$('vidPick').onclick=()=>$('vidFile').click();
+$('vidFile').onchange=async e=>{
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  const note=$('vidNote'); note.className='note';
+  if(f.size > MAX_VID_MB*1048576){ note.className='note err';
+    note.textContent=`Видео слишком большое (${Math.round(f.size/1048576)} МБ). Снимите покороче.`; return; }
+  const dur = await videoDuration(f).catch(()=>0);
+  if(dur > MAX_VID_SEC){ note.className='note err';
+    note.textContent=`Видео ${Math.round(dur)} с — длиннее 3 минут. Снимите покороче.`; return; }
+  const item={ kind:'video', id:Date.now()+'-'+Math.random().toString(36).slice(2,7), ts:Date.now(),
+    field_id: $('field').value||'', fieldLabel: ($('field').selectedOptions[0]||{}).textContent||'',
+    comment: $('comment').value.trim(), video: f };
+  if(!navigator.onLine){ await qAdd(item); await refreshPending(); note.className='note ok';
+    note.textContent='Нет сети — видео сохранено на телефоне, отправим автоматически.'; return; }
+  note.textContent='Загружаю видео… (не закрывайте приложение)';
+  try{
+    await uploadVideo(item);
+    note.className='note ok'; note.textContent='Видео отправлено ✓ Комментарий распознаётся автоматически.';
+    loadContrib();
+  }catch(err){
+    if(err.status===401||err.status===403){ flashNote('Сессия истекла — войдите заново.'); setTimeout(logout,1200); }
+    else if(!err.status || err.status>=500){ await qAdd(item); await refreshPending();
+      note.className='note ok'; note.textContent='Сеть пропала — видео сохранено, отправим позже.'; }
+    else { note.className='note err'; note.textContent=err.message||'Не удалось отправить видео.'; }
+  }
+};
 
 // ---------- contribution line (personal + collective goal) ----------
 async function loadContrib(){

@@ -32,6 +32,7 @@ from bot.config import settings
 from bot.db import (
     add_push_subscription,
     create_submission,
+    create_video_job,
     engine,
     find_duplicate_submission,
     get_active_user,
@@ -357,6 +358,39 @@ async def submit(user=Depends(require_user),
         except Exception:
             logger.exception("submit: review-card delivery failed")
     return {"saved": saved, "skipped": skipped, "review": review}
+
+
+MAX_VIDEO = 400 * 1024 * 1024     # ~400 MB ceiling (covers ~3 min even at high quality)
+
+
+@app.post("/api/scout-video")
+async def scout_video(user=Depends(require_user),
+                      video: UploadFile = File(...),
+                      field_id: str = Form(""), comment: str = Form("")):
+    """A scouting video (Pilot v2): stored as a field-state record; its voice narration is
+    transcribed in the background (video_jobs → collector) into the field's observations.
+    Scouting bypasses the review gate."""
+    data = await video.read()
+    if not data:
+        raise HTTPException(400, "Пустой файл.")
+    if len(data) > MAX_VIDEO:
+        raise HTTPException(413, "Видео слишком большое — снимите покороче (до ~3 минут).")
+    fid = int(field_id) if field_id.strip().isdigit() else None
+    sid = str(uuid4())
+    ctype = video.content_type or "video/mp4"
+    ext = "mov" if "quicktime" in ctype else ("webm" if "webm" in ctype else "mp4")
+    key = f"raw/{user['farm_id']}/{fid or 'other'}/{date.today():%Y-%m-%d}/scout-{sid}.{ext}"
+    try:
+        url = await upload_bytes(key, data, ctype)
+    except Exception:
+        logger.exception("scout-video: S3 upload failed")
+        raise HTTPException(502, "Не удалось сохранить видео. Попробуйте ещё раз.")
+    h = hashlib.sha256(data).hexdigest()
+    await create_submission(sid, user["id"], fid, url, None, None, h)
+    await update_submission(sid, category="scouting", status="ready_for_labeling",
+                            comment_text=(comment.strip() or None))
+    await create_video_job(sid, key)
+    return {"ok": True, "submission_id": sid}
 
 
 @app.post("/api/chat")
