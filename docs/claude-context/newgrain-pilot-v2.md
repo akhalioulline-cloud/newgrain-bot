@@ -104,5 +104,19 @@ into #comment. (App photo comment was text-only before; bot already had voice vi
 scouting↔diagnostic fork is the CATEGORY choice (explicit, not auto-detected); everything downstream keys off
 category=='scouting' (skip species, skip review, skip CVAT export, feed /plan).
 
+**Fields opened + demonstration fields + motivation panel (commit 1222e6a, migration 0037).** All 286
+real fields (single farm) now `is_pilot=true` (agronomists report whatever field they're on — no wasted
+travel). The original 12 pilots kept as **`is_demo`** = "контрольные/demonstration fields" (the ones to
+scout regularly for the savings proof). App: field picker is now a **searchable datalist** over all 286
+(type a number; demo fields marked ⭐); `currentFieldId()` resolves name/number → id. **Motivation UI
+(built):** «🎯 Контрольные поля» panel (`/api/demo-fields` → get_demo_fields w/ last-observed recency) —
+color dot green ≤7d / amber 8–14 / red >14 or never, "N дн. назад", tap → preselect field + scouting mode;
+weekly cadence ("обследуйте раз в неделю"). Recognition/nudge, NOT points (consistent with
+[[newgrain-motivation-no-gamification]]). Bot keeps a 12-button quick-pick (`get_demo_field_list`) +
+«Другое поле» → any of 286 by number (`find_fields_by_number` searches all fields). /fields shows control fields.
+Decision rationale: opening = breadth (engagement + recognition variety); is_demo preserves DEPTH for the
+savings demo. NOT done: full CropWise refresh to ~443 (the ~157 missing are archived/old-season; tooling
+exists — catalog/ingest_fields.py + scripts/cropwise-sync.sh — run if a field doesn't resolve).
+
 **Open/next:** founder prices the 4 Поле-39 products via /setprice; scout Поле 39; /plan; Almas reviews;
 /savings to log. Frame extraction (video visuals → zone data) still the later drone phase.
