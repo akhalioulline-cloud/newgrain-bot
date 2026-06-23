@@ -829,6 +829,41 @@ async def get_all_recent_submissions(limit: int = 15):
         return result.mappings().all()
 
 
+async def set_product_price(name: str, price: float, unit: str, note: str | None = None) -> None:
+    """Upsert a product's unit price (₽ per л or кг). Founder-supplied — never invented."""
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO product_prices (product_name, price, unit, note) "
+            "VALUES (:n, :p, :u, :note) "
+            "ON CONFLICT (product_name) DO UPDATE SET "
+            "price = EXCLUDED.price, unit = EXCLUDED.unit, note = EXCLUDED.note, updated_at = now()"),
+            {"n": name.strip(), "p": price, "u": unit, "note": note})
+
+
+async def get_product_prices() -> dict:
+    """All prices keyed by lowercased product name → {price, unit}."""
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            "SELECT product_name, price, unit FROM product_prices"))).mappings().all()
+        return {r["product_name"].strip().lower(): {"price": float(r["price"]), "unit": r["unit"]}
+                for r in rows}
+
+
+async def get_protection_products(farm_id: int | None = None):
+    """Distinct products used in protection history (so we know what needs pricing).
+    Farm-scoped when farm_id is given."""
+    async with engine.connect() as conn:
+        if farm_id:
+            return (await conn.execute(text(
+                "SELECT DISTINCT ft.product FROM field_treatments ft JOIN fields f ON f.id = ft.field_id "
+                "WHERE f.farm_id = :fm AND ft.op_category = 'protection' "
+                "  AND ft.product IS NOT NULL AND ft.product <> '' ORDER BY ft.product"),
+                {"fm": farm_id})).scalars().all()
+        return (await conn.execute(text(
+            "SELECT DISTINCT product FROM field_treatments WHERE op_category = 'protection' "
+            "AND product IS NOT NULL AND product <> '' ORDER BY product"))).scalars().all()
+
+
 async def get_field_protection_baseline(field_id: int):
     """This-season blanket protection passes on a field — the baseline the plan's savings
     are measured against (real CropWise records: product, dose, treated area, target, date).

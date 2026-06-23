@@ -13,14 +13,55 @@ import logging
 
 from bot.agro_chat import _complete
 from bot.config import settings
+import re
+
 from bot.db import (
     field_card_text,
     get_field_observations,
     get_field_protection_baseline,
+    get_product_prices,
     get_registered_products,
     producer_label,
     resolve_field,
 )
+
+
+def parse_dose(s):
+    """Free-text dose → (value_per_ha, base_unit in {'л','кг'}) or (None, None).
+    Normalises мл→л and г/мг→кг so it matches the price unit. Order matters: check
+    кг before г, мл before л."""
+    if not s:
+        return None, None
+    t = str(s).lower().replace(",", ".")
+    m = re.search(r"(\d+(?:\.\d+)?)", t)
+    if not m:
+        return None, None
+    val = float(m.group(1))
+    if "мл" in t:
+        return val / 1000, "л"
+    if "кг" in t:
+        return val, "кг"
+    if "мг" in t:
+        return val / 1_000_000, "кг"
+    if re.search(r"\bг\b|г/га|г\.", t):
+        return val / 1000, "кг"
+    if "л" in t:
+        return val, "л"
+    return None, None
+
+
+def _baseline_cost(passes, prices, field_area):
+    """Deterministic ₽ baseline from the real blanket passes, for products we have a price
+    for and a parseable, unit-matching dose. Returns (total_rub, priced_count, total_count)."""
+    total, priced = 0.0, 0
+    for p in passes:
+        val, unit = parse_dose(p["dose"])
+        pr = prices.get((p["product"] or "").strip().lower())
+        area = float(p["area_ha"]) if p["area_ha"] is not None else (float(field_area) if field_area else None)
+        if val and pr and area and pr["unit"] == unit:
+            total += val * area * pr["price"]
+            priced += 1
+    return total, priced, len(passes)
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +161,22 @@ async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
     obs = await get_field_observations(field["id"])
     prods = await get_registered_products(crop) if crop else []
     season, passes = await get_field_protection_baseline(field["id"])
+    prices = await get_product_prices()
+    cost_rub, priced, n_pass = _baseline_cost(passes, prices, field.get("area_ha"))
+    cost_line = ""
+    if priced:
+        cost_line = (f"ФАКТИЧЕСКИЕ ЗАТРАТЫ НА СЗР (сезон {season}, по {priced} из {n_pass} обработок с известной "
+                     f"ценой): ≈ {cost_rub:,.0f} ₽ за сезон. Это база в рублях — оцени экономию плана как долю от "
+                     f"неё (экономия ₽ = база × сокращение площади/расхода).".replace(",", " "))
 
-    user_blob = "\n\n".join([
+    user_blob = "\n\n".join(p for p in [
         f"ДАННЫЕ ПО ПОЛЮ:\n{card}",
         _baseline_block(season, passes, field.get("area_ha")),
+        cost_line or None,
         _obs_block(obs),
         _prod_block(crop or "—", prods),
         "ЗАДАЧА: составь план работ по этому полю по заданной структуре.",
-    ])
+    ] if p)
     try:
         plan = await asyncio.to_thread(_complete, _PLAN_SYS, user_blob, 1500, 0.3)
     except Exception as exc:
@@ -135,5 +184,8 @@ async def generate_field_plan(field_query: str, farm_id: int | None) -> str:
         return "Не удалось составить план (сервис ИИ недоступен). Попробуйте позже."
     head = f"📋 План работ — {field['name']}" + (f" ({crop})" if crop else "")
     if passes:
-        head += f"\nСплошных обработок СЗР в сезоне {season}: {len(passes)} (база для сравнения)"
+        head += f"\nСплошных обработок СЗР в сезоне {season}: {len(passes)}"
+        if priced:
+            head += f" · затраты ≈ {cost_rub:,.0f} ₽".replace(",", " ")
+        head += " (база для сравнения)"
     return head + "\n\n" + plan

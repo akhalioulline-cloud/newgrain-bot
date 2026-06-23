@@ -47,8 +47,11 @@ from bot.db import (
     get_top_species,
     find_similar_treatment,
     get_user_history,
+    get_product_prices,
+    get_protection_products,
     get_team_progress,
     get_user_stats,
+    set_product_price,
     get_unsynced_bot_treatments,
     insert_bot_treatment,
     lookup_active_substance,
@@ -392,6 +395,50 @@ async def cmd_plan(message: Message, command: CommandObject, user) -> None:
         logger.exception("cmd_plan failed")
         plan = "Не удалось составить план. Попробуйте позже."
     await message.answer(plan)
+
+
+@router.message(Command("setprice"))
+async def cmd_setprice(message: Message, command: CommandObject, user) -> None:
+    """Admin: set a product's unit price for ₽ savings — /setprice Корсар, ВРК = 1200 л."""
+    if not _is_admin(user):
+        await message.answer("Команда только для администратора.")
+        return
+    args = (command.args or "").strip()
+    if "=" not in args:
+        await message.answer("Формат: /setprice Корсар, ВРК = 1200 л\n(ед. — л или кг, цена за единицу в ₽)")
+        return
+    name, rhs = args.split("=", 1)
+    name = name.strip()
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(л|кг)", rhs.strip(), re.I)
+    if not name or not m:
+        await message.answer("Не понял. Пример: /setprice Корсар, ВРК = 1200 л")
+        return
+    price = float(m.group(1).replace(",", "."))
+    unit = m.group(2).lower()
+    await set_product_price(name, price, unit)
+    await message.answer(f"✓ Цена сохранена: {name} — {price:g} ₽/{unit}. /prices — посмотреть все.")
+
+
+@router.message(Command("prices"))
+async def cmd_prices(message: Message, user) -> None:
+    """Admin: current prices + which products from your fields' history still need one."""
+    if not _is_admin(user):
+        await message.answer("Команда только для администратора.")
+        return
+    prices = await get_product_prices()
+    used = await get_protection_products(user["farm_id"])
+    have, missing = [], []
+    for prod in used:
+        pr = prices.get((prod or "").strip().lower())
+        (have if pr else missing).append(
+            f"• {prod} — {pr['price']:g} ₽/{pr['unit']}" if pr else f"• {prod}")
+    parts = []
+    if have:
+        parts.append("💰 Цены заданы:\n" + "\n".join(have))
+    if missing:
+        parts.append("❓ Без цены (нужны для расчёта экономии в ₽):\n" + "\n".join(missing)
+                     + "\n\nДобавьте: /setprice Название = 1200 л")
+    await message.answer("\n\n".join(parts) if parts else "По вашим полям нет препаратов в истории.")
 
 
 @router.message(Command("field"))
