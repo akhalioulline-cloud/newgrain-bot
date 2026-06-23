@@ -166,6 +166,26 @@ async def get_pilot_fields(farm_id: int | None):
         return result.mappings().all()
 
 
+async def get_demo_fields_for_nudge():
+    """Every demonstration field with days-since-last-observed and the tg_user_id of whoever
+    last observed it — for the «вы давно не были» push when a field goes red."""
+    async with engine.connect() as conn:
+        rows = await conn.execute(text(
+            """
+            SELECT f.id, f.name,
+                   EXTRACT(DAY FROM now() - max(s.created_at))::int AS last_days,
+                   (SELECT u.tg_user_id FROM submissions s2 JOIN users u ON u.id = s2.user_id
+                      WHERE s2.field_id = f.id AND s2.status NOT IN ('draft','rejected','duplicate')
+                      ORDER BY s2.created_at DESC LIMIT 1) AS last_tg
+            FROM fields f
+            LEFT JOIN submissions s ON s.field_id = f.id
+              AND s.status NOT IN ('draft','rejected','duplicate')
+            WHERE f.is_demo
+            GROUP BY f.id, f.name
+            """))
+        return rows.mappings().all()
+
+
 async def get_demo_field_list(farm_id: int | None):
     """The demonstration fields (id/name/crop/area) for the bot's quick-pick keyboard —
     so it stays a short list of 12, not all 286 (any field is still reachable by typing a number)."""

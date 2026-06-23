@@ -441,7 +441,7 @@ async function loadDemoFields(){
     const r = await api('/api/demo-fields'); const fs=r.fields||[];
     const el=$('demoFields');
     if(!fs.length){ el.classList.add('hidden'); return; }
-    const color=d=> d==null?'#c0392b' : d<=7?'#3a7d44' : d<=14?'#c8902b':'#c0392b';
+    const color=d=> d==null?'#c0392b' : d<=7?'#3a7d44' : d<=10?'#c8902b':'#c0392b';  // ≤7 нед.цель · 8–10 · >10 красный
     const when =d=> d==null?'ещё не обследовано' : d<=0?'сегодня' : d+' дн. назад';
     el.innerHTML='<div class="demohead">🎯 Контрольные поля — обследуйте раз в неделю</div>'+
       fs.map(f=>`<div class="demorow" data-name="${f.name}">
