@@ -55,5 +55,12 @@ this season + 19 scouting observations — the richest). This-season baseline = 
 Runbook: scout Поле 39 (app «Обследование поля», whole field incl. clean, GPS) → /plan Поле 39 → review
 plan-vs-blanket saving (Almas). The saving % still needs GPS scouting coverage to firm up.
 
-**Open/next:** founder prices the 4 products; agronomist scouts Поле 39; Almas reviews the first plan;
-later a formal savings-log table if we want to track loops over time.
+**Savings-log (done, commit a4b2053):** `plan_runs` table (0035) — every /plan (bot or app) logs
+field/season/baseline_passes/baseline_cost(₽ when priced)/plan_text/ran_by. `/savings` (admin) lists recent
+runs; `/savings Поле 39 = точечно, экономия ~30%` records the realized outcome on the latest run for a field.
+(asyncpg note: nullable-param `(:x IS NULL OR ...)` throws AmbiguousParameterError — build the WHERE
+conditionally instead.) First entry logged: Поле 39, база 8 обр.
+
+**Open/next:** founder prices the 4 Поле-39 products (Когорта/Трейсер/Адью Ж = л, Алсион ВДГ = кг) via
+/setprice → ₽ baseline appears; agronomist scouts Поле 39 (app «Обследование поля»); /plan Поле 39; Almas
+reviews; record the result with /savings. Loop tooling complete: scout → /plan (auto-logged) → /savings.
