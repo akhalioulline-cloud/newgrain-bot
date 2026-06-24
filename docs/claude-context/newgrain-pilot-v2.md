@@ -52,6 +52,7 @@ priced+parseable passes, stays qualitative otherwise.
 this season + 19 scouting observations — the richest). This-season baseline = 2 spray dates (15.05, 11.06)
 × 4 products → applied volumes: Трейсер 67.8 л, Когорта 452 л, Алсион ВДГ 1.808 кг, Адью Ж 45.2 л.
 **Pricing shortlist = those 4 products** — founder runs /setprice for each, then ₽ baseline computes.
+**PRICES SET (24 Jun, founder-supplied, с НДС):** Адью Ж 560 ₽/л · Трейсер 2050 ₽/л · Когорта 1590 ₽/л · Алсион ВДГ 6980 ₽/**кг** (stored under exact field_treatments names incl. "Адью, Ж (900 г/л)" so the lookup matches). **Verified ₽ baseline for Поле 39 / 2026 = 895 602 ₽** (8/8 passes priced — 2 dates 15.05 & 11.06 × 4 products; Когорта ≈80% of spend → the savings lever). NEXT: scout Поле 39 (app «Обследование», whole field + GPS) → /plan Поле 39 → Almas review → /savings.
 Runbook: scout Поле 39 (app «Обследование поля», whole field incl. clean, GPS) → /plan Поле 39 → review
 plan-vs-blanket saving (Almas). The saving % still needs GPS scouting coverage to firm up.
 
