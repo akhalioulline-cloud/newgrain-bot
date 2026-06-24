@@ -9,7 +9,7 @@ metadata:
 
 **Updated 2026-06-11.** (Earlier May-25 content was superseded — Whisper→Yandex, prod deployed, etc.)
 
-**Live in production** (Yandex Cloud VM 158.160.46.89, `docker-compose.prod.yml`): photo flow (photo → field → category → species/disease/pest → comment → S3 + `submissions` row), real pilot fields (New Grain Co), nightly backups, commands (/history /stats /fields /help /problem /finish /cancel /all /adduser /removeuser). Bot polls via the **Cloudflare relay** (`TELEGRAM_API_BASE`) to get around the RKN Telegram block.
+**Live in production** (Yandex Cloud VM 111.88.248.159 — static; was ephemeral 158.160.46.89, `docker-compose.prod.yml`): photo flow (photo → field → category → species/disease/pest → comment → S3 + `submissions` row), real pilot fields (New Grain Co), nightly backups, commands (/history /stats /fields /help /problem /finish /cancel /all /adduser /removeuser). Bot polls via the **Cloudflare relay** (`TELEGRAM_API_BASE`) to get around the RKN Telegram block.
 
 **Voice/text — both Yandex now** (migrated OFF faster-whisper 10 Jun): RU transcription = **Yandex SpeechKit** (`bot/transcribe.py`); RU→EN translation of voice AND typed comments = **YandexGPT** (`bot/translate_llm.py`), grounded in the species dict. Needs `YC_API_KEY`+`YC_FOLDER_ID`. `comment_voice_text(_en)`, `comment_text_en` columns. **Bug fixed:** `update_submission` allowed-set had dropped `comment_voice_text`.
 
