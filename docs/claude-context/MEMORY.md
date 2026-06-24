@@ -32,3 +32,4 @@ are intentionally excluded.)
 - [newgrain-motivation-no-gamification](newgrain-motivation-no-gamification.md) — no points/leaderboards; loop-closing recognition + team goal instead (why + what's built)
 - [newgrain-pilot-v2](newgrain-pilot-v2.md) — pivot to field treatment-PLANS + chemical-savings metric; /plan generator, scouting capture, one-pager
 - [feedback-auto-handoff](feedback-auto-handoff.md) — run `make handoff` proactively when a unit of work is done; don't wait to be asked
+- [newgrain-pyrus-prices](newgrain-pyrus-prices.md) — Pyrus connector (alive) = real historical price/payments source; add bot to payment lists to enumerate → extract → product_prices
