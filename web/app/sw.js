@@ -5,7 +5,7 @@
  *   - other GETs (icons, fonts, css) → cache-first, then network (and cache it).
  * Bump CACHE to ship a new shell; old caches are pruned on activate.
  */
-const CACHE = 'flagleaf-shell-v18';
+const CACHE = 'flagleaf-shell-v19';
 const SHELL = [
   '/app/',
   '/app/index.html',
@@ -88,4 +88,40 @@ self.addEventListener('notificationclick', (e) => {
       return self.clients.openWindow(target);
     })
   );
+});
+
+/* ---- Background Sync (Android) ---- when signal returns the OS wakes us even if the app is
+ * closed. We don't upload from here (no session token in the SW, and we'd risk double-sends);
+ * instead: if a page is open, tell it to flush; otherwise nudge the user to reopen. */
+function pendingCount() {
+  return new Promise((res) => {
+    let done = (n) => { done = () => {}; res(n); };
+    try {
+      const r = indexedDB.open('flagleaf-q', 1);
+      r.onsuccess = () => {
+        try {
+          const cq = r.result.transaction('q', 'readonly').objectStore('q').count();
+          cq.onsuccess = () => done(cq.result || 0);
+          cq.onerror = () => done(0);
+        } catch (_) { done(0); }
+      };
+      r.onerror = () => done(0);
+    } catch (_) { done(0); }
+  });
+}
+
+self.addEventListener('sync', (e) => {
+  if (e.tag !== 'flagleaf-flush') return;
+  e.waitUntil((async () => {
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (clientsList.length) { clientsList.forEach((c) => c.postMessage({ type: 'flush' })); return; }
+    const n = await pendingCount();
+    if (n > 0 && self.registration.showNotification) {
+      await self.registration.showNotification('Flagleaf', {
+        body: `📤 ${n} ${n === 1 ? 'кадр ждёт' : 'кадров ждут'} отправки — откройте, чтобы отправить.`,
+        icon: '/icon-192.png', badge: '/icon-192.png', tag: 'flagleaf-flush',
+        data: { url: '/app/' }
+      });
+    }
+  })());
 });

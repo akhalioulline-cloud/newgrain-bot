@@ -225,9 +225,9 @@
   </div>
 
   <div class="section scoutvid hidden" id="scoutVid">
-    <label class="fld">🎥 Видео обследование <span style="opacity:.7">(до 3 минут, с голосовым комментарием; отправляется сразу, отдельно от фото)</span></label>
-    <button type="button" class="btn ghost" id="vidPick">Снять / выбрать видео</button>
-    <input type="file" id="vidFile" accept="video/*" capture="environment" hidden>
+    <label class="fld">🎥 Видео обследование <span style="opacity:.7">(до 3 минут, с голосовым комментарием; отправится автоматически — даже без сети, отдельно от фото)</span></label>
+    <button type="button" class="btn ghost" id="vidPick">Снять видео или выбрать из галереи</button>
+    <input type="file" id="vidFile" accept="video/*" hidden>
     <div class="note" id="vidNote"></div>
   </div>
 
@@ -608,10 +608,15 @@ function buildFd(it){
 }
 async function refreshPending(){ renderPending(await qAll()); }
 async function tryQueue(item){                          // never fail silently (e.g. IndexedDB quota)
-  try{ await qAdd(item); await refreshPending(); return true; }
+  try{ await qAdd(item); await refreshPending(); requestBgSync(); return true; }
   catch(e){ return false; }
 }
+function requestBgSync(){                               // Android: wake the SW when signal returns (no-op on iOS)
+  if(!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+  navigator.serviceWorker.ready.then(reg=>reg.sync.register('flagleaf-flush')).catch(()=>{});
+}
 function renderPending(items){
+  try{ if(items.length) navigator.setAppBadge?.(items.length); else navigator.clearAppBadge?.(); }catch(_){}
   const p=$('pending');
   if(!items.length){ p.classList.add('hidden'); return; }
   p.classList.remove('hidden');
@@ -876,6 +881,14 @@ $('navRefresh').onclick = () => location.reload();
 
 $('flushNow').onclick = flushQueue;                  // manual «отправить сейчас»
 window.addEventListener('online', flushQueue);       // auto-send the moment signal returns
+// Reopening / returning to the app always flushes — the reliable cross-platform path (incl. iPhone,
+// where true background upload is impossible). visibilitychange covers PWA resume; pageshow covers bfcache.
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') flushQueue(); });
+window.addEventListener('pageshow', flushQueue);
+window.addEventListener('focus', flushQueue);
+// Android Background Sync wakes the SW, which pings any open page to flush.
+if('serviceWorker' in navigator)
+  navigator.serviceWorker.addEventListener('message', e=>{ if(e.data && e.data.type==='flush') flushQueue(); });
 $('pushEnable').onclick = enablePush;
 
 boot();
