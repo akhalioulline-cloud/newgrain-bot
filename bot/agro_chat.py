@@ -12,6 +12,7 @@ import requests
 from bot.config import settings
 from bot.db import get_registered_products, producer_label, search_literature
 from bot.epv import epv_block
+from bot import wiki_source
 
 _ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -190,19 +191,26 @@ def _lexicon_extract(question: str):
     return None
 
 
-async def _registry_grounding(question: str) -> str | None:
-    """For a «чем обработать культуру X от Y» question, pull registered products from the
-    Госкаталог so the answer stays correct (real, registered options only)."""
+async def _extract_ct(question: str):
+    """Resolve {crop, target, weed_class} for a protection question — lexicon fast-path
+    (no LLM), else the pro extractor on a miss. None if not a protection question or
+    nothing resolved. Extracted once and shared by product + Wikipedia grounding."""
     if not _REC_RE.search(question):
         return None
     ct = _lexicon_extract(question)          # no-LLM fast path — kills the second call on common questions
-    if ct is None:                           # miss → fast lite-model extractor (not pro)
+    if ct is None:                           # miss → the capable extractor
         try:
             ct = _clean_json(await asyncio.to_thread(
                 _complete, _EXTRACT_SYS, question, 200, 0.0, settings.yc_extract_model))
         except Exception:
             return None
-    if not ct or not ct.get("crop"):
+    return ct if (ct and ct.get("crop")) else None
+
+
+async def _registry_grounding(question: str, ct) -> str | None:
+    """For a «чем обработать культуру X от Y» question, pull registered products from the
+    Госкаталог so the answer stays correct (real, registered options only)."""
+    if not ct:
         return None
     crop, target, klass = ct["crop"], ct.get("target"), ct.get("weed_class")
     prods = await get_registered_products(crop, target) if target else []
@@ -303,6 +311,42 @@ def _epv_grounding(question: str) -> str | None:
     return epv_block(question) or None      # epv._match substring-detects the crop in the text
 
 
+# Biology/identification intent — the questions where a Wikipedia species description helps
+# (as opposed to «what to spray», which the Госкаталог/ЭПВ already cover).
+_BIO_RE = re.compile(
+    r"что за|что это|как выглядит|как отлич|отличить|биолог|признак|чем опас|вред(?:ит|онос)|"
+    r"жизненн|описан|распозна|определ|как понять|что такое", re.I)
+
+
+def _weed_term(question: str) -> str | None:
+    """A weed object mentioned in the question (from the lexicon), even without a crop —
+    so a pure «что за растение амброзия» still finds a species to look up on Wikipedia."""
+    ql = f" {question.lower()} "
+    for stem, (target, _klass) in _WEED_LEX:
+        if stem in ql:
+            return target
+    return None
+
+
+async def _wikipedia_grounding(question: str, ct) -> str | None:
+    """RU Wikipedia intro on the species/object — biology, morphology, phenology. Fires on
+    identification/biology intent when we can name the object (from the shared extraction or
+    the weed lexicon). CC BY-SA (founder-approved, LICENSING §6 v1.2): model paraphrases and
+    cites the link. Best-effort, runs concurrently with the other grounding."""
+    if not _BIO_RE.search(question):
+        return None
+    term = (ct.get("target") if ct else None) or _weed_term(question)
+    if not term:
+        return None
+    res = await asyncio.to_thread(wiki_source.lookup, term)
+    if not res:
+        return None
+    extract, url = res
+    return ("СПРАВКА ПО ВИДУ (Wikipedia, CC BY-SA — если используешь для описания биологии/"
+            f"морфологии, кратко сошлись на источник: {url}). Не копируй дословно, перескажи:\n"
+            f"{extract}")
+
+
 async def _assemble(question: str, context: str | None = None,
                     history: str | None = None):
     """Ground the question (CropWise field data + Госкаталог products + literature) and
@@ -315,8 +359,15 @@ async def _assemble(question: str, context: str | None = None,
         prev_qs = re.findall(r"Пользователь:\s*(.+)", history)
         if prev_qs:
             ground_q = f"{prev_qs[-1].strip()}. {question}"
-    grounding = await _registry_grounding(ground_q)
-    literature = await _literature_grounding(ground_q)
+    # Extract crop+target once, then run the (independent) grounding lookups concurrently so
+    # wall-time is the slowest one, not their sum — Госкаталог (DB), CyberLeninka (DB) and
+    # Wikipedia (network) no longer stack.
+    ct = await _extract_ct(ground_q)
+    grounding, literature, wiki = await asyncio.gather(
+        _registry_grounding(ground_q, ct),
+        _literature_grounding(ground_q),
+        _wikipedia_grounding(ground_q, ct),
+    )
     epv = _epv_grounding(ground_q)          # farm's own ЭПВ thresholds (owned, authoritative)
     parts = [p for p in (
         f"ДАННЫЕ ПО ПОЛЮ:\n{context}" if context else None,
@@ -326,6 +377,7 @@ async def _assemble(question: str, context: str | None = None,
         epv,
         grounding,
         literature,
+        wiki,
         f"ВОПРОС: {question}",
     ) if p]
     # Structured answer for real recommendation questions (grounding fired); conversational
