@@ -70,6 +70,7 @@ from bot.ndvi_watch import format_digest
 from bot.oplog_match import is_fieldless_op, looks_like_oplog
 from bot.parse_op import parse_operation, parse_operations
 from bot.push import send_push
+from bot.review_actions import approved_status, notify_submitter_decision
 from bot.field_plan import generate_field_plan
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
 from bot.storage import delete_object, download_bytes, upload_bytes
@@ -1303,13 +1304,6 @@ _CAT_BY_RU = {label.lower(): code for label, code in CATEGORIES}
 _CAT_BY_RU.update({"сорняки": "weed", "болезни": "disease", "вредители": "pest"})
 
 
-def _approved_status(sub) -> str:
-    """Where a submission goes once the chief agronomist approves it: a scouting
-    video/pass is field-state → terminal 'stored' (feeds /plan, no CVAT); a diagnostic
-    photo goes into the labeling queue → 'ready_for_labeling'."""
-    return "stored" if (sub and sub.get("category") == "scouting") else "ready_for_labeling"
-
-
 def _review_caption(sub) -> str:
     cat = CATEGORY_LABELS.get(sub["category"], sub["category"] or "—")
     com = sub["comment_text"] or sub["comment_voice_text"]
@@ -1390,49 +1384,29 @@ async def on_review(callback: CallbackQuery, state: FSMContext, user) -> None:
         await _ack(callback, "Только старший агроном проверяет фото.")
         return
     _, action, sid = callback.data.split(":", 2)
-    if action == "ok":
+    if action in ("ok", "no"):
         sub = await get_submission_review(sid)
+        if not sub or sub["status"] != "pending_review":   # already handled (app / other chief)
+            await _ack(callback, "Уже обработано")
+            await _drop_kb(callback)
+            return
+    if action == "ok":
         # Scouting videos are field-state, not annotation targets: a confirmed one goes
         # to terminal 'stored' (feeds /plan) instead of into the CVAT labeling queue.
         is_scouting = bool(sub and sub["category"] == "scouting")
-        await update_submission(sid, status=_approved_status(sub))
+        await update_submission(sid, status=approved_status(sub))
         await _drop_kb(callback)
-        if is_scouting:
-            await _ack(callback, "Подтверждено ✓")
-            await callback.message.answer("✅ Видео обследования подтверждено.")
-        else:
-            await _ack(callback, "Отправлено на разметку ✓")
-            await callback.message.answer("✅ Отправлено на разметку.")
-        if sub and sub["submitter_tg"]:
-            what = "видео обследования" if is_scouting else "фото"
-            tail = "" if is_scouting else " и отправлено на разметку"
-            try:
-                await callback.bot.send_message(
-                    sub["submitter_tg"],
-                    f"✅ Ваше {what} проверено старшим агрономом{tail}. Спасибо!")
-            except Exception:
-                logger.exception("notify submitter (approve) failed")
-            try:
-                await send_push(sub["submitter_tg"],
-                                ("Видео проверено ✅" if is_scouting else "Фото проверено ✅"),
-                                f"Старший агроном подтвердил ваше {what}.")
-            except Exception:
-                logger.exception("push submitter (approve) failed")
+        await _ack(callback, "Подтверждено ✓")
+        await callback.message.answer(
+            "✅ Видео обследования подтверждено." if is_scouting else "✅ Отправлено на разметку.")
+        await notify_submitter_decision(callback.bot, sub, "approve")
         return
     if action == "no":                          # reject (video review card)
-        sub = await get_submission_review(sid)
         await update_submission(sid, status="rejected")
         await _ack(callback, "Отклонено")
         await _drop_kb(callback)
         await callback.message.answer("🚫 Отклонено — в план не пойдёт.")
-        if sub and sub["submitter_tg"]:
-            what = "видео обследования" if sub["category"] == "scouting" else "фото"
-            try:
-                await callback.bot.send_message(
-                    sub["submitter_tg"],
-                    f"🚫 Ваше {what} отклонено старшим агрономом.")
-            except Exception:
-                logger.exception("notify submitter (reject) failed")
+        await notify_submitter_decision(callback.bot, sub, "reject")
         return
     attr = _REV_ATTR.get(action)
     if not attr:
@@ -1479,7 +1453,7 @@ async def on_review_edit(message: Message, state: FSMContext, user) -> None:
     # The correction itself finalizes the submission — straight to the annotator (or,
     # for a scouting video, terminal 'stored'). The junior is only notified.
     sub = await get_submission_review(sid)          # re-read: category may have just changed
-    await update_submission(sid, status=_approved_status(sub))
+    await update_submission(sid, status=approved_status(sub))
     await state.clear()
     if sub and sub["submitter_tg"]:
         try:

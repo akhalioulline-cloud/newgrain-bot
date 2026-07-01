@@ -397,6 +397,7 @@ async function enterApp(me){
   $('hdrSub').insertAdjacentHTML('beforeend',
     ' · <button class="logout" id="logoutBtn">выйти</button>');
   $('logoutBtn').onclick = logout;
+  addReviewTab(me);                              // «Проверка» tab — chief agronomist only
   buildCats();
   buildSpecies();
   applyScoutMode(localStorage.getItem('scoutMode')==='1');   // restore scouting session mode
@@ -406,6 +407,15 @@ async function enterApp(me){
   loadContrib();                                 // «ваш вклад» + team goal
   await loadFields();
   loadDemoFields();                              // «контрольные поля» nudge
+}
+
+async function addReviewTab(me){
+  if(me.role!=='chief_agronomist' && me.role!=='admin') return;
+  const nav = $('tabs'); if(!nav || nav.querySelector('.tab-review')) return;
+  const a = document.createElement('a');
+  a.className='tab tab-review'; a.href='/app/review.html'; a.textContent='✅ Проверка';
+  nav.appendChild(a);
+  try{ const {count}=await api('/api/review/count'); if(count>0) a.textContent=`✅ Проверка (${count})`; }catch(e){}
 }
 
 function logout(){

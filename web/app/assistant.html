@@ -378,6 +378,25 @@ document.getElementById('cSend').onclick=async()=>{
 document.getElementById('navBack').onclick = () => history.back();
 document.getElementById('navFwd').onclick = () => history.forward();
 document.getElementById('navRefresh').onclick = () => location.reload();
+
+// Show the «Проверка» tab for a logged-in chief agronomist, so the nav is consistent
+// across the app's pages (this assistant page itself needs no login).
+(async ()=>{
+  const s = localStorage.getItem('flagleaf_session') || '';
+  if(!s) return;
+  try{
+    const r = await fetch('/api/me',{headers:{'x-session':s}});
+    if(!r.ok) return;
+    const me = await r.json();
+    if(me.role!=='chief_agronomist' && me.role!=='admin') return;
+    const nav = document.querySelector('nav.tabs');
+    if(!nav || nav.querySelector('.tab-review')) return;
+    const a=document.createElement('a'); a.className='tab tab-review';
+    a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
+    const c = await fetch('/api/review/count',{headers:{'x-session':s}});
+    if(c.ok){ const {count}=await c.json(); if(count>0) a.textContent=`✅ Проверка (${count})`; }
+  }catch(e){}
+})();
 </script>
 <script>
 if ('serviceWorker' in navigator) {

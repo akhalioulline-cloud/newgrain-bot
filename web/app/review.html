@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLAGLEAF — проверка</title>
+<meta name="description" content="Проверка фото и видео агрономов старшим агрономом Flagleaf.">
+<link rel="manifest" href="/app/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<meta name="apple-mobile-web-app-title" content="Flagleaf">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#b9994b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --gold:#b9994b; --ink:#1a1a1a; --bg:#faf8f4; --card:#fff;
+         --muted:#8a8a8a; --line:#e7e2d8; --ok:#3a7d44; --bad:#c0392b; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
+       display:flex;flex-direction:column;min-height:100dvh}
+  header{display:block;padding:0;padding-top:env(safe-area-inset-top);border-bottom:1px solid var(--line);
+         background:#fff;position:sticky;top:0;z-index:5}
+  .hrow{display:flex;align-items:center;gap:10px;padding:12px 16px}
+  .navbtns{display:flex;gap:3px;margin-right:2px;flex:none}
+  .navb{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;
+        font-size:17px;line-height:1;color:var(--ink);cursor:pointer;padding:0}
+  .navb:active{background:#f0ece2}
+  .tabs{display:flex;border-top:1px solid var(--line)}
+  .tab{flex:1;text-align:center;padding:10px 8px;font-size:14px;font-weight:600;color:var(--muted);
+       text-decoration:none;border-bottom:2px solid transparent}
+  .tab.on{color:var(--ink);border-bottom-color:var(--gold)}
+  .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
+  .logo b{color:var(--gold)}
+  .sub{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.3}
+  .sub .who{color:var(--ink);font-weight:500}
+  .sub a,.logout{color:var(--gold);text-decoration:none;cursor:pointer;background:none;border:none;font:inherit;padding:0}
+  main{flex:1;width:100%;max-width:640px;margin:0 auto;padding:18px 16px 32px}
+  h1{font-family:Oswald;font-weight:600;font-size:22px;margin:0 0 4px}
+  .lead{font-size:14px;color:var(--muted);line-height:1.5;margin:0 0 18px}
+  label.fld{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  select,input[type=text]{width:100%;font:inherit;font-size:15px;color:var(--ink);
+        border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;outline:none}
+  select:focus,input:focus{border-color:var(--gold)}
+  .empty{text-align:center;color:var(--muted);font-size:15px;padding:48px 12px;line-height:1.6}
+
+  .rcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:16px}
+  .rmedia{width:100%;border-radius:10px;background:#f2eee4;display:block;margin-bottom:10px;
+        max-height:360px;object-fit:contain}
+  .rmedia.vid{max-height:none}
+  .rbadge{display:inline-block;font-size:12px;font-weight:600;color:#6b541f;background:#faf6ec;
+        border:1px solid var(--gold);border-radius:20px;padding:3px 10px;margin-bottom:8px}
+  .rwho{font-size:13px;color:var(--muted);margin-bottom:2px}
+  .rtrans{font-size:13.5px;color:var(--ink);background:#f6f1e6;border-radius:10px;padding:9px 11px;
+        margin:10px 0 2px;line-height:1.5;white-space:pre-wrap}
+  .rtrans .tl{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;font-weight:600}
+  .acts{display:flex;gap:8px;margin-top:14px}
+  .btn{font:inherit;font-weight:600;font-size:15px;border-radius:12px;padding:12px 14px;cursor:pointer;
+        border:1px solid var(--gold);background:var(--gold);color:#fff;flex:1}
+  .btn.ghost{background:#fff;color:var(--bad);border-color:var(--line)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .cnote{font-size:13px;margin-top:8px;min-height:16px}
+  .cnote.err{color:var(--bad)}
+  .cnote.ok{color:var(--ok)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="navbtns">
+      <button class="navb" id="navBack" title="Назад">‹</button>
+      <button class="navb" id="navFwd" title="Вперёд">›</button>
+      <button class="navb" id="navRefresh" title="Обновить">⟳</button>
+    </div>
+    <span class="logo">FLAG<b>LEAF</b></span>
+    <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span><br><a href="/chat">демо-чат</a></span>
+  </div>
+  <nav class="tabs">
+    <a class="tab" href="/app/assistant.html">💬 Ассистент</a>
+    <a class="tab" href="/app/">📷 Загрузка</a>
+    <a class="tab on" href="/app/review.html">✅ Проверка</a>
+  </nav>
+</header>
+
+<main>
+  <h1>Проверка</h1>
+  <p class="lead">Фото и видео агрономов ждут вашего подтверждения. Подтвердите — материал идёт дальше
+     (фото — в разметку, видео — в план по полю). Отклоните — не пойдёт. При необходимости поправьте поле,
+     категорию или вид перед подтверждением.</p>
+  <div id="reviewList"></div>
+  <div id="empty" class="empty hidden">Нет материалов на проверку 🎉</div>
+</main>
+
+<script>
+const API = '';
+const TOK = 'flagleaf_session';
+const $ = id => document.getElementById(id);
+let session = localStorage.getItem(TOK) || '';
+let fieldsAll = [];
+
+const CATS = [['weed','Сорняк'],['disease','Болезнь'],['pest','Вредитель'],
+              ['stress','Стресс'],['control','Контроль'],['treatment_result','Результат обработки']];
+const CAT_RU = Object.fromEntries(CATS);
+
+async function api(path, opts={}){
+  const headers = opts.headers || {};
+  if(session) headers['x-session'] = session;
+  const r = await fetch(API + path, {...opts, headers});
+  let body = null; try{ body = await r.json(); }catch(e){}
+  if(!r.ok){ const err = new Error((body&&body.detail)||('Ошибка '+r.status)); err.status=r.status; throw err; }
+  return body;
+}
+
+$('navBack').onclick = ()=>history.back();
+$('navFwd').onclick = ()=>history.forward();
+$('navRefresh').onclick = ()=>location.reload();
+
+function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function when(iso){ if(!iso) return ''; const d=new Date(iso);
+  return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+
+function fieldOptions(sel){
+  let o = '<option value="">— поле не указано —</option>';
+  for(const f of fieldsAll){
+    o += `<option value="${f.id}"${f.id===sel?' selected':''}>${esc(f.name)}</option>`;
+  }
+  return o;
+}
+function catOptions(sel){
+  return CATS.map(([c,l])=>`<option value="${c}"${c===sel?' selected':''}>${esc(l)}</option>`).join('');
+}
+
+function cardHtml(it){
+  const media = it.media_url
+    ? (it.is_video
+        ? `<video class="rmedia vid" controls preload="metadata" playsinline src="${it.media_url}"></video>`
+        : `<a href="${it.media_url}" target="_blank" rel="noopener"><img class="rmedia" src="${it.media_url}" alt="фото"></a>`)
+    : `<div class="rmedia" style="padding:24px;text-align:center;color:#999">медиа недоступно</div>`;
+  const badge = it.is_video ? '🎥 Видео обследования' : ('📷 ' + (CAT_RU[it.category]||'Фото'));
+  let inner = '';
+  if(it.is_video && it.transcript){
+    inner += `<div class="rtrans"><span class="tl">РАСШИФРОВКА РЕЧИ</span>${esc(it.transcript)}</div>`;
+  }
+  inner += `<label class="fld">Поле</label><select class="c-fld">${fieldOptions(it.field_id)}</select>`;
+  if(!it.is_video){
+    inner += `<label class="fld">Категория</label><select class="c-cat">${catOptions(it.category)}</select>`;
+    inner += `<label class="fld">Вид / что на фото</label><input type="text" class="c-sp" value="${esc(it.subcategory)}" placeholder="напр. осот полевой">`;
+  }
+  inner += `<label class="fld">Комментарий</label><input type="text" class="c-cm" value="${esc(it.comment)}" placeholder="—">`;
+  return `<div class="rcard" data-id="${it.id}" data-video="${it.is_video?1:0}">
+    ${media}
+    <span class="rbadge">${badge}</span>
+    <div class="rwho">👤 ${esc(it.submitter)||'—'} · ${when(it.created_at)}</div>
+    ${inner}
+    <div class="acts">
+      <button class="btn ok">✅ Подтвердить</button>
+      <button class="btn no ghost">🚫 Отклонить</button>
+    </div>
+    <div class="cnote"></div>
+  </div>`;
+}
+
+async function decide(card, action){
+  const id = card.dataset.id;
+  const isVideo = card.dataset.video === '1';
+  const note = card.querySelector('.cnote');
+  const btns = card.querySelectorAll('.btn');
+  btns.forEach(b=>b.disabled=true);
+  note.className='cnote'; note.textContent = action==='approve' ? 'Подтверждаю…' : 'Отклоняю…';
+  const fv = card.querySelector('.c-fld').value;
+  const payload = { submission_id:id, action,
+    field_id: fv ? parseInt(fv,10) : null,
+    comment: card.querySelector('.c-cm').value };
+  if(!isVideo){
+    payload.category = card.querySelector('.c-cat').value;
+    payload.subcategory = card.querySelector('.c-sp').value;
+  }
+  try{
+    await api('/api/review/decide', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)});
+    card.style.transition='opacity .2s'; card.style.opacity='0';
+    setTimeout(()=>{ card.remove(); if(!$('reviewList').children.length) $('empty').classList.remove('hidden'); }, 200);
+  }catch(e){
+    note.className='cnote err'; note.textContent = e.message || 'Не удалось. Попробуйте ещё раз.';
+    btns.forEach(b=>b.disabled=false);
+  }
+}
+
+async function loadPending(){
+  const list = $('reviewList');
+  list.innerHTML = '<div class="empty">Загружаю…</div>';
+  try{
+    const r = await api('/api/review/pending');
+    const items = r.items || [];
+    if(!items.length){ list.innerHTML=''; $('empty').classList.remove('hidden'); return; }
+    $('empty').classList.add('hidden');
+    list.innerHTML = items.map(cardHtml).join('');
+    list.querySelectorAll('.rcard').forEach(card=>{
+      card.querySelector('.ok').onclick = ()=>decide(card,'approve');
+      card.querySelector('.no').onclick = ()=>decide(card,'reject');
+    });
+  }catch(e){
+    if(e.status===401||e.status===403){ location.href='/app/'; return; }
+    list.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(e.message)}</div>`;
+  }
+}
+
+async function boot(){
+  if(!session){ location.href='/app/'; return; }
+  let me;
+  try{ me = await api('/api/me'); }
+  catch(e){ session=''; localStorage.removeItem(TOK); location.href='/app/'; return; }
+  if(me.role!=='chief_agronomist' && me.role!=='admin'){ location.href='/app/'; return; }
+  $('hdrWho').textContent = me.name || '';
+  $('hdrSub').insertAdjacentHTML('beforeend',
+    ' · <button class="logout" id="logoutBtn">выйти</button>');
+  $('logoutBtn').onclick = ()=>{ session=''; localStorage.removeItem(TOK); location.href='/app/'; };
+  try{ const f = await api('/api/fields'); fieldsAll = f.fields || []; }catch(e){}
+  loadPending();
+}
+boot();
+</script>
+</body>
+</html>

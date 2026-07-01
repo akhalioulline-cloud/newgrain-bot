@@ -1050,6 +1050,41 @@ async def get_field_observations(field_id: int, limit: int = 20):
         return rows.mappings().all()
 
 
+async def get_pending_reviews(farm_id: int | None):
+    """Submissions waiting for the chief agronomist's verification on a farm — photos
+    and scouting videos alike — for the in-app review inbox. `is_video` distinguishes a
+    scouting clip (has a video_job) from a diagnostic photo so the UI shows the right player."""
+    sql = (
+        "SELECT s.id::text AS id, s.category, s.subcategory, s.comment_text, "
+        "       s.comment_voice_text, s.image_url, s.created_at, s.field_id, "
+        "       f.name AS field_name, u.full_name AS submitter, "
+        "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id = s.id) AS is_video "
+        "FROM submissions s "
+        "LEFT JOIN fields f ON f.id = s.field_id "
+        "LEFT JOIN users u ON u.id = s.user_id "
+        "WHERE s.status = 'pending_review'"
+    )
+    params = {}
+    if farm_id is not None:
+        sql += " AND u.farm_id = :farm"
+        params["farm"] = farm_id
+    sql += " ORDER BY s.created_at"
+    async with engine.connect() as conn:
+        return (await conn.execute(text(sql), params)).mappings().all()
+
+
+async def count_pending_reviews(farm_id: int | None) -> int:
+    """How many submissions await the chief's verification (for the review-tab badge)."""
+    sql = ("SELECT count(*) FROM submissions s LEFT JOIN users u ON u.id = s.user_id "
+           "WHERE s.status = 'pending_review'")
+    params = {}
+    if farm_id is not None:
+        sql += " AND u.farm_id = :farm"
+        params["farm"] = farm_id
+    async with engine.connect() as conn:
+        return int((await conn.execute(text(sql), params)).scalar() or 0)
+
+
 async def get_team_progress():
     """Team-wide totals for the collective goal: photos collected toward the model
     (everything not draft/rejected/duplicate) and how many reached training (labeled)."""

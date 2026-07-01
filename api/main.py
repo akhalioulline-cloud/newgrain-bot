@@ -31,6 +31,7 @@ from bot.agro_chat import answer as agro_answer
 from bot.config import settings
 from bot.db import (
     add_push_subscription,
+    count_pending_reviews,
     create_submission,
     create_video_job,
     engine,
@@ -38,7 +39,9 @@ from bot.db import (
     get_active_user,
     get_chief_agronomists,
     get_demo_fields,
+    get_pending_reviews,
     get_pilot_fields,
+    get_submission_review,
     get_team_progress,
     get_user_by_email,
     get_user_stats,
@@ -48,7 +51,8 @@ from bot.diagnose import diagnose as diagnose_photo
 from bot.email_send import email_enabled, send_login_code
 from bot.field_plan import generate_field_plan
 from bot.push import push_enabled, send_push
-from bot.storage import upload_bytes
+from bot.review_actions import approved_status, notify_submitter_decision
+from bot.storage import presigned_get, upload_bytes
 from bot.transcribe import transcribe_lpcm
 from labeling import alert
 
@@ -351,15 +355,8 @@ async def submit(user=Depends(require_user),
         try:
             cas = await get_chief_agronomists(user["farm_id"])
             if cas:
-                from aiogram import Bot
-                from aiogram.client.session.aiohttp import AiohttpSession
-                from aiogram.client.telegram import TelegramAPIServer
                 from bot.handlers import _send_review_card
-                if settings.telegram_api_base:
-                    server = TelegramAPIServer.from_base(settings.telegram_api_base.rstrip("/"))
-                    rbot = Bot(settings.bot_token, session=AiohttpSession(api=server))
-                else:
-                    rbot = Bot(settings.bot_token)
+                rbot = _relay_bot()
                 try:
                     for sid in sids:
                         for ca in cas:
@@ -406,6 +403,115 @@ async def scout_video(user=Depends(require_user),
                             comment_text=(comment.strip() or None))
     await create_video_job(sid, key)
     return {"ok": True, "submission_id": sid}
+
+
+# ─────────────────────────── Chief-agronomist review inbox ───────────────────────────
+# Almas can now review photos and scouting videos in the app, not just via Telegram.
+# The decision path is shared with the Telegram buttons (bot.review_actions) so the
+# outcome and the submitter's notification are identical wherever he acts.
+
+def _relay_bot():
+    """An aiogram Bot for one-off sends from the api (review notices, cards). Routes
+    through the Telegram API relay when configured, else straight to api.telegram.org.
+    Caller must `await bot.session.close()`."""
+    from aiogram import Bot
+    from aiogram.client.session.aiohttp import AiohttpSession
+    from aiogram.client.telegram import TelegramAPIServer
+    if settings.telegram_api_base:
+        server = TelegramAPIServer.from_base(settings.telegram_api_base.rstrip("/"))
+        return Bot(settings.bot_token, session=AiohttpSession(api=server))
+    return Bot(settings.bot_token)
+
+
+def _require_chief(user):
+    if user["role"] not in ("chief_agronomist", "admin"):
+        raise HTTPException(403, "Только старший агроном проверяет материалы.")
+
+
+@app.get("/api/review/count")
+async def review_count(user=Depends(require_user)):
+    """How many items await this chief's verification — for the review-tab badge."""
+    if user["role"] not in ("chief_agronomist", "admin"):
+        return {"count": 0}
+    return {"count": await count_pending_reviews(user["farm_id"])}
+
+
+@app.get("/api/review/pending")
+async def review_pending(user=Depends(require_user)):
+    """The review inbox: photos + scouting videos waiting for the chief's verification,
+    each with a time-limited media link he can open right in the app."""
+    _require_chief(user)
+    rows = await get_pending_reviews(user["farm_id"])
+    items = []
+    for r in rows:
+        try:
+            media = presigned_get(r["image_url"], expires=7 * 24 * 3600)
+        except Exception:
+            logger.exception("review: presign failed for %s", r["id"])
+            media = None
+        items.append({
+            "id": r["id"],
+            "is_video": bool(r["is_video"]),
+            "field_id": r["field_id"],
+            "field_name": r["field_name"],
+            "submitter": r["submitter"],
+            "category": r["category"],
+            "subcategory": r["subcategory"],
+            "comment": r["comment_text"],
+            "transcript": r["comment_voice_text"],
+            "media_url": media,
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        })
+    return {"items": items}
+
+
+class ReviewDecision(BaseModel):
+    submission_id: str
+    action: str                      # "approve" | "reject"
+    field_id: int | None = None      # optional corrections applied before finalizing
+    category: str | None = None
+    subcategory: str | None = None
+    comment: str | None = None
+
+
+@app.post("/api/review/decide")
+async def review_decide(body: ReviewDecision, user=Depends(require_user)):
+    """Approve or reject one item from the app — with optional inline corrections.
+    Mirrors the Telegram review buttons exactly (same status routing + submitter notice)."""
+    _require_chief(user)
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(400, "Неизвестное действие.")
+    sub = await get_submission_review(body.submission_id)
+    if not sub:
+        raise HTTPException(404, "Материал не найден.")
+    if sub["status"] != "pending_review":
+        return {"ok": True, "already": True}     # someone already handled it (Telegram/other chief)
+
+    # Optional corrections first (so the final status reflects any category change).
+    upd = {}
+    if body.field_id is not None:
+        upd["field_id"] = body.field_id
+    if body.category:
+        upd["category"] = body.category.strip()
+    if body.subcategory is not None:
+        upd["subcategory"] = body.subcategory.strip() or None
+    if body.comment is not None:
+        upd["comment_text"] = body.comment.strip() or None
+    if upd:
+        await update_submission(body.submission_id, **upd)
+        sub = await get_submission_review(body.submission_id)
+
+    new_status = approved_status(sub) if body.action == "approve" else "rejected"
+    await update_submission(body.submission_id, status=new_status)
+
+    rbot = _relay_bot()
+    try:
+        await notify_submitter_decision(rbot, sub, body.action)
+    except Exception:
+        logger.exception("review: submitter notify failed")
+    finally:
+        await rbot.session.close()
+    return {"ok": True, "status": new_status}
 
 
 @app.post("/api/chat")
