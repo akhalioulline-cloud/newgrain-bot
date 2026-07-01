@@ -1,6 +1,6 @@
 ---
 name: newgrain-pwa
-description: "Flagleaf installable PWA (ai.flagleaf.ru/app) — one app, two tabs; phases A–D all done; offline photo+video queue hardened (Jun 26) + RU field guide"
+description: "Flagleaf installable PWA (ai.flagleaf.ru/app) — one app, two tabs; phases A/B done, C/D pending"
 metadata: 
   node_type: memory
   type: project
@@ -26,26 +26,10 @@ Trigger wired: chief-agronomist review approve/correct (bot `on_review`/`on_revi
 submitter. More triggers (reminders, new-pending-for-chief) are easy follow-ons.
 
 **Phase C (offline capture):** `web/app/index.html` queues submissions in IndexedDB (`flagleaf-q`,
-store `q`; photos AND video stored as File blobs — video items `kind:'video'` → `/api/scout-video`,
-photos → `/api/submit`) when `navigator.onLine` is false OR the POST fails with no status / 5xx. A
-gold «Ожидают отправки» panel lists pending items; `flushQueue()` auto-sends. 4xx → dropped (won't
-loop); 401/403 or transient → kept.
-
-**Offline-send hardening (26 Jun, `646941d`, commit `c8e4530` adds RU field guide `docs/pwa-guide-agronom.md`):**
-agronomists asked "shoot offline, queue till connected" — it already existed for both media; gaps were
-flush-only-while-open + video forced in-app camera. Fixes: (A) flush on `visibilitychange`/`pageshow`/
-`focus` (not just `online`) = reliable cross-platform incl. iPhone; `navigator.setAppBadge(N)` shows the
-pending count on the home-screen icon; **Android Background Sync** tag `flagleaf-flush` — SW `sync`
-handler pings an open page to flush, else shows a "N ждут отправки" reminder (NO upload from SW — no
-session token there + double-send risk). (B) dropped `capture="environment"` on `#vidFile` → video
-pickable from gallery. **iPhone truth: PWAs cannot background-upload — the honest UX is "reopen the app
-when back in signal"; the guide says exactly that.** Verified live (cache v19, end-to-end queue test in
-preview: video blob persists in IndexedDB, panel + badge update).
-
-⚠️ **LIVE DRIFT LESSON:** `/var/www/ai/app/` had edits never committed (демо-чат `/`→`/chat`, sw `v18`).
-Before deploying web files, **diff the live URL against `git show HEAD:web/app/<f>`** and fold live-only
-changes back in, or you silently regress prod. Bumped cache to **v19** (live was already a *different* v18).
-Deploy = `rsync web/app/{index.html,sw.js} → /var/www/ai/app/` (newgrain-writable, chmod 644), NO rebuild.
+store `q`; photos stored as File blobs) when `navigator.onLine` is false OR the POST fails with no
+status / 5xx. A gold «Ожидают отправки» panel lists pending items; `flushQueue()` auto-sends on the
+`online` event, on app entry (enterApp), and via «отправить сейчас». 4xx → dropped (won't loop);
+401/403 or transient → kept. NO background sync (iOS unsupported) — flush is foreground-only.
 
 **Built (Jun 2026):**
 - `web/app/manifest.json` (standalone, gold theme, icons 192/512/maskable in web/ai/, served at root).
