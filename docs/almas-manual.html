@@ -1,0 +1,152 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 14mm 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color:#1f1f1f; font-size:10.5pt; line-height:1.45; margin:0; }
+  .logo { font-size:19pt; font-weight:800; letter-spacing:.12em; } .logo b { color:#b08d38; }
+  h1 { font-size:16pt; margin:2mm 0 1mm; }
+  .sub { color:#555; font-size:10pt; margin:0 0 4mm; }
+  .intro { background:#faf6ec; border-left:3px solid #b08d38; padding:3mm 4mm; font-size:10.5pt; margin:0 0 5mm; border-radius:2px; }
+  .intro b { color:#6b541f; }
+  h2 { font-size:12.5pt; color:#6b541f; margin:5mm 0 2mm; page-break-after:avoid;
+       border-bottom:1px solid #e7dec9; padding-bottom:1mm; }
+  h2 .n { display:inline-block; width:6.5mm; height:6.5mm; background:#b08d38; color:#fff; border-radius:50%;
+       text-align:center; line-height:6.5mm; font-size:10.5pt; margin-right:2mm; }
+  ol { margin:1mm 0 2mm; padding-left:7mm; } ol li { margin:.8mm 0; }
+  ul { margin:1mm 0 2mm; padding-left:5mm; } ul li { margin:.8mm 0; }
+  p { margin:1mm 0 2mm; }
+  .pill { display:inline-block; background:#f1e9d6; color:#6b541f; border-radius:3px; padding:.3mm 1.6mm; font-weight:600; white-space:nowrap; }
+  code { background:#f4f0e6; border:1px solid #e7dec9; border-radius:3px; padding:.2mm 1.4mm; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:9.5pt; }
+  .ok { color:#3a7d44; font-weight:700; } .bad { color:#c0392b; font-weight:700; }
+  .tip { background:#f3f7f1; border:1px solid #d8e6d2; border-radius:4px; padding:2.5mm 4mm; margin:2mm 0; font-size:10pt; }
+  .tip b { color:#3a6b34; }
+  .note { background:#fff7e8; border:1px solid #f0d79b; border-radius:4px; padding:2.5mm 4mm; margin:3mm 0 0; font-size:10pt; }
+  .note b { color:#8a6a16; }
+  .cols { display:flex; gap:6mm; align-items:flex-start; }
+  .cols .c { flex:1; }
+  footer { margin-top:6mm; border-top:1px solid #e3ddd0; padding-top:2mm; color:#999; font-size:8.5pt; text-align:center; }
+
+  /* phone mockups */
+  .phone { width:56mm; border:1.2pt solid #d9d2c2; border-radius:5mm; overflow:hidden; background:#faf8f4; float:right; margin:0 0 3mm 5mm; }
+  .ph-head { background:#fff; border-bottom:1px solid #e7e2d8; padding:2mm 3mm 0; }
+  .ph-brand { font-size:8.5pt; font-weight:800; letter-spacing:.1em; } .ph-brand b { color:#b08d38; }
+  .ph-tabs { display:flex; margin-top:1.5mm; font-size:7.2pt; font-weight:700; color:#9a9384; }
+  .ph-tab { flex:1; text-align:center; padding:1.5mm 0; border-bottom:1.6pt solid transparent; }
+  .ph-tab.on { color:#1a1a1a; border-bottom-color:#b08d38; }
+  .ph-body { padding:2.5mm 3mm 3mm; }
+  .media { height:16mm; border-radius:2.5mm; background:#eae4d5; display:flex; align-items:center; justify-content:center; color:#b3a988; font-size:11pt; }
+  .badge { display:inline-block; font-size:7.2pt; font-weight:700; color:#6b541f; background:#faf6ec; border:1px solid #b08d38; border-radius:8px; padding:.4mm 2mm; margin:1.5mm 0 1mm; }
+  .who { font-size:7.2pt; color:#8a8a8a; }
+  .btns { display:flex; gap:1.5mm; margin-top:2mm; }
+  .b { flex:1; text-align:center; font-size:7.2pt; font-weight:700; border-radius:2.5mm; padding:1.6mm 0; }
+  .b.go { background:#b08d38; color:#fff; } .b.no { background:#fff; color:#c0392b; border:1px solid #e0d9c8; }
+  .uprow { display:flex; align-items:center; gap:2mm; font-size:7.2pt; padding:1.4mm 0; border-top:1px solid #eee4cf; }
+  .uprow:first-child { border-top:none; }
+  .uprow .st { margin-left:auto; color:#6b541f; white-space:nowrap; }
+</style></head><body>
+
+<div class="logo">FLAG<b>LEAF</b></div>
+<h1>Руководство старшего агронома</h1>
+<p class="sub">Алмас Касумов · АО «НЗК» · приложение и Telegram-бот</p>
+
+<div class="intro">
+  Flagleaf — приложение, где агрономы загружают фото и видео с полей. Ваша роль как старшего агронома —
+  <b>проверять их работу</b>, вести собственные наблюдения и получать <b>планы обработок по полям</b>.
+  Ваши собственные загрузки идут в систему сразу (проверяете — Вы).
+</div>
+
+<h2><span class="n">1</span>Установка и вход</h2>
+<ol>
+  <li>Откройте на телефоне: <span class="pill">ai.flagleaf.ru/app</span></li>
+  <li>Установите как приложение: <b>iPhone</b> — «Поделиться» → «На экран Домой»; <b>Android</b> — меню ⋮ →
+      «Установить приложение». Появится иконка Flagleaf.</li>
+  <li>Вход: введите свой <b>email</b> → на почту придёт код → введите 6 цифр. Вход держится <b>90 дней</b>.</li>
+</ol>
+
+<h2><span class="n">2</span>Загрузка фото</h2>
+<ol>
+  <li>Вкладка <span class="pill">📷 Загрузка</span>.</li>
+  <li>Выберите <b>поле</b> (введите номер, например 39 или 76/108).</li>
+  <li><b>Категория</b>: сорняк / болезнь / вредитель / обследование и др.</li>
+  <li><b>Вид</b> — выберите из списка или «Другой» (бот подскажет по фото).</li>
+  <li><b>Комментарий</b> — текстом или голосом (значок 🎤 рядом с полем комментария).</li>
+  <li>Прикрепите фото → <b>«Отправить»</b>.</li>
+</ol>
+<div class="tip"><b>Как снимать:</b> дневной свет, чёткий фокус без смаза; два кадра — растение целиком и крупный
+  план листа/соцветия; растение по центру, не против солнца.</div>
+
+<h2><span class="n">3</span>Обследование поля и видео</h2>
+<ul>
+  <li>Включите режим <span class="pill">🔍 Обследование поля</span> — фото и видео сохраняются как
+      <b>состояние поля</b> и идут в план (без разметки).</li>
+  <li>Можно снять <b>короткое видео</b> (до 3 минут) и прямо в нём голосом проговорить, что видите
+      («тут осот, плотность высокая…») — бот сам распознает речь и добавит к данным поля.</li>
+  <li>Без сети видео сохранится на телефоне и отправится автоматически, когда появится интернет.</li>
+</ul>
+
+<h2><span class="n">4</span>«Мои загрузки» — убедиться, что всё дошло</h2>
+<div class="phone">
+  <div class="ph-head"><div class="ph-brand">FLAG<b>LEAF</b></div>
+    <div class="ph-tabs"><div class="ph-tab">💬</div><div class="ph-tab on">📷 Загрузка</div><div class="ph-tab">✅</div></div></div>
+  <div class="ph-body">
+    <div style="font-size:7.5pt;font-weight:700;margin-bottom:1mm">Мои загрузки <span style="color:#8a8a8a">8</span></div>
+    <div class="uprow">✅ Поле 39 · 🎥 видео <span class="st">принято</span></div>
+    <div class="uprow">✅ Поле 119 · сорняк <span class="st">размечено</span></div>
+    <div class="uprow">✅ Поле 170 · сорняк <span class="st">ждёт разметки</span></div>
+  </div>
+</div>
+<p>Под кнопкой загрузки — список <b>«Мои загрузки»</b>. Здесь каждое Ваше фото и видео, <b>подтверждённое сервером</b>:
+   поле, время и статус. Так Вы точно видите, что загрузка прошла успешно.</p>
+<ul>
+  <li><b>принято</b> / <b>ждёт разметки</b> / <b>размечено</b> — материал на сервере, всё хорошо (зелёная ✅);</li>
+  <li><b>на проверке</b> — ждёт подтверждения (для загрузок агрономов);</li>
+  <li>значок <b>⟳</b> — обновить список вручную.</li>
+</ul>
+
+<h2><span class="n">5</span>«Проверка» — проверка работы агрономов</h2>
+<div class="phone">
+  <div class="ph-head"><div class="ph-brand">FLAG<b>LEAF</b></div>
+    <div class="ph-tabs"><div class="ph-tab">💬</div><div class="ph-tab">📷</div><div class="ph-tab on">✅ Проверка</div></div></div>
+  <div class="ph-body">
+    <div class="media">🎥</div>
+    <div class="badge">🎥 Видео обследования</div>
+    <div class="who">👤 Олег Сорока · Поле 217</div>
+    <div class="btns"><div class="b go">✅ Подтвердить</div><div class="b no">🚫 Отклонить</div></div>
+  </div>
+</div>
+<p>Вкладка <span class="pill">✅ Проверка</span> (её видите только Вы; число в скобках — сколько ждёт). Каждый
+   материал агрономов — отдельная карточка:</p>
+<ul>
+  <li><b>Фото</b> — снимок (нажмите, чтобы увеличить), кто прислал и с какого поля;</li>
+  <li><b>Видео</b> — плеер ▶️ и <b>расшифровка речи</b> (можно прочитать, не пересматривая);</li>
+  <li>при необходимости поправьте <b>поле / категорию / вид</b> прямо в карточке.</li>
+</ul>
+<p><span class="ok">✅ Подтвердить</span> — фото уходит в разметку, видео попадает в план по полю.
+   <span class="bad">🚫 Отклонить</span> — материал не пойдёт. Агроном получает уведомление о решении.</p>
+<div class="note"><b>Проверять можно и в Telegram:</b> бот присылает карточки на подтверждение. Приложение и
+   Telegram синхронизированы — подтвердили в одном месте, во втором действий уже не потребуется.</div>
+
+<h2><span class="n">6</span>План по полю</h2>
+<p>Команда <code>/plan 39</code> (или «План по полю» в приложении) собирает спектр сорняков по обследованию,
+   историю поля, препараты, которыми хозяйство реально работает, и <b>Ваши ЭПВ</b>, и подсказывает:</p>
+<ul>
+  <li>на какой стадии сорняки и <b>пора ли обрабатывать</b> (по порогу вредоносности);</li>
+  <li>каким <b>зарегистрированным</b> препаратом и в какой норме;</li>
+  <li>хватит ли <b>одной</b> обработки или нужна вторая.</li>
+</ul>
+<p>Поле обрабатывается сплошь — решение по сроку, препарату и норме остаётся за Вами; план лишь готовит данные.</p>
+
+<h2><span class="n">7</span>ИИ-агроном (вопросы)</h2>
+<p>Вкладка <span class="pill">💬 Ассистент</span> — задайте вопрос своими словами:
+   «чем обработать сою от осота?», «пора ли обрабатывать?», «что было на поле 119?». Ассистент отвечает по данным
+   CropWise, Госкаталогу и Вашим ЭПВ; можно приложить фото для определения сорняка/болезни.</p>
+
+<h2><span class="n">8</span>В Telegram-боте</h2>
+<p>Те же функции доступны в боте, плюс команды:</p>
+<ul>
+  <li><code>/history</code> — мои последние снимки · <code>/stats</code> — за неделю · <code>/fields</code> — мои поля;</li>
+  <li><code>/plan 39</code> — план по полю · <code>/announce</code> — что нового · <code>/problem</code> — сообщить о проблеме.</li>
+</ul>
+
+<footer>FLAGLEAF · АО «НЗК» · руководство старшего агронома · ai.flagleaf.ru</footer>
+
+</body></html>
