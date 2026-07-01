@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # fallback stays on the capable (pro) model: correctness > ~0.5 s here.
     yc_extract_model: str = "yandexgpt"
 
+    # EPPO Global Database API (data.eppo.int) — neutral pest/disease/weed reference
+    # (RU/Latin names, hosts, distribution). Token from data.eppo.int; passed as the
+    # `authtoken` query param. Requires the account to have accepted the Open Data Licence.
+    eppo_api_token: str = ""
+
     # Telegram API base override. Empty = use api.telegram.org directly.
     # Set to a Cloudflare-Worker relay URL (e.g. https://xxx.workers.dev) to
     # route around Roskomnadzor's IP-blocking of Telegram from RU networks.
