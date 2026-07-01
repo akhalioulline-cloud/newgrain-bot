@@ -134,6 +134,18 @@
   .result h2{font-family:Oswald;font-weight:600;font-size:20px;margin:8px 0 4px}
   .result p{font-size:14px;color:var(--muted);margin:0 0 14px;line-height:1.5}
   .hidden{display:none}
+  /* «Мои загрузки» — server-confirmed list so the agronomist can verify uploads landed */
+  .myups{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+        max-height:280px;overflow:auto}
+  .uphead{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .uphead .upn{color:var(--muted);font-weight:500}
+  .uphead .uprefr{margin-left:auto;color:var(--gold);background:none;border:none;font:inherit;font-size:16px;cursor:pointer;padding:0;line-height:1}
+  .uprow{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+  .upok{flex:none;font-size:14px}
+  .upmain{flex:1;color:var(--ink);line-height:1.35}
+  .upmeta{flex:none;text-align:right;color:var(--muted);font-size:11px;white-space:nowrap;line-height:1.35}
+  .upmeta i{font-style:normal;color:#6b541f}
+  .upmeta i.bad{color:var(--bad)} .upmeta i.warn{color:#8a6a16}
   .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:10px 16px}
 </style>
 </head>
@@ -268,6 +280,8 @@
   </div>
 
   <div class="contrib hidden" id="contrib" style="margin-top:18px"></div>
+
+  <div class="myups hidden" id="myUps" style="margin-top:14px"></div>
 
   <div class="disclaimer">Загружая фото, вы подтверждаете, что они сняты на полях вашего хозяйства.</div>
 </main>
@@ -405,6 +419,7 @@ async function enterApp(me){
   refreshPending(); flushQueue();                // surface + auto-send anything queued offline
   maybeShowPushBanner(); ensurePushIfGranted();  // offer / refresh push subscription
   loadContrib();                                 // «ваш вклад» + team goal
+  loadMyUploads();                               // «мои загрузки» — confirm what landed
   await loadFields();
   loadDemoFields();                              // «контрольные поля» nudge
 }
@@ -655,6 +670,7 @@ async function flushQueue(){
     }
   }
   flushing=false; await refreshPending();
+  loadMyUploads();                                   // offline items just landed → refresh the list
 }
 function clearPhotos(){ files.forEach(r=>URL.revokeObjectURL(r.url)); files=[]; renderTiles(); $('comment').value=''; }
 
@@ -694,7 +710,7 @@ $('vidFile').onchange=async e=>{
   try{
     await uploadVideo(item);
     note.className='note ok'; note.textContent='Видео отправлено ✓ Комментарий распознаётся автоматически.';
-    loadContrib();
+    loadContrib(); loadMyUploads();
   }catch(err){
     if(err.status===401||err.status===403){ flashNote('Сессия истекла — войдите заново.'); setTimeout(logout,1200); }
     else if(!err.status || err.status>=500){
@@ -715,6 +731,42 @@ async function loadContrib(){
       `<br>Команда: собрано <b>${s.team_collected}</b> из ${s.team_goal} фото` +
       `<div class="bar"><i style="width:${pct}%"></i></div>`;
     $('contrib').classList.remove('hidden');
+  }catch(_){}
+}
+
+// ---------- «Мои загрузки»: server-confirmed list so you can verify uploads landed ----------
+const CAT_RU = Object.fromEntries(CATEGORIES.map(([c,l])=>[c,l.replace(/^🔍\s*/,'')]));
+// [label, tone] — tone 'ok' = green ✓ (it's on the server), 'warn'/'bad' = needs attention.
+const UP_STATUS = {
+  ready_for_labeling:['принято, ждёт разметки','ok'], in_labeling:['в разметке','ok'],
+  labeled:['размечено','ok'], pending_review:['на проверке у старшего агронома','ok'],
+  stored:['принято','ok'], awaiting_metadata:['не завершено','warn'],
+  rejected:['отклонено','bad'], duplicate:['дубликат','warn'],
+};
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function upWhen(iso){ if(!iso) return ''; const d=new Date(iso), n=new Date();
+  const t=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  return d.toDateString()===n.toDateString() ? ('сегодня '+t)
+       : (d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+t); }
+
+async function loadMyUploads(){
+  try{
+    const r=await api('/api/my-uploads'); const ups=r.uploads||[];
+    if(!ups.length){ $('myUps').classList.add('hidden'); return; }
+    const rows = ups.map(u=>{
+      const st = UP_STATUS[u.status] || [u.status,'ok'];
+      const mark = st[1]==='ok' ? '✅' : (st[1]==='bad' ? '🚫' : '⚠️');
+      const kind = u.is_video ? '🎥 видео' : (CAT_RU[u.category] || 'фото');
+      const sp = (!u.is_video && u.species && u.species!=='—') ? ' · '+esc(u.species) : '';
+      const tone = st[1]==='ok' ? '' : (' '+st[1]);
+      return `<div class="uprow"><span class="upok">${mark}</span>`+
+        `<span class="upmain">${esc(u.field||'—')} · ${kind}${sp}</span>`+
+        `<span class="upmeta">${upWhen(u.when)}<br><i class="${tone.trim()}">${esc(st[0])}</i></span></div>`;
+    }).join('');
+    $('myUps').innerHTML = `<div class="uphead">Мои загрузки <span class="upn">${ups.length}</span>`+
+      `<button class="uprefr" id="upRefr" title="Обновить">⟳</button></div>`+rows;
+    $('upRefr').onclick = loadMyUploads;
+    $('myUps').classList.remove('hidden');
   }catch(_){}
 }
 
@@ -881,6 +933,7 @@ function showResult(r){
         : 'Попробуйте ещё раз.');
   files.forEach(rec=>URL.revokeObjectURL(rec.url)); files=[]; renderTiles();
   loadContrib();                                 // reflect the new upload in «ваш вклад»
+  loadMyUploads();                               // and confirm it in «мои загрузки»
   $('result').scrollIntoView({behavior:'smooth'});
 }
 $('resMore').onclick=()=>{ $('result').classList.add('hidden'); window.scrollTo({top:0,behavior:'smooth'}); };

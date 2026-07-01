@@ -47,6 +47,7 @@ from bot.db import (
     get_team_progress,
     get_user_by_email,
     get_user_stats,
+    get_user_uploads,
     update_submission,
 )
 from bot.diagnose import diagnose as diagnose_photo
@@ -281,6 +282,21 @@ async def my_stats(user=Depends(require_user)):
         "team_collected": collected, "team_trained": trained,
         "team_goal": settings.team_photo_goal,
     }
+
+
+@app.get("/api/my-uploads")
+async def my_uploads(user=Depends(require_user)):
+    """The caller's own recent uploads + status — so they can confirm in the app that
+    what they sent actually landed on the server (не только тост «Загружено»)."""
+    rows = await get_user_uploads(user["id"], 25)
+    return {"uploads": [{
+        "when": r["created_at"].isoformat() if r["created_at"] else None,
+        "field": r["field_name"],
+        "category": r["category"],
+        "species": r["species_name"],
+        "status": r["status"],
+        "is_video": bool(r["is_video"]),
+    } for r in rows]}
 
 
 MAX_PHOTO = 25 * 1024 * 1024        # keep original-resolution phone photos

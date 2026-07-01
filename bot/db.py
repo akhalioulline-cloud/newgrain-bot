@@ -808,6 +808,31 @@ async def get_user_history(user_id: int, limit: int = 10):
         return result.mappings().all()
 
 
+async def get_user_uploads(user_id: int, limit: int = 25):
+    """The caller's OWN recent submissions with their pipeline status — so an agronomist
+    can confirm in the app that what they sent actually reached the server (Almas's ask).
+    is_video distinguishes a scouting clip from a photo."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT s.created_at, s.category, s.status,
+                       COALESCE(f.name, 'вне пилота') AS field_name,
+                       COALESCE(ws.russian_name, s.subcategory) AS species_name,
+                       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id = s.id) AS is_video
+                FROM submissions s
+                LEFT JOIN fields f ON f.id = s.field_id
+                LEFT JOIN weed_species ws ON ws.latin_name = s.subcategory
+                WHERE s.user_id = :user_id AND s.status <> 'draft'
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"user_id": user_id, "limit": limit},
+        )
+        return result.mappings().all()
+
+
 async def get_user_stats(user_id: int):
     """Aggregate counts for /stats: today, this week, total, and the number of
     distinct days this week the user uploaded at least one photo (engagement)."""
