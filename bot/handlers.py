@@ -114,6 +114,7 @@ STATUS_RU = {
     "ready_for_labeling": "ждёт разметки",
     "in_labeling": "в CVAT",
     "labeled": "размечено",
+    "stored": "сохранено (разметка не нужна)",
     "in_dataset": "в датасете",
 }
 
@@ -1342,10 +1343,12 @@ async def _finalize(message: Message, state: FSMContext, user) -> None:
     sid = data["submission_id"]
     await state.clear()
     today, week = await count_user_submissions(user["id"])
-    # Junior agronomists' photos go to the chief agronomist for review first;
-    # chief agronomist and admins post straight to the labeling pipeline.
-    # Scouting passes are field-state, not a diagnosis — they skip review entirely.
-    if user["role"] == "agronomist" and data.get("category") != "scouting":
+    # Only weed/disease/pest need CVAT annotation. Those from a junior go to the chief
+    # first; from a chief/admin straight to the labeling queue. Everything else
+    # (scouting/control/treatment_result/stress) is field-state → terminal 'stored',
+    # no review, no CVAT.
+    annotatable = data.get("category") in ("weed", "disease", "pest")
+    if user["role"] == "agronomist" and annotatable:
         await update_submission(sid, status="pending_review")
         cas = await get_chief_agronomists(user["farm_id"])
         for ca in cas:
@@ -1356,7 +1359,7 @@ async def _finalize(message: Message, state: FSMContext, user) -> None:
             await update_submission(sid, status="ready_for_labeling")
         await message.answer(f"{note}\nЗа сегодня: {today}. За неделю: {week}.")
     else:
-        await update_submission(sid, status="ready_for_labeling")
+        await update_submission(sid, status="ready_for_labeling" if annotatable else "stored")
         await message.answer(f"Записал. Сохранено ✓\nЗа сегодня: {today}. За неделю: {week}.")
 
 

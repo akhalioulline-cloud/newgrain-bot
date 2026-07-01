@@ -307,9 +307,10 @@ async def submit(user=Depends(require_user),
     (S3 + submissions), but keeps original resolution + EXIF GPS, and accepts many at once."""
     fid = int(field_id) if field_id.strip().isdigit() else None
     is_junior = user["role"] == "agronomist"          # plain agronomist → chief review
-    is_scouting = category.strip() == "scouting"      # field-state pass, not a diagnosis to verify
-    review = is_junior and not is_scouting            # scouting bypasses the per-photo review gate
-    status = "pending_review" if review else "ready_for_labeling"
+    annotatable = category.strip() in ("weed", "disease", "pest")   # only these need CVAT boxes
+    review = is_junior and annotatable                # only weed/disease/pest go to chief review
+    status = ("pending_review" if review else         # non-annotatable (scouting/control/…) → terminal,
+              "ready_for_labeling" if annotatable else "stored")    # skips CVAT + the "awaiting" queue
     saved, skipped, sids = 0, 0, []
     for ph in photos[:40]:
         img = await ph.read()
@@ -397,7 +398,7 @@ async def scout_video(user=Depends(require_user),
         raise HTTPException(502, "Не удалось сохранить видео. Попробуйте ещё раз.")
     h = hashlib.sha256(data).hexdigest()
     await create_submission(sid, user["id"], fid, url, None, None, h)
-    await update_submission(sid, category="scouting", status="ready_for_labeling",
+    await update_submission(sid, category="scouting", status="stored",
                             comment_text=(comment.strip() or None))
     await create_video_job(sid, key)
     return {"ok": True, "submission_id": sid}
