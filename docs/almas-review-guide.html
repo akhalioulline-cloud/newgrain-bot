@@ -1,0 +1,138 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 14mm 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color:#1f1f1f; font-size:10.5pt; line-height:1.45; margin:0; }
+  .logo { font-size:19pt; font-weight:800; letter-spacing:.12em; } .logo b { color:#b08d38; }
+  h1 { font-size:16pt; margin:2mm 0 1mm; }
+  .sub { color:#555; font-size:10pt; margin:0 0 4mm; }
+  .intro { background:#faf6ec; border-left:3px solid #b08d38; padding:3mm 4mm; font-size:10.5pt; margin:0 0 5mm; border-radius:2px; }
+  .intro b { color:#6b541f; }
+  h2 { font-size:12.5pt; color:#6b541f; margin:5mm 0 2mm; page-break-after:avoid;
+       border-bottom:1px solid #e7dec9; padding-bottom:1mm; }
+  ol.steps { margin:1mm 0 2mm; padding-left:0; list-style:none; counter-reset:s; }
+  ol.steps > li { position:relative; margin:0 0 3mm; padding-left:9mm; page-break-inside:avoid; }
+  ol.steps > li::before { counter-increment:s; content:counter(s); position:absolute; left:0; top:-0.3mm;
+       width:6mm; height:6mm; background:#b08d38; color:#fff; border-radius:50%; font-weight:700;
+       font-size:10pt; text-align:center; line-height:6mm; }
+  ol.steps b { color:#6b541f; }
+  ul { margin:1.5mm 0 0; padding-left:5mm; } ul li { margin:1mm 0; }
+  .pill { display:inline-block; background:#f1e9d6; color:#6b541f; border-radius:3px; padding:.3mm 1.6mm; font-weight:600; white-space:nowrap; }
+  .ok { color:#3a7d44; font-weight:700; } .bad { color:#c0392b; font-weight:700; }
+  .note { background:#fff7e8; border:1px solid #f0d79b; border-radius:4px; padding:3mm 4mm; margin:4mm 0 0; font-size:10.5pt; }
+  .note b { color:#8a6a16; }
+  footer { margin-top:6mm; border-top:1px solid #e3ddd0; padding-top:2mm; color:#999; font-size:8.5pt; text-align:center; }
+
+  /* ---- phone mockups ---- */
+  .mocks { display:flex; gap:6mm; margin:0 0 5mm; }
+  .phone { width:58mm; border:1.2pt solid #d9d2c2; border-radius:5mm; overflow:hidden; background:#faf8f4; }
+  .ph-head { background:#fff; border-bottom:1px solid #e7e2d8; padding:2mm 3mm 0; }
+  .ph-brand { font-size:8.5pt; font-weight:800; letter-spacing:.1em; } .ph-brand b { color:#b08d38; }
+  .ph-tabs { display:flex; margin-top:1.5mm; font-size:7.5pt; font-weight:700; color:#9a9384; }
+  .ph-tab { flex:1; text-align:center; padding:1.5mm 0; border-bottom:1.6pt solid transparent; }
+  .ph-tab.on { color:#1a1a1a; border-bottom-color:#b08d38; }
+  .ph-body { padding:2.5mm 3mm 3mm; }
+  .cap { font-size:8pt; color:#8a8a8a; margin:0 0 1.5mm; text-align:center; }
+  .media { height:20mm; border-radius:2.5mm; background:#eae4d5; display:flex; align-items:center;
+       justify-content:center; color:#b3a988; font-size:12pt; }
+  .badge { display:inline-block; font-size:7.5pt; font-weight:700; color:#6b541f; background:#faf6ec;
+       border:1px solid #b08d38; border-radius:8px; padding:.4mm 2mm; margin:1.5mm 0 1mm; }
+  .who { font-size:7.5pt; color:#8a8a8a; margin-bottom:1.5mm; }
+  .fld { font-size:7pt; color:#8a8a8a; margin:1.2mm 0 .6mm; }
+  .inp { border:1px solid #e0d9c8; border-radius:2mm; background:#fff; padding:1.2mm 2mm; font-size:8pt; color:#333; }
+  .trans { background:#f6f1e6; border-radius:2mm; padding:1.5mm 2mm; font-size:7.5pt; color:#333; margin:1.5mm 0; line-height:1.35; }
+  .trans .tl { display:block; font-size:6.2pt; color:#8a8a8a; font-weight:700; margin-bottom:.6mm; }
+  .btns { display:flex; gap:1.5mm; margin-top:2mm; }
+  .b { flex:1; text-align:center; font-size:7.5pt; font-weight:700; border-radius:2.5mm; padding:1.6mm 0; }
+  .b.go { background:#b08d38; color:#fff; } .b.no { background:#fff; color:#c0392b; border:1px solid #e0d9c8; }
+</style></head><body>
+
+<div class="logo">FLAG<b>LEAF</b></div>
+<h1>Проверка фото и видео в приложении</h1>
+<p class="sub">Памятка для старшего агронома · Алмас Касумов · АО «НЗК»</p>
+
+<div class="intro">
+  Теперь фото и видео агрономов можно проверять <b>прямо в приложении</b>, а не только в Telegram.
+  Обе проверки связаны: подтвердили в приложении — в Telegram эта карточка больше действий не потребует,
+  и наоборот. Вкладку «Проверка» видите <b>только Вы</b> — агрономам она не показывается.
+</div>
+
+<div class="mocks">
+  <div class="phone">
+    <div class="ph-head">
+      <div class="ph-brand">FLAG<b>LEAF</b></div>
+      <div class="ph-tabs">
+        <div class="ph-tab">💬 Ассистент</div>
+        <div class="ph-tab">📷 Загрузка</div>
+        <div class="ph-tab on">✅ Проверка (14)</div>
+      </div>
+    </div>
+    <div class="ph-body">
+      <div class="cap">карточка фото</div>
+      <div class="media">🖼️</div>
+      <div class="badge">📷 Сорняк</div>
+      <div class="who">👤 Олег Сорока · Поле 217</div>
+      <div class="fld">Поле · Категория · Вид — можно поправить</div>
+      <div class="inp">Поле 217 · Красное ▾</div>
+      <div class="btns"><div class="b go">✅ Подтвердить</div><div class="b no">🚫 Отклонить</div></div>
+    </div>
+  </div>
+
+  <div class="phone">
+    <div class="ph-head">
+      <div class="ph-brand">FLAG<b>LEAF</b></div>
+      <div class="ph-tabs">
+        <div class="ph-tab">💬 Ассистент</div>
+        <div class="ph-tab">📷 Загрузка</div>
+        <div class="ph-tab on">✅ Проверка</div>
+      </div>
+    </div>
+    <div class="ph-body">
+      <div class="cap">карточка видео</div>
+      <div class="media">▶️</div>
+      <div class="badge">🎥 Видео обследования</div>
+      <div class="who">👤 Валерий Швец · Поле 268</div>
+      <div class="trans"><span class="tl">РАСШИФРОВКА РЕЧИ</span>«Тут осот, плотность высокая, по краю поля…»</div>
+      <div class="btns"><div class="b go">✅ Подтвердить</div><div class="b no">🚫 Отклонить</div></div>
+    </div>
+  </div>
+</div>
+
+<ol class="steps">
+  <li><b>Откройте приложение.</b> Зайдите на <span class="pill">ai.flagleaf.ru/app</span> или откройте
+      иконку Flagleaf на телефоне. Войдите как обычно — по коду из бота или по коду на почту.</li>
+
+  <li><b>Найдите вкладку «✅ Проверка».</b> Вверху — вкладки
+      <span class="pill">💬 Ассистент</span> <span class="pill">📷 Загрузка</span>
+      <span class="pill">✅ Проверка</span>. В скобках рядом — сколько материалов ждёт Вас
+      (например, <b>✅ Проверка (14)</b>).</li>
+
+  <li><b>Посмотрите материал.</b> Каждый материал — отдельная карточка:
+      <ul>
+        <li><b>Фото</b> — снимок сверху (нажмите, чтобы открыть крупно), под ним — кто прислал и с какого поля.</li>
+        <li><b>Видео обследования</b> — плеер: нажмите <b>▶️</b>, чтобы посмотреть. Ниже — <b>расшифровка речи</b>
+            агронома, можно просто прочитать, не пересматривая целиком.</li>
+      </ul></li>
+
+  <li><b>При необходимости поправьте</b> прямо в карточке, перед подтверждением: <b>поле</b> (если указано не то),
+      <b>категорию</b> и <b>вид</b> — для фото, <b>комментарий</b> — если нужно. Если всё верно — ничего не трогайте.</li>
+
+  <li><b>Примите решение:</b>
+      <ul>
+        <li><span class="ok">✅ Подтвердить</span> — материал идёт дальше: <b>фото</b> → в разметку,
+            <b>видео</b> → в план по полю.</li>
+        <li><span class="bad">🚫 Отклонить</span> — материал не пойдёт (брак, не то поле, случайная запись).</li>
+      </ul>
+      После нажатия карточка исчезает, агроном получает уведомление о Вашем решении, а счётчик рядом с вкладкой уменьшается.</li>
+
+  <li><b>Готово.</b> Когда проверите всё — появится надпись «Нет материалов на проверку 🎉».
+      Возвращайтесь к вкладке по мере поступления новых фото и видео.</li>
+</ol>
+
+<div class="note">
+  <b>Если открыли сразу после обновления</b> — закройте и откройте приложение ещё раз, чтобы подтянулась
+  новая версия и появилась вкладка «Проверка».
+</div>
+
+<footer>FLAGLEAF · АО «НЗК» · памятка по проверке материалов в приложении</footer>
+
+</body></html>
