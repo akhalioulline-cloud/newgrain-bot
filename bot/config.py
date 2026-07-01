@@ -19,9 +19,13 @@ class Settings(BaseSettings):
     # from yc_translate_model so parsing/translation stay on the stable build. Flip back
     # to "yandexgpt" here (or via env) if rc ever misbehaves.
     yc_chat_model: str = "yandexgpt/rc"
-    # Fast/cheap model for the crop+target extraction step (structured JSON, temp 0) —
-    # lite is plenty and roughly halves that call's latency vs pro.
-    yc_extract_model: str = "yandexgpt-lite/latest"
+    # Model for the crop+target extraction fallback (runs only when the deterministic
+    # lexicon misses — i.e. the HARD cases: diseases, pests, uncommon weeds, padalitsa).
+    # Tested lite here and it mis-classified padalitsa рапса as злаков (should be двудольн),
+    # while pro got it right — and those nuanced cases are exactly the ones that reach this
+    # fallback. The lexicon already removes the double-call on common questions, so the rare
+    # fallback stays on the capable (pro) model: correctness > ~0.5 s here.
+    yc_extract_model: str = "yandexgpt"
 
     # Telegram API base override. Empty = use api.telegram.org directly.
     # Set to a Cloudflare-Worker relay URL (e.g. https://xxx.workers.dev) to
