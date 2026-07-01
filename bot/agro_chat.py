@@ -11,6 +11,7 @@ import requests
 
 from bot.config import settings
 from bot.db import get_registered_products, producer_label, search_literature
+from bot.epv import epv_block
 
 _ENDPOINT = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -287,6 +288,21 @@ _REC_SYS = (
 )
 
 
+_EPV_RE = re.compile(
+    r"эпв|порог|обраб|опрыск|защит|гербицид|фунгицид|инсектицид|сорняк|вредител|болезн|"
+    r"пора\b|когда\b|стади|фаз[аеуы]|сколько.*обработ|одну?.*или.*дв|нужно ли|стоит ли", re.I)
+
+
+def _epv_grounding(question: str) -> str | None:
+    """Inject the farm's OWN ЭПВ thresholds (chief agronomist A.K. Kasumov's sheet, bot/epv.py)
+    when the question is about treatment timing / thresholds / pass-count and a pilot crop is
+    named. The chat's authoritative anchor for «пора ли обрабатывать / сколько обработок» —
+    same source /plan already uses. Fully owned data, no external-licence question."""
+    if not _EPV_RE.search(question):
+        return None
+    return epv_block(question) or None      # epv._match substring-detects the crop in the text
+
+
 async def _assemble(question: str, context: str | None = None,
                     history: str | None = None):
     """Ground the question (CropWise field data + Госкаталог products + literature) and
@@ -301,11 +317,13 @@ async def _assemble(question: str, context: str | None = None,
             ground_q = f"{prev_qs[-1].strip()}. {question}"
     grounding = await _registry_grounding(ground_q)
     literature = await _literature_grounding(ground_q)
+    epv = _epv_grounding(ground_q)          # farm's own ЭПВ thresholds (owned, authoritative)
     parts = [p for p in (
         f"ДАННЫЕ ПО ПОЛЮ:\n{context}" if context else None,
         (f"ПРЕДЫДУЩИЙ ДИАЛОГ (контекст для уточняющих вопросов и расчётов; "
          f"опирайся на него, если вопрос ссылается на «предыдущий ответ»):\n{history}"
          if history else None),
+        epv,
         grounding,
         literature,
         f"ВОПРОС: {question}",
