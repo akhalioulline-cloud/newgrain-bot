@@ -73,9 +73,10 @@ _SYS = (
 )
 
 
-def _complete(system_text: str, user_text: str, max_tokens: int, temperature: float) -> str:
+def _complete(system_text: str, user_text: str, max_tokens: int, temperature: float,
+              model: str | None = None) -> str:
     body = {
-        "modelUri": f"gpt://{settings.yc_folder_id}/{settings.yc_translate_model}",
+        "modelUri": f"gpt://{settings.yc_folder_id}/{model or settings.yc_chat_model}",
         "completionOptions": {"stream": False, "temperature": temperature, "maxTokens": max_tokens},
         "messages": [{"role": "system", "text": system_text}, {"role": "user", "text": user_text}],
     }
@@ -83,6 +84,33 @@ def _complete(system_text: str, user_text: str, max_tokens: int, temperature: fl
                       json=body, timeout=45)
     r.raise_for_status()
     return r.json()["result"]["alternatives"][0]["message"]["text"].strip()
+
+
+def _complete_stream(system_text: str, user_text: str, max_tokens: int, temperature: float,
+                     model: str | None = None):
+    """Stream a completion as text DELTAS. YandexGPT sends the full text-so-far in each
+    chunk (cumulative), so we diff against what we've already emitted. Sync generator —
+    Starlette iterates it in a threadpool, so it won't block the event loop."""
+    body = {
+        "modelUri": f"gpt://{settings.yc_folder_id}/{model or settings.yc_chat_model}",
+        "completionOptions": {"stream": True, "temperature": temperature, "maxTokens": max_tokens},
+        "messages": [{"role": "system", "text": system_text}, {"role": "user", "text": user_text}],
+    }
+    with requests.post(_ENDPOINT, headers={"Authorization": f"Api-Key {settings.yc_api_key}"},
+                       json=body, timeout=60, stream=True) as r:
+        r.raise_for_status()
+        prev = ""
+        for line in r.iter_lines():
+            if not line:
+                continue
+            try:
+                txt = json.loads(line)["result"]["alternatives"][0]["message"]["text"]
+            except (ValueError, KeyError, IndexError):
+                continue
+            delta = txt[len(prev):] if txt.startswith(prev) else txt   # rare re-base → emit fresh
+            if delta:
+                yield delta
+            prev = txt
 
 
 _REC_RE = re.compile(
@@ -112,15 +140,67 @@ def _clean_json(s):
     return json.loads(m.group(0)) if m else None
 
 
+# Deterministic crop+target resolution for the common protection questions, so we DON'T
+# spend a second LLM round-trip on extraction. Misses fall through to the lite-model
+# extractor. Padalitsa/самосев is deliberately left to the LLM (the weed class depends
+# on which crop's volunteers, not the field crop).
+_CROP_LEX = [
+    ("подсолн", "подсолнечник"), ("кукуруз", "кукуруза"), ("пшениц", "пшеница"),
+    ("ячмен", "ячмень"), ("рапс", "рапс"), ("горох", "горох"),
+    ("свёкл", "сахарная свёкла"), ("свекл", "сахарная свёкла"),
+    ("соя", "соя"), ("сои", "соя"), ("сою", "соя"), ("сое", "соя"),
+]
+_WEED_LEX = [
+    # двудольные (broadleaf)
+    ("осот", ("осот", "двудольн")), ("бодяк", ("бодяк", "двудольн")),
+    ("амбрози", ("амбрози", "двудольн")), ("щириц", ("щириц", "двудольн")),
+    ("марь", ("марь", "двудольн")), ("лебед", ("марь", "двудольн")),
+    ("вьюнок", ("вьюнок", "двудольн")), ("вьюнк", ("вьюнок", "двудольн")),
+    ("горец", ("горец", "двудольн")), ("гречишк", ("гречишк", "двудольн")),
+    ("ромашк", ("ромашк", "двудольн")), ("подмаренник", ("подмаренник", "двудольн")),
+    ("дурнишник", ("дурнишник", "двудольн")), ("канатник", ("канатник", "двудольн")),
+    ("василёк", ("василёк", "двудольн")), ("василек", ("василёк", "двудольн")),
+    ("молочай", ("молочай", "двудольн")), ("паслён", ("паслён", "двудольн")),
+    ("паслен", ("паслён", "двудольн")), ("звездчатк", ("звездчатк", "двудольн")),
+    ("пастушь", ("пастушья сумка", "двудольн")), ("ярутк", ("ярутка", "двудольн")),
+    # злаковые (grass)
+    ("щетинник", ("щетинник", "злаков")), ("мышей", ("щетинник", "злаков")),
+    ("ежовник", ("ежовник", "злаков")), ("куриное просо", ("ежовник", "злаков")),
+    ("пырей", ("пырей", "злаков")), ("овсюг", ("овсюг", "злаков")),
+    ("метлиц", ("метлица", "злаков")), ("костёр", ("костёр", "злаков")),
+    ("костер", ("костёр", "злаков")), ("лисохвост", ("лисохвост", "злаков")),
+    ("росичк", ("росичк", "злаков")), ("мятлик", ("мятлик", "злаков")),
+]
+
+
+def _lexicon_extract(question: str):
+    """Resolve {crop, target, weed_class} from a compact lexicon — no LLM call. Returns
+    None (→ fall back to the lite-model extractor) when the crop or the weed isn't
+    confidently in the lexicon, or for padalitsa (weed class is nuanced there)."""
+    ql = f" {question.lower()} "
+    if "падалиц" in ql or "самосев" in ql:
+        return None
+    crop = next((c for stem, c in _CROP_LEX if stem in ql), None)
+    if not crop:
+        return None
+    for stem, (target, klass) in _WEED_LEX:
+        if stem in ql:
+            return {"crop": crop, "target": target, "weed_class": klass}
+    return None
+
+
 async def _registry_grounding(question: str) -> str | None:
     """For a «чем обработать культуру X от Y» question, pull registered products from the
     Госкаталог so the answer stays correct (real, registered options only)."""
     if not _REC_RE.search(question):
         return None
-    try:
-        ct = _clean_json(await asyncio.to_thread(_complete, _EXTRACT_SYS, question, 200, 0.0))
-    except Exception:
-        return None
+    ct = _lexicon_extract(question)          # no-LLM fast path — kills the second call on common questions
+    if ct is None:                           # miss → fast lite-model extractor (not pro)
+        try:
+            ct = _clean_json(await asyncio.to_thread(
+                _complete, _EXTRACT_SYS, question, 200, 0.0, settings.yc_extract_model))
+        except Exception:
+            return None
     if not ct or not ct.get("crop"):
         return None
     crop, target, klass = ct["crop"], ct.get("target"), ct.get("weed_class")
@@ -207,10 +287,11 @@ _REC_SYS = (
 )
 
 
-async def answer(question: str, context: str | None = None,
-                 history: str | None = None) -> str | None:
-    if not (settings.yc_api_key and settings.yc_folder_id):
-        return None
+async def _assemble(question: str, context: str | None = None,
+                    history: str | None = None):
+    """Ground the question (CropWise field data + Госкаталог products + literature) and
+    assemble the (system, user_text, max_tokens) triple. Shared by the blocking answer()
+    and the streaming path so both reason over the exact same context."""
     # Follow-ups («предложите варианты», «а норма?») carry the crop/target in the PREVIOUS turn —
     # fold the last user question from history into the grounding query so products still resolve.
     ground_q = question
@@ -232,7 +313,28 @@ async def answer(question: str, context: str | None = None,
     # Structured answer for real recommendation questions (grounding fired); conversational
     # otherwise (bot how-to, field history, off-topic).
     sys, max_toks = (_REC_SYS, 950) if grounding else (_SYS, 700)
+    return sys, "\n\n".join(parts), max_toks
+
+
+async def assemble_prompt(question: str, context: str | None = None,
+                          history: str | None = None):
+    """Public: (system, user_text, max_tokens) for streaming, or None if the LLM is off."""
+    if not (settings.yc_api_key and settings.yc_folder_id):
+        return None
+    return await _assemble(question, context, history)
+
+
+def stream_complete(system_text: str, user_text: str, max_tokens: int, temperature: float = 0.45):
+    """Public: sync generator yielding answer text deltas (for a StreamingResponse)."""
+    return _complete_stream(system_text, user_text, max_tokens, temperature)
+
+
+async def answer(question: str, context: str | None = None,
+                 history: str | None = None) -> str | None:
+    if not (settings.yc_api_key and settings.yc_folder_id):
+        return None
+    sys, user_text, max_toks = await _assemble(question, context, history)
     try:
-        return await asyncio.to_thread(_complete, sys, "\n\n".join(parts), max_toks, 0.45)
+        return await asyncio.to_thread(_complete, sys, user_text, max_toks, 0.45)
     except Exception:
         return None

@@ -254,19 +254,35 @@ async function runChat(text, crop, file){
   const hist = history.slice(-6);
   const t=add('анализирую…','bot typing');
   document.getElementById('send').disabled=true;
-  try{
-    let r;
-    if(file){ const fd=new FormData(); fd.append('image',file); fd.append('question',text); fd.append('crop',crop);
-      r=await fetch('/api/diagnose',{method:'POST',body:fd}); }
-    else { r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:text,crop:crop,history:hist})}); }
-    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
-    const j=await r.json();
-    const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
+  const finishAnswer=(ans)=>{                    // shared tail: actions + history + crop-follow-up flag
     t.textContent=ans; t.className='msg bot';
-    if(j.answer){ addActions(t, ans, text, crop);
-      history.push({role:'user',text:text||'[фото поля]'}); history.push({role:'bot',text:ans});
-      awaitingCrop = /культур/i.test(ans) && /(уточн|укаж|какая|какую|подтверд)/i.test(ans); }
+    addActions(t, ans, text, crop);
+    history.push({role:'user',text:text||'[фото поля]'}); history.push({role:'bot',text:ans});
+    awaitingCrop = /культур/i.test(ans) && /(уточн|укаж|какая|какую|подтверд)/i.test(ans);
+  };
+  try{
+    if(file){                                    // photo diagnosis — one-shot JSON (vision call)
+      const fd=new FormData(); fd.append('image',file); fd.append('question',text); fd.append('crop',crop);
+      const r=await fetch('/api/diagnose',{method:'POST',body:fd});
+      if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
+      const j=await r.json(); const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
+      if(j.answer) finishAnswer(ans); else { t.textContent=ans; t.className='msg bot'; }
+      return;
+    }
+    // text question — stream the answer word-by-word for responsiveness
+    const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:text,crop:crop,history:hist})});
+    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
+    if(!r.ok || !r.body){ t.textContent='Ошибка. Попробуйте ещё раз.'; t.className='msg bot'; return; }
+    t.textContent=''; t.className='msg bot';
+    const reader=r.body.getReader(), dec=new TextDecoder(); let ans='';
+    for(;;){
+      const {value,done}=await reader.read(); if(done) break;
+      ans += dec.decode(value,{stream:true});
+      t.textContent=ans; chat.scrollTop=chat.scrollHeight;
+    }
+    ans=ans.trim();
+    if(ans) finishAnswer(ans); else { t.textContent='Что-то пошло не так, попробуйте ещё раз.'; t.className='msg bot'; }
   }catch(err){ t.textContent='Ошибка сети. Проверьте соединение и попробуйте ещё раз.'; t.className='msg bot'; }
   finally{ document.getElementById('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
 }

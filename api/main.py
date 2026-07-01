@@ -23,11 +23,13 @@ from uuid import uuid4
 import redis.asyncio as aioredis
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
 
 from bot.agro_chat import answer as agro_answer
+from bot.agro_chat import assemble_prompt, stream_complete
 from bot.config import settings
 from bot.db import (
     add_push_subscription,
@@ -527,6 +529,42 @@ async def chat(body: ChatIn, request: Request):
     full_q = f"Культура: {crop}. {q}" if crop else q   # give the grounding the crop context
     ans = await agro_answer(full_q, history=_format_history(body.history))
     return {"answer": ans or "Не понял вопрос — переформулируйте, пожалуйста."}
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(body: ChatIn, request: Request):
+    """Same as /api/chat but streams the answer token-by-token (StreamingResponse of plain
+    UTF-8 text deltas). Grounding runs first (awaited), then the completion streams — so the
+    reply starts appearing in ~1 s instead of after the whole thing is written."""
+    q = (body.question or "").strip()
+    if not q:
+        raise HTTPException(400, "empty question")
+    if len(q) > MAX_Q:
+        raise HTTPException(413, "question too long")
+    if not await _rate_ok(_client_ip(request), "chat", CHAT_PER_HOUR):
+        raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
+    crop = (body.crop or "").strip()
+    full_q = f"Культура: {crop}. {q}" if crop else q
+    assembled = await assemble_prompt(full_q, history=_format_history(body.history))
+    if not assembled:
+        raise HTTPException(503, "Ассистент временно недоступен.")
+    sys_text, user_text, max_toks = assembled
+
+    def gen():
+        try:
+            got = False
+            for delta in stream_complete(sys_text, user_text, max_toks):
+                got = True
+                yield delta
+            if not got:
+                yield "Не понял вопрос — переформулируйте, пожалуйста."
+        except Exception:
+            logger.exception("chat stream failed")
+            yield "\n⚠️ Не удалось получить ответ. Попробуйте ещё раз."
+
+    # X-Accel-Buffering: no → nginx forwards chunks immediately instead of buffering.
+    return StreamingResponse(gen(), media_type="text/plain; charset=utf-8",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 @app.post("/api/diagnose")

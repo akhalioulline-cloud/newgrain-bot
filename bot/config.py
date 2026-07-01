@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     yc_api_key: str = ""
     yc_folder_id: str = ""
     yc_translate_model: str = "yandexgpt"  # 'yandexgpt' (pro) or 'yandexgpt-lite'
+    # The agronomist assistant runs on the newest generation (5.1, via the `rc` tag —
+    # `yandexgpt`/`yandexgpt/latest` still resolve to 5.0 / 09.02.2025). Kept separate
+    # from yc_translate_model so parsing/translation stay on the stable build. Flip back
+    # to "yandexgpt" here (or via env) if rc ever misbehaves.
+    yc_chat_model: str = "yandexgpt/rc"
+    # Fast/cheap model for the crop+target extraction step (structured JSON, temp 0) —
+    # lite is plenty and roughly halves that call's latency vs pro.
+    yc_extract_model: str = "yandexgpt-lite/latest"
 
     # Telegram API base override. Empty = use api.telegram.org directly.
     # Set to a Cloudflare-Worker relay URL (e.g. https://xxx.workers.dev) to
