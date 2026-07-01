@@ -753,6 +753,10 @@ _ANNOUNCEMENTS = [
     (17, "🎤 <b>Голосовой комментарий и любое поле</b>\n"
          "В приложении комментарий к фото можно надиктовать голосом — нажмите 🎤 рядом с полем «Комментарий». "
          "И теперь доступно любое поле хозяйства: при загрузке введите его номер (например 39 или 76/108)."),
+    (18, "🎥 <b>Видео обследования — на проверку старшему агроному</b>\n"
+         "Теперь ваши видео с обследования сначала уходят на проверку Алмасу — так же, как фото. Он "
+         "просматривает запись (и расшифровку речи), подтверждает — и наблюдение попадает в план по полю. "
+         "Снимайте и комментируйте как обычно; ничего дополнительно делать не нужно."),
 ]
 
 _announce_redis = None
@@ -1299,6 +1303,13 @@ _CAT_BY_RU = {label.lower(): code for label, code in CATEGORIES}
 _CAT_BY_RU.update({"сорняки": "weed", "болезни": "disease", "вредители": "pest"})
 
 
+def _approved_status(sub) -> str:
+    """Where a submission goes once the chief agronomist approves it: a scouting
+    video/pass is field-state → terminal 'stored' (feeds /plan, no CVAT); a diagnostic
+    photo goes into the labeling queue → 'ready_for_labeling'."""
+    return "stored" if (sub and sub.get("category") == "scouting") else "ready_for_labeling"
+
+
 def _review_caption(sub) -> str:
     cat = CATEGORY_LABELS.get(sub["category"], sub["category"] or "—")
     com = sub["comment_text"] or sub["comment_voice_text"]
@@ -1380,23 +1391,48 @@ async def on_review(callback: CallbackQuery, state: FSMContext, user) -> None:
         return
     _, action, sid = callback.data.split(":", 2)
     if action == "ok":
-        await _ack(callback, "Отправлено на разметку ✓")
-        await _drop_kb(callback)
-        await update_submission(sid, status="ready_for_labeling")
         sub = await get_submission_review(sid)
-        await callback.message.answer("✅ Отправлено на разметку.")
+        # Scouting videos are field-state, not annotation targets: a confirmed one goes
+        # to terminal 'stored' (feeds /plan) instead of into the CVAT labeling queue.
+        is_scouting = bool(sub and sub["category"] == "scouting")
+        await update_submission(sid, status=_approved_status(sub))
+        await _drop_kb(callback)
+        if is_scouting:
+            await _ack(callback, "Подтверждено ✓")
+            await callback.message.answer("✅ Видео обследования подтверждено.")
+        else:
+            await _ack(callback, "Отправлено на разметку ✓")
+            await callback.message.answer("✅ Отправлено на разметку.")
         if sub and sub["submitter_tg"]:
+            what = "видео обследования" if is_scouting else "фото"
+            tail = "" if is_scouting else " и отправлено на разметку"
             try:
                 await callback.bot.send_message(
-                    sub["submitter_tg"], "✅ Ваше фото проверено старшим агрономом и "
-                    "отправлено на разметку. Спасибо!")
+                    sub["submitter_tg"],
+                    f"✅ Ваше {what} проверено старшим агрономом{tail}. Спасибо!")
             except Exception:
                 logger.exception("notify submitter (approve) failed")
             try:
-                await send_push(sub["submitter_tg"], "Фото проверено ✅",
-                                "Старший агроном подтвердил ваше фото — оно ушло в разметку.")
+                await send_push(sub["submitter_tg"],
+                                ("Видео проверено ✅" if is_scouting else "Фото проверено ✅"),
+                                f"Старший агроном подтвердил ваше {what}.")
             except Exception:
                 logger.exception("push submitter (approve) failed")
+        return
+    if action == "no":                          # reject (video review card)
+        sub = await get_submission_review(sid)
+        await update_submission(sid, status="rejected")
+        await _ack(callback, "Отклонено")
+        await _drop_kb(callback)
+        await callback.message.answer("🚫 Отклонено — в план не пойдёт.")
+        if sub and sub["submitter_tg"]:
+            what = "видео обследования" if sub["category"] == "scouting" else "фото"
+            try:
+                await callback.bot.send_message(
+                    sub["submitter_tg"],
+                    f"🚫 Ваше {what} отклонено старшим агрономом.")
+            except Exception:
+                logger.exception("notify submitter (reject) failed")
         return
     attr = _REV_ATTR.get(action)
     if not attr:
@@ -1440,9 +1476,10 @@ async def on_review_edit(message: Message, state: FSMContext, user) -> None:
     else:  # comment
         await update_submission(sid, comment_text=val)
         newval = val
-    # The correction itself finalizes the photo — straight to the annotator, no
-    # extra confirmation. The junior is only notified.
-    await update_submission(sid, status="ready_for_labeling")
+    # The correction itself finalizes the submission — straight to the annotator (or,
+    # for a scouting video, terminal 'stored'). The junior is only notified.
+    sub = await get_submission_review(sid)          # re-read: category may have just changed
+    await update_submission(sid, status=_approved_status(sub))
     await state.clear()
     if sub and sub["submitter_tg"]:
         try:

@@ -11,6 +11,7 @@ import sys
 
 from bot.db import fail_video_job, finish_video_job, get_pending_video_jobs
 from bot.storage import download_bytes
+from bot.video_review import send_video_review_for
 from bot.video_transcribe import transcribe_video
 
 
@@ -24,7 +25,12 @@ async def run() -> int:
             video = await download_bytes(j["video_key"])
             text = await asyncio.to_thread(transcribe_video, video)
             await finish_video_job(j["id"], j["submission_id"], text)
-            print(f"video_collect: job {j['id']} done ({len(text)} chars).", file=sys.stderr)
+            # Juniors' videos wait for the chief agronomist's verification: now that the
+            # narration is transcribed, send him the review card (transcript + watch link).
+            # No-op for chief/admin uploads (already terminal) — the fn checks the status.
+            sent = await send_video_review_for(j["submission_id"], j["video_key"])
+            print(f"video_collect: job {j['id']} done ({len(text)} chars, "
+                  f"review card → {sent} chief(s)).", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
             await fail_video_job(j["id"])
             print(f"video_collect: job {j['id']} failed: {exc}", file=sys.stderr)

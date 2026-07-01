@@ -676,7 +676,7 @@ async def get_submission_review(submission_id):
         return (await conn.execute(text(
             "SELECT s.id, s.category, s.subcategory, s.comment_text, s.comment_voice_text, "
             "s.image_url, s.status, f.name AS field_name, "
-            "u.full_name AS submitter, u.tg_user_id AS submitter_tg "
+            "u.full_name AS submitter, u.tg_user_id AS submitter_tg, u.farm_id AS farm_id "
             "FROM submissions s LEFT JOIN fields f ON f.id = s.field_id "
             "LEFT JOIN users u ON u.id = s.user_id WHERE s.id = :i"),
             {"i": submission_id})).mappings().first()
@@ -1042,7 +1042,8 @@ async def get_field_observations(field_id: int, limit: int = 20):
             SELECT created_at, category, subcategory, comment_text, comment_voice_text,
                    gps_lat, gps_lon
             FROM submissions
-            WHERE field_id = :fid AND status NOT IN ('draft','rejected','duplicate')
+            WHERE field_id = :fid
+              AND status NOT IN ('draft','rejected','duplicate','pending_review')
             ORDER BY created_at DESC
             LIMIT :lim
             """), {"fid": field_id, "lim": limit})

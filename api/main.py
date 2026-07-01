@@ -380,7 +380,9 @@ async def scout_video(user=Depends(require_user),
                       field_id: str = Form(""), comment: str = Form("")):
     """A scouting video (Pilot v2): stored as a field-state record; its voice narration is
     transcribed in the background (video_jobs → collector) into the field's observations.
-    Scouting bypasses the review gate."""
+    A junior's video waits for the chief agronomist's verification (Almas's request) —
+    the collector sends him the review card once the narration is transcribed; a chief/admin
+    upload is finalized straight away."""
     data = await video.read()
     if not data:
         raise HTTPException(400, "Пустой файл.")
@@ -397,8 +399,10 @@ async def scout_video(user=Depends(require_user),
         logger.exception("scout-video: S3 upload failed")
         raise HTTPException(502, "Не удалось сохранить видео. Попробуйте ещё раз.")
     h = hashlib.sha256(data).hexdigest()
+    review = user["role"] == "agronomist"   # juniors' videos wait for chief verification
     await create_submission(sid, user["id"], fid, url, None, None, h)
-    await update_submission(sid, category="scouting", status="stored",
+    await update_submission(sid, category="scouting",
+                            status="pending_review" if review else "stored",
                             comment_text=(comment.strip() or None))
     await create_video_job(sid, key)
     return {"ok": True, "submission_id": sid}
