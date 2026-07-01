@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     # fallback stays on the capable (pro) model: correctness > ~0.5 s here.
     yc_extract_model: str = "yandexgpt"
 
-    # EPPO Global Database API (data.eppo.int) — neutral pest/disease/weed reference
-    # (RU/Latin names, hosts, distribution). Token from data.eppo.int; passed as the
-    # `authtoken` query param. Requires the account to have accepted the Open Data Licence.
+    # EPPO Global Database API — neutral pest/disease/weed reference (RU/Latin names,
+    # hosts, quarantine status). Token from data.eppo.int. NB: the legacy API was retired
+    # (May 2026); the current one is base `https://api.eppo.int/gd/v2` with auth via the
+    # HTTP header `X-Api-Key` (not a query param). name2codes resolves LATIN names only.
     eppo_api_token: str = ""
 
     # Telegram API base override. Empty = use api.telegram.org directly.
