@@ -70,6 +70,7 @@ from bot.ndvi_watch import format_digest
 from bot.oplog_match import is_fieldless_op, looks_like_oplog
 from bot.parse_op import parse_operation, parse_operations
 from bot.push import send_push
+from bot.cvat_admin import add_label as add_cvat_label
 from bot.review_actions import approved_status, notify_submitter_decision
 from bot.field_plan import generate_field_plan
 from bot.states import CAReport, CAReview, OpLogForm, PhotoForm, ProblemForm
@@ -116,6 +117,7 @@ STATUS_RU = {
     "in_labeling": "в CVAT",
     "labeled": "размечено",
     "stored": "сохранено (разметка не нужна)",
+    "needs_species": "ждёт добавления вида в словарь",
     "in_dataset": "в датасете",
 }
 
@@ -835,6 +837,34 @@ async def cmd_all(message: Message, user) -> None:
         lines.append(f"• {line}")
 
     await message.answer("\n".join(lines))
+
+
+@router.message(Command("addweed"))
+async def cmd_addweed(message: Message, command: CommandObject, user) -> None:
+    """Admin: add a new weed species to the annotation dictionary (a CVAT label), so a weed
+    the annotator flagged as «unknown» can be labelled going forward."""
+    if not _is_admin(user):
+        await message.answer("Эта команда доступна только администратору.")
+        return
+    name = re.sub(r"[^a-z0-9_]", "", (command.args or "").strip().lower().replace(" ", "_"))
+    if not name:
+        await message.answer(
+            "Добавить новый вид сорняка в словарь разметки:\n"
+            "/addweed cirsium_arvense\n\n"
+            "Код — латиницей (латинское название через _). После добавления этот сорняк "
+            "можно будет размечать в CVAT.")
+        return
+    try:
+        ok, info = await asyncio.to_thread(add_cvat_label, name)
+    except Exception:
+        logger.exception("addweed failed")
+        await message.answer("Не удалось добавить класс — попробуйте позже.")
+        return
+    if ok:
+        await message.answer(f"✅ Класс «{name}» добавлен в словарь разметки (цвет {info}). "
+                             "Теперь этот сорняк можно размечать в CVAT.")
+    else:
+        await message.answer(f"⚠️ {info}")
 
 
 @router.message(Command("adduser"))

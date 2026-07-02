@@ -741,6 +741,7 @@ const UP_STATUS = {
   ready_for_labeling:['принято, ждёт разметки','ok'], in_labeling:['в разметке','ok'],
   labeled:['размечено','ok'], pending_review:['на проверке у старшего агронома','ok'],
   stored:['принято','ok'], awaiting_metadata:['не завершено','warn'],
+  needs_species:['размечено, вид уточняется','ok'],
   rejected:['отклонено','bad'], duplicate:['дубликат','warn'],
 };
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

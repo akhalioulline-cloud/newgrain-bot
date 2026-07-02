@@ -47,6 +47,10 @@ from bot.config import settings
 from bot.db import engine
 from bot.push import send_push
 
+# The CVAT label the annotator picks when a weed is real but NOT in the dictionary.
+# On import such frames are held at 'needs_species' and the admins are pinged to add it.
+UNKNOWN_LABEL = "unknown"
+
 
 def _sid_from_name(name: str) -> str:
     """Recover the submission UUID from a CVAT frame filename. Handles both
@@ -334,14 +338,19 @@ async def _run_auto() -> int:
 
 
 def _parse_cvat_xml(xml_bytes: bytes):
-    """Yields (submission_id, [(class, cx, cy, w, h), ...]) per annotated image.
+    """Parse a CVAT export. Returns:
+      • by_sid       — {submission_id: [(class, cx, cy, w, h), ...]} for boxed images
+      • zero_box_sids — image sids with NO box (annotator saw no weed → become scouting)
+      • unknown_sids  — sids with a box labelled UNKNOWN_LABEL (weed not in the dictionary
+                        → held at 'needs_species' + admins pinged to add it)
+      • skipped_malformed — count of images with unreadable metadata
 
-    Image filename convention: {submission_id}{ext} — strip the extension
-    to recover the UUID. Skips any image with malformed metadata or no boxes.
+    Filename convention: '{hint-slug}__{submission_id}.{ext}' → _sid_from_name recovers the UUID.
     """
     root = ET.fromstring(xml_bytes)
     by_sid: dict[str, list] = defaultdict(list)
-    images_with_no_boxes = 0
+    zero_box_sids: list[str] = []
+    unknown_sids: set[str] = set()
     skipped_malformed = 0
 
     for img in root.findall("image"):
@@ -355,7 +364,8 @@ def _parse_cvat_xml(xml_bytes: bytes):
 
         boxes = img.findall("box")
         if not boxes:
-            images_with_no_boxes += 1
+            if sid:
+                zero_box_sids.append(sid)          # no weed marked → scouting (Rule A)
             continue
 
         for box in boxes:
@@ -372,8 +382,10 @@ def _parse_cvat_xml(xml_bytes: bytes):
             cx = (xtl + xbr) / (2 * w)
             cy = (ytl + ybr) / (2 * h)
             by_sid[sid].append((label, cx, cy, bw, bh))
+            if label == UNKNOWN_LABEL:
+                unknown_sids.add(sid)              # weed not in dictionary → notify (Rule B)
 
-    return by_sid, images_with_no_boxes, skipped_malformed
+    return by_sid, zero_box_sids, unknown_sids, skipped_malformed
 
 
 async def _import_zip(zip_bytes: bytes) -> int:
@@ -385,11 +397,10 @@ async def _import_zip(zip_bytes: bytes) -> int:
               "with annotations.xml at the top level.", file=sys.stderr)
         return 1
 
-    by_sid, no_boxes, malformed = _parse_cvat_xml(xml_data)
+    by_sid, zero_box_sids, unknown_sids, malformed = _parse_cvat_xml(xml_data)
 
-    if not by_sid:
-        print(f"No annotated images found in the zip "
-              f"({no_boxes} had no boxes, {malformed} malformed). Nothing to import.",
+    if not by_sid and not zero_box_sids:
+        print(f"No images found in the zip ({malformed} malformed). Nothing to import.",
               file=sys.stderr)
         return 1
 
@@ -406,18 +417,21 @@ async def _import_zip(zip_bytes: bytes) -> int:
               f"submission, skipping: {sorted(missing)[:3]}…", file=sys.stderr)
 
     valid_sids = sorted(existing_ids)
+    # Split boxed submissions: known-species → 'labeled'; unknown weed → 'needs_species'.
+    unknown_valid = sorted(s for s in valid_sids if s in unknown_sids)
+    labeled_valid = sorted(s for s in valid_sids if s not in unknown_sids)
     total_boxes = sum(len(by_sid[s]) for s in valid_sids)
 
     # Loop-closing recognition (NOT points — see no-gamification spec): capture who
     # transitions to 'labeled' for the FIRST time so each agronomist is thanked once,
-    # not again on idempotent re-imports.
+    # not again on idempotent re-imports. Only real (known-species) labels earn thanks.
     async with engine.connect() as conn:
         thank_rows = [dict(r) for r in (await conn.execute(text(
             "SELECT u.tg_user_id AS tg, s.subcategory AS sub "
             "FROM submissions s JOIN users u ON u.id = s.user_id "
             "WHERE s.id::text = ANY(:ids) AND s.status <> 'labeled' "
             "  AND u.tg_user_id IS NOT NULL"
-        ), {"ids": valid_sids})).mappings().all()]
+        ), {"ids": labeled_valid})).mappings().all()]
 
     async with engine.begin() as conn:
         # Idempotent re-import: drop prior labels for these submissions.
@@ -437,16 +451,40 @@ async def _import_zip(zip_bytes: bytes) -> int:
                     """
                 ), {"sid": sid, "label": label, "x": cx, "y": cy, "w": bw, "h": bh})
 
-        await conn.execute(text(
-            "UPDATE submissions SET status='labeled', updated_at=NOW() "
-            "WHERE id::text = ANY(:ids)"
-        ), {"ids": valid_sids})
+        if labeled_valid:
+            await conn.execute(text(
+                "UPDATE submissions SET status='labeled', updated_at=NOW() "
+                "WHERE id::text = ANY(:ids)"
+            ), {"ids": labeled_valid})
+        # Unknown weed: box is done, species isn't — hold until it's added to the dictionary.
+        if unknown_valid:
+            await conn.execute(text(
+                "UPDATE submissions SET status='needs_species', updated_at=NOW() "
+                "WHERE id::text = ANY(:ids)"
+            ), {"ids": unknown_valid})
+        # No box drawn → the annotator saw no weed → it's a scouting photo, out of the pool.
+        # Guard on in_labeling so an idempotent re-run can't reclassify already-final rows.
+        scouted = 0
+        if zero_box_sids:
+            res = await conn.execute(text(
+                "UPDATE submissions SET category='scouting', status='stored', updated_at=NOW() "
+                "WHERE id::text = ANY(:ids) AND status = 'in_labeling'"
+            ), {"ids": zero_box_sids})
+            scouted = res.rowcount
 
-    print(f"Imported {total_boxes} label(s) for {len(valid_sids)} submission(s); "
+    print(f"Imported {total_boxes} label(s) for {len(labeled_valid)} submission(s); "
           f"flipped to status=labeled.", file=sys.stderr)
-    if no_boxes:
-        print(f"Note: {no_boxes} image(s) in the batch had zero boxes — "
-              f"they stay at status=in_labeling for follow-up.", file=sys.stderr)
+    if unknown_valid:
+        print(f"Note: {len(unknown_valid)} image(s) marked «unknown» → status=needs_species; "
+              f"admins pinged to add the species.", file=sys.stderr)
+    if scouted:
+        print(f"Note: {scouted} image(s) had no box → reclassified to scouting (out of the "
+              f"annotation pool).", file=sys.stderr)
+    if unknown_valid:
+        try:
+            await _notify_unknown_weeds(unknown_valid)
+        except Exception as exc:
+            print(f"notify unknown weeds failed: {exc}", file=sys.stderr)
     if thank_rows:
         try:
             await _thank_uploaders(thank_rows)
@@ -462,6 +500,52 @@ def _tg_send(chat_id: int, msg: str) -> None:
     base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
     requests.post(f"{base}/bot{settings.bot_token}/sendMessage",
                   json={"chat_id": chat_id, "text": msg}, timeout=20)
+
+
+def _tg_send_photo(chat_id: int, photo_url: str, caption: str) -> None:
+    """Telegram sendPhoto by URL (Telegram fetches it) — for the unknown-weed alert so the
+    admin sees the actual plant. Falls back to a text message with the link on failure."""
+    if not settings.bot_token:
+        return
+    base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
+    r = requests.post(f"{base}/bot{settings.bot_token}/sendPhoto",
+                      json={"chat_id": chat_id, "photo": photo_url, "caption": caption}, timeout=30)
+    if not r.ok:
+        _tg_send(chat_id, f"{caption}\nФото: {photo_url}")
+
+
+async def _notify_unknown_weeds(sids) -> None:
+    """Ping the admins to identify + add a weed the annotator marked «unknown» (not in the
+    dictionary). One message per photo, with the image and field/uploader context."""
+    from bot.storage import presigned_get
+    admins = settings.admin_ids
+    if not admins:
+        print("notify unknown weeds: no ADMIN_TG_IDS configured.", file=sys.stderr)
+        return
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            "SELECT s.id::text AS id, s.image_url, COALESCE(f.name,'вне пилота') AS field, "
+            "       u.full_name AS who "
+            "FROM submissions s LEFT JOIN fields f ON f.id = s.field_id "
+            "LEFT JOIN users u ON u.id = s.user_id WHERE s.id::text = ANY(:ids)"
+        ), {"ids": list(sids)})).mappings().all()
+    for r in rows:
+        try:
+            link = presigned_get(r["image_url"], expires=7 * 24 * 3600)
+        except Exception:
+            link = None
+        cap = ("❓ Неизвестный сорняк — его нет в словаре разметки.\n"
+               f"Поле: {r['field']} · прислал: {r['who'] or '—'}\n"
+               "Определите вид и добавьте класс командой  /addweed <код_вида>  "
+               "(например /addweed cirsium_arvense) — после этого его можно будет размечать.")
+        for a in admins:
+            try:
+                if link:
+                    _tg_send_photo(a, link, cap)
+                else:
+                    _tg_send(a, cap)
+            except Exception as exc:
+                print(f"notify unknown weed to {a} failed: {exc}", file=sys.stderr)
 
 
 async def _thank_uploaders(rows) -> None:
