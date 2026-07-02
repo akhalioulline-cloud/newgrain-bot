@@ -42,9 +42,12 @@ def add_label(name: str):
     if any(l["name"].lower() == name.lower() for l in labs):
         return False, f"Класс «{name}» уже есть в словаре."
     color = _COLORS[len(labs) % len(_COLORS)]
-    cr = requests.post(f"{base}/api/labels", headers={**headers, "Content-Type": "application/json"},
-                       json={"name": name, "color": color, "project_id": proj["id"], "type": "any"},
-                       timeout=30)
+    # New labels are added by PATCHing the project with the label(s) to merge in (a label
+    # without an id is created; existing ones are left untouched). POST /api/labels is 405.
+    cr = requests.patch(f"{base}/api/projects/{proj['id']}",
+                        headers={**headers, "Content-Type": "application/json"},
+                        json={"labels": [{"name": name, "color": color, "type": "any"}]},
+                        timeout=30)
     if not cr.ok:
         return False, f"CVAT отклонил ({cr.status_code})."
     return True, color
