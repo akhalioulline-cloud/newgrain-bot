@@ -1,0 +1,16 @@
+---
+name: newgrain-app-v2-vision
+description: App v2 strategy — perception-data company, re-pointed journey, native/offline, model/data, robotics thesis, team-social; full plan in docs/app-v2-plan.md
+metadata:
+  type: project
+---
+
+Strategy pivot decided 2 Jul 2026 (full write-up: `docs/app-v2-plan.md`). **Flagleaf = a regional (RU/CIS) field-perception DATA company wearing an agronomist-tool coat.** Two horizons: a genuinely useful decision-tool (near-term value + revenue, and the data-collection engine) funds/feeds the long-term asset (a labeled RU field dataset + owned CV model = the perception layer for ag-robotics; moat = regional data Deere/Carbon can't get; don't build hardware, partner with a robotics/CV dev).
+
+**Core reframe:** recognition ≈ zero value for experts (they know the weed) → recognition is the on-ramp, the **data-grounded DECISION** (product+dose+ЭПВ timing+₽ savings on THIS field, reuse agro_chat+Госкаталог+ЭПВ) is the reward. Three users (blurred, full toolset to both): young=recognition, experienced=decision+training(naming=labels), + robotics endgame. Value first; the "Other→I'll tell you" correction IS the label (harvest from use, no "please annotate").
+
+**New-app journey:** camera-first, one-thumb, **framing/quality assistant (= biggest accuracy lever)**, confidence-gated best-guess → tap → streamed decision; "Other"→voice/text→decision+silent CVAT flywheel. **Native via Capacitor** (one codebase → RuStore + TestFlight; NOT Swift/Kotlin rewrite). **Offline** = downloaded DB (Госкаталог+field data ~100MB, trivial on 256GB; RAM is the real limit only for on-device LLM which we DON'T need) → structured decision offline, full chat online; on-device CV model later. **Fun** = delight/wow/craft, NOT arcade (upholds no-gamification). AR framing now (generic detector); live species label later (model-gated).
+
+**Model/data:** stay **qwen (in-RU)** — Gemini geo-blocked + 152-ФЗ (NOT Skolkovo, which founder dropped; dropping it only loosens the strategic axis for a future non-RU market). Benchmark 2 Jul (16 iNat photos): qwen 31% species/94% type; **gemini-2.5-pro 63%/94%**; prior field-photo test Gemini~47% vs qwen~37%. Lessons: **photo quality > model choice**; herbicide-relevant TYPE already 94%; марь+grasses hard for all. Accelerate via **open-data bootstrap** (datasets/PUBLIC_SOURCES.md + iNaturalist/GBIF + transfer learning → hundreds not thousands of our photos) + **qwen auto-labeling** (Evgenia verifies, 3–5×). Evolve to robotics-grade (segmentation, capture standards, stage×perspective; phone≠drone≠ground-robot).
+
+**Social:** amplifies motivation, doesn't create it → value first. Individual Strava/Duolingo mechanics DON'T fit a small pro team (coworker leaderboards toxic). Do: top-down recognition + a **professional field-observations/discussion feed** (mentors juniors + peer/chief verification → better labels). **Team/farm identity is the real social model** (future/scale): externalizes competition (allies not rivals), doubles as a **benchmarking product** the buyer pays for; anonymized/cohort only (competitive privacy); **entry via agroholdings** (intra-holding, privacy solved); design the farm-as-identity data model now. Ties to [[newgrain-pilot-v2]], [[newgrain-weedid-llm-bakeoff]], [[newgrain-motivation-no-gamification]], [[newgrain-pwa]].
