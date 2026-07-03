@@ -272,8 +272,10 @@ async function boot(){
     const nav=$('tabs'); const a=document.createElement('a'); a.className='tab'; a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
   }
   try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
-    $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
-    const last=localStorage.getItem('scanField'); if(last&&fieldsAll.some(f=>String(f.id)===last)) $('field').value=last;
+    $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')
+      +'<option value="">— другое поле —</option>';
+    const last=localStorage.getItem('scanField');
+    if(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) $('field').value=last;
     $('field').onchange=()=>localStorage.setItem('scanField',$('field').value);
   }catch(e){}
   stageCamera();
