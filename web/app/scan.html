@@ -128,7 +128,7 @@
 
 <script>
 const API='', TOK='flagleaf_session', $=id=>document.getElementById(id);
-let session=localStorage.getItem(TOK)||'', fieldsAll=[], photoFile=null, photoURL=null;
+let session=localStorage.getItem(TOK)||'', fieldsAll=[], photoFile=null, photoURL=null, photoFromCam=false;
 const CATMAP={'сорняк':'weed','болезнь':'disease','вредитель':'pest'};
 
 async function api(path,opts={}){
@@ -172,10 +172,12 @@ function stageGuess(r){
        (a.why?`<span class="why">${esc(a.why)}</span>`:'')+`</span></button>`;
   }
   h+=`<button class="other" id="otherBtn">❓ Другое — я подскажу</button></div>`;
-  h+=`<div class="row"><button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>`;
+  const saveBtn = photoFromCam ? '<button class="btn ghost" id="saveBtn">💾 В галерею</button>' : '';
+  h+=`<div class="row">${saveBtn}<button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>`;
   $('stage').innerHTML=h;
   $('stage').querySelectorAll('.guess').forEach(b=>b.onclick=()=>decide(b.dataset.w,b.dataset.c));
   $('otherBtn').onclick=stageOther;
+  if($('saveBtn')) $('saveBtn').onclick=async()=>{ if(await saveToGallery()) $('saveBtn').textContent='✓ Сохранено'; };
 }
 function stageOther(){
   $('stage').innerHTML=
@@ -251,8 +253,14 @@ function stopRec(){ const mic=$('mic'); rec=false; if(mic){mic.classList.remove(
 }
 
 // ---------- boot ----------
-$('cam').onchange=e=>{ const f=e.target.files[0]; if(f) startRecognize(f); e.target.value=''; };
-$('gal').onchange=e=>{ const f=e.target.files[0]; if(f) startRecognize(f); e.target.value=''; };
+$('cam').onchange=e=>{ const f=e.target.files[0]; if(f){ photoFromCam=true; startRecognize(f); } e.target.value=''; };
+$('gal').onchange=e=>{ const f=e.target.files[0]; if(f){ photoFromCam=false; startRecognize(f); } e.target.value=''; };
+async function saveToGallery(){
+  if(!photoFile) return;
+  try{ if(navigator.canShare && navigator.canShare({files:[photoFile]})){ await navigator.share({files:[photoFile],title:'Фото сорняка — Flagleaf'}); return true; } }catch(e){ return false; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(photoFile); a.download='flagleaf-'+Date.now()+'.jpg';
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); return true;
+}
 $('navBack').onclick=()=>history.back(); $('navFwd').onclick=()=>history.forward(); $('navRefresh').onclick=()=>location.reload();
 async function boot(){
   if(!session){ location.href='/app/'; return; }
