@@ -302,6 +302,32 @@ _REC_SYS = (
 )
 
 
+# Structured answer for the «Что это?» scan journey — one consistent icon layout for ANY object
+# (weed / disease / pest / crop damage), so the card never flips between formats. Keeps the same
+# grounding (Госкаталог + ЭПВ + literature) when present.
+_SCAN_SYS = (
+    "Ты — опытный агроном-консультант хозяйства «New Grain Co» (ЦЧР). По фото распознан объект "
+    "(сорняк / болезнь / вредитель / повреждение или состояние самой культуры). Ответь СТРУКТУРИРОВАННО, "
+    "обычным текстом БЕЗ markdown-звёздочек, строго тремя разделами с этими значками-заголовками:\n"
+    "🔎 Что это: 1–2 фразы — что за объект/состояние и ключевая особенность.\n"
+    "💊 Что делать: конкретные меры по пунктам:\n"
+    "   • СОРНЯК — препараты ТОЛЬКО из блока «ЗАРЕГИСТРИРОВАННЫЕ ПРЕПАРАТЫ» (если он есть): 2–3 подходящих "
+    "с нормой расхода и пометкой производителя в [скобках], плюс агротехнический приём. Если блока нет — "
+    "назови действующие вещества и попроси уточнить культуру.\n"
+    "   • БОЛЕЗНЬ или ВРЕДИТЕЛЬ — чем защитить/лечить: препарат(ы) с нормой + агроприём.\n"
+    "   • ПОВРЕЖДЕНИЕ/СТРЕСС САМОЙ КУЛЬТУРЫ (гербицидный ожог, дефицит питания и т.п.) — меры "
+    "восстановления: антистресс/стимулятор роста с нормой (напр. Эпин, Циркон), подкормка (какими "
+    "элементами), агроприёмы (полив, рыхление). НЕ предлагай гербициды/пестициды против самой культуры.\n"
+    "⏱ Когда/сроки: сорняк — оптимальная фаза и по ЭПВ (бери блок ЭПВ, если есть), сколько обработок; "
+    "болезнь/вредитель — фаза; восстановление — когда ждать эффект и нужен ли повтор.\n\n"
+    "ЖЁСТКИЕ ПРАВИЛА: безопасность культуры превыше всего — НЕ рекомендуй препараты, повреждающие саму "
+    "культуру (глифосат — сплошной; на подсолнечнике/сое противодвудольные, трибенурон-метил, "
+    "имидазолиноны — ТОЛЬКО на устойчивых гибридах Express/Clearfield, оговори это). ТОЛЬКО решения — без "
+    "дисклеймеров, без «обратитесь к специалистам», без нравоучений на будущее. Не выдумывай препаратов "
+    "вне списка. Если есть блок НАУЧНЫЕ ИСТОЧНИКИ — можешь добавить 1 ссылку в конце."
+)
+
+
 _EPV_RE = re.compile(
     r"эпв|порог|обраб|опрыск|защит|гербицид|фунгицид|инсектицид|сорняк|вредител|болезн|"
     r"пора\b|когда\b|стади|фаз[аеуы]|сколько.*обработ|одну?.*или.*дв|нужно ли|стоит ли", re.I)
@@ -354,7 +380,7 @@ async def _wikipedia_grounding(question: str, ct) -> str | None:
 
 
 async def _assemble(question: str, context: str | None = None,
-                    history: str | None = None):
+                    history: str | None = None, structured: bool = False):
     """Ground the question (CropWise field data + Госкаталог products + literature) and
     assemble the (system, user_text, max_tokens) triple. Shared by the blocking answer()
     and the streaming path so both reason over the exact same context."""
@@ -388,16 +414,20 @@ async def _assemble(question: str, context: str | None = None,
     ) if p]
     # Structured answer for real recommendation questions (grounding fired); conversational
     # otherwise (bot how-to, field history, off-topic).
-    sys, max_toks = (_REC_SYS, 950) if grounding else (_SYS, 900)
+    if structured:                                    # «Что это?» scan → always one icon layout
+        sys, max_toks = _SCAN_SYS, 950
+    else:
+        sys, max_toks = (_REC_SYS, 950) if grounding else (_SYS, 900)
     return sys, "\n\n".join(parts), max_toks
 
 
 async def assemble_prompt(question: str, context: str | None = None,
-                          history: str | None = None):
-    """Public: (system, user_text, max_tokens) for streaming, or None if the LLM is off."""
+                          history: str | None = None, structured: bool = False):
+    """Public: (system, user_text, max_tokens) for streaming, or None if the LLM is off.
+    structured=True forces the «Что это?» icon layout regardless of grounding."""
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
-    return await _assemble(question, context, history)
+    return await _assemble(question, context, history, structured)
 
 
 def stream_complete(system_text: str, user_text: str, max_tokens: int, temperature: float = 0.3):

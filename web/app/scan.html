@@ -214,7 +214,7 @@ async function decide(weed, ruCat){
   const q=buildQuestion(weed, ruCat, crop);
   try{
     const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:q,crop:crop})});
+      body:JSON.stringify({question:q,crop:crop,structured:true})});
     if(!r.ok||!r.body){ $('ans').textContent='Не удалось получить ответ. Попробуйте ещё раз.'; return; }
     const rd=r.body.getReader(), dec=new TextDecoder(); let txt='';
     for(;;){const {value,done}=await rd.read(); if(done)break; txt+=dec.decode(value,{stream:true}); $('ans').textContent=txt; }

@@ -108,6 +108,7 @@ class ChatIn(BaseModel):
     crop: str | None = None
     history: list[Turn] | None = None
     session: str | None = None
+    structured: bool = False           # «Что это?» scan → force the consistent icon layout
 
 
 class FeedbackIn(BaseModel):
@@ -562,7 +563,8 @@ async def chat_stream(body: ChatIn, request: Request):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
     crop = (body.crop or "").strip()
     full_q = f"Культура: {crop}. {q}" if crop else q
-    assembled = await assemble_prompt(full_q, history=_format_history(body.history))
+    assembled = await assemble_prompt(full_q, history=_format_history(body.history),
+                                      structured=body.structured)
     if not assembled:
         raise HTTPException(503, "Ассистент временно недоступен.")
     sys_text, user_text, max_toks = assembled
