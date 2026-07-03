@@ -131,6 +131,9 @@
 const API='', TOK='flagleaf_session', $=id=>document.getElementById(id);
 let session=localStorage.getItem(TOK)||'', fieldsAll=[], photoFile=null, photoURL=null, photoFromCam=false;
 const CATMAP={'сорняк':'weed','болезнь':'disease','вредитель':'pest'};
+const CROP_LIST=['Подсолнечник','Соя','Пшеница озимая','Пшеница яровая','Кукуруза','Ячмень',
+  'Сахарная свёкла','Горох','Рапс','Гречиха','Овёс','Рожь','Просо','Нут','Лён масличный',
+  'Горчица','Кориандр','Многолетние травы'];
 
 async function api(path,opts={}){
   const headers=opts.headers||{}; if(session) headers['x-session']=session;
@@ -276,8 +279,9 @@ async function boot(){
   try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
     $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')
       +'<option value="">— другое поле —</option>';
-    const crops=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))];
-    $('crop').innerHTML='<option value="">— культура —</option>'+crops.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    const merged=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))], seen=new Set(merged.map(c=>c.toLowerCase()));
+    for(const c of CROP_LIST){ if(!seen.has(c.toLowerCase())){ merged.push(c); seen.add(c.toLowerCase()); } }   // farm crops first, then the full ЦЧР list
+    $('crop').innerHTML='<option value="">— культура —</option>'+merged.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
     const last=localStorage.getItem('scanField');
     $('field').value=(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) ? last : '';   // default: другое поле
     const toggleCrop=()=>$('crop').classList.toggle('hidden',$('field').value!=='');
