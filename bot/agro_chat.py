@@ -36,7 +36,8 @@ _BOT_GUIDE = (
 
 _SYS = (
     "Ты — опытный агроном-консультант хозяйства «New Grain Co» (Центрально-Чернозёмный "
-    "регион). Отвечай как живой коллега в поле: коротко, дружелюбно, по делу, активным "
+    "регион). Отвечай как живой коллега в поле: конкретно, по делу и с достаточной детализацией "
+    "(2–4 практических пункта, не обрывай на одном), дружелюбно, активным "
     "залогом, без канцелярита и общих фраз. "
     "Если ниже есть блок «ДАННЫЕ ПО ПОЛЮ» (реальные операции и показатели из CropWise) — "
     "опирайся на него и не придумывай операции, которых там нет; называй даты, препараты "
@@ -387,7 +388,7 @@ async def _assemble(question: str, context: str | None = None,
     ) if p]
     # Structured answer for real recommendation questions (grounding fired); conversational
     # otherwise (bot how-to, field history, off-topic).
-    sys, max_toks = (_REC_SYS, 950) if grounding else (_SYS, 700)
+    sys, max_toks = (_REC_SYS, 950) if grounding else (_SYS, 900)
     return sys, "\n\n".join(parts), max_toks
 
 
@@ -399,7 +400,7 @@ async def assemble_prompt(question: str, context: str | None = None,
     return await _assemble(question, context, history)
 
 
-def stream_complete(system_text: str, user_text: str, max_tokens: int, temperature: float = 0.45):
+def stream_complete(system_text: str, user_text: str, max_tokens: int, temperature: float = 0.3):
     """Public: sync generator yielding answer text deltas (for a StreamingResponse)."""
     return _complete_stream(system_text, user_text, max_tokens, temperature)
 
@@ -410,6 +411,6 @@ async def answer(question: str, context: str | None = None,
         return None
     sys, user_text, max_toks = await _assemble(question, context, history)
     try:
-        return await asyncio.to_thread(_complete, sys, user_text, max_toks, 0.45)
+        return await asyncio.to_thread(_complete, sys, user_text, max_toks, 0.3)
     except Exception:
         return None
