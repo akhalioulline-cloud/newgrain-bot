@@ -193,9 +193,16 @@ function stageOther(){
     '<span>✓</span><span>Фото сохранится и обучит ИИ Flagleaf.</span></div>'+
     '<button class="btn" id="otherGo" style="margin-top:12px">Подсказать, чем обработать</button></div>'+
     '<div class="row"><button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>';
-  $('otherGo').onclick=()=>{const v=$('otherIn').value.trim(); if(v) decide(v,'сорняк');};
+  $('otherGo').onclick=()=>{const v=$('otherIn').value.trim(); if(v) decide(v,'');};   // free-text: don't assume weed
   $('otherIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('otherGo').click();}});
   setupMic();
+}
+function buildQuestion(obj, ruCat, crop){
+  const c = crop || 'культуру';
+  if(ruCat==='болезнь')  return `«${obj}» на ${c}: чем защитить и лечить — зарегистрированный препарат, норма, сроки. Только конкретные решения.`;
+  if(ruCat==='вредитель') return `«${obj}» на ${c}: чем защитить — зарегистрированный препарат, норма, сроки по ЭПВ. Только конкретные решения.`;
+  if(ruCat==='сорняк')   return `Чем обработать ${c} от «${obj}»? Пора ли по ЭПВ, норма, сколько обработок? Только зарегистрированные препараты, по делу.`;
+  return `Агроном определил на поле (культура: ${c}): «${obj}». Дай практический ответ по сути: если это сорняк — чем обработать (зарегистрированный препарат, норма, сроки по ЭПВ); если болезнь или вредитель — чем защитить; если это повреждение или состояние самой культуры (например, гербицидный ожог) — конкретные меры, чтобы помочь растению (антистресс/стимулятор с нормой, подкормка, агроприёмы). Только решения.`;
 }
 async function decide(weed, ruCat){
   const f=curField(), crop=curCrop(), fid=f?f.id:'';
@@ -207,7 +214,7 @@ async function decide(weed, ruCat){
     '<div class="answer" id="ans"></div>'+
     '<div class="learn hidden" id="learn"><span>✓</span> +1 наблюдение обучает ИИ Flagleaf</div>'+
     '<div class="row" id="drow"></div>';
-  const q=`Чем обработать ${crop||'культуру'} от «${weed}»? Пора ли обрабатывать по ЭПВ, в какой норме и сколько обработок нужно?`;
+  const q=buildQuestion(weed, ruCat, crop);
   try{
     const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({question:q,crop:crop})});
