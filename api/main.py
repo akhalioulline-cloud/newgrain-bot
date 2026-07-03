@@ -51,6 +51,7 @@ from bot.db import (
     update_submission,
 )
 from bot.diagnose import diagnose as diagnose_photo
+from bot.diagnose import _vision_sync as _vision_recognize
 from bot.email_send import email_enabled, send_login_code
 from bot.field_plan import generate_field_plan
 from bot.push import push_enabled, send_push
@@ -598,6 +599,30 @@ async def diagnose(request: Request, image: UploadFile, question: str = Form("")
         "Не удалось обработать фото автоматически (возможно, временный сбой распознавания). "
         "Опишите проблему словами — какая культура, после какой обработки, какие симптомы — "
         "и я отвечу по описанию. Либо повторите попытку через минуту.")}
+
+
+@app.post("/api/recognize")
+async def recognize(request: Request, image: UploadFile, crop: str = Form("")):
+    """Structured weed recognition for the scan journey — the guess card (top + alternatives +
+    confidence). Wraps the in-RU qwen vision call diagnose already runs internally; the decision
+    (product/dose/timing/savings) is a separate /api/chat/stream call once the user picks."""
+    img = await image.read()
+    if not img:
+        raise HTTPException(400, "empty image")
+    if len(img) > MAX_IMG:
+        raise HTTPException(413, "image too large")
+    if not await _rate_ok(_client_ip(request), "diag", DIAG_PER_HOUR):
+        raise HTTPException(429, "Слишком много фото-запросов. Попробуйте позже.")
+    vd = await asyncio.to_thread(_vision_recognize, img)
+    if not vd:
+        return {"ok": False}
+    return {
+        "ok": True,
+        "top": {"latin": vd.get("latin"), "ru": vd.get("diagnosis"),
+                "confidence": vd.get("confidence"), "class": vd.get("weed_class"),
+                "category": vd.get("category"), "phase": vd.get("phase")},
+        "alternatives": vd.get("differential") or [],
+    }
 
 
 @app.post("/api/feedback")

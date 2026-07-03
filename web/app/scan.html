@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLAGLEAF — определить сорняк</title>
+<meta name="description" content="Наведите камеру на сорняк — Flagleaf определит его и подскажет, чем и когда обработать это поле.">
+<link rel="manifest" href="/app/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<meta name="apple-mobile-web-app-title" content="Flagleaf">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#b9994b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --gold:#b9994b; --ink:#1a1a1a; --bg:#faf8f4; --card:#fff;
+         --muted:#8a8a8a; --line:#e7e2d8; --ok:#3a7d44; --bad:#c0392b; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
+       display:flex;flex-direction:column;min-height:100dvh}
+  header{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;
+         padding-top:env(safe-area-inset-top)}
+  .hrow{display:flex;align-items:center;gap:10px;padding:12px 16px}
+  .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
+  .logo b{color:var(--gold)}
+  .sub{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.3}
+  .sub .who{color:var(--ink);font-weight:500}
+  .sub .logout{color:var(--gold);cursor:pointer;background:none;border:none;font:inherit;padding:0}
+  .tabs{display:flex;border-top:1px solid var(--line)}
+  .tab{flex:1;text-align:center;padding:10px 6px;font-size:13px;font-weight:600;color:var(--muted);
+       text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
+  .tab.on{color:var(--ink);border-bottom-color:var(--gold)}
+  main{flex:1;width:100%;max-width:560px;margin:0 auto;padding:16px;display:flex;flex-direction:column}
+  .fieldbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px;color:var(--muted)}
+  select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:10px;
+         padding:8px 10px;background:#fff;flex:1}
+  #stage{flex:1;display:flex;flex-direction:column}
+  .btn{font:inherit;font-weight:600;font-size:15px;border-radius:12px;padding:13px 16px;cursor:pointer;
+        border:1px solid var(--gold);background:var(--gold);color:#fff;width:100%}
+  .btn.ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn:disabled{opacity:.5}
+
+  /* camera */
+  .shootzone{flex:1;min-height:300px;border:2px dashed var(--line);border-radius:18px;background:#fff;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:pointer;
+       color:var(--muted);text-align:center;padding:24px}
+  .shootzone:active{background:#fffdf6;border-color:var(--gold)}
+  .shootzone .big{width:76px;height:76px;border-radius:50%;background:var(--gold);color:#fff;
+       display:flex;align-items:center;justify-content:center;font-size:34px}
+  .shootzone .t{font-weight:500;color:var(--ink);font-size:16px}
+  .shootzone .h{font-size:13px;max-width:240px;line-height:1.5}
+
+  /* generic states */
+  .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center}
+  .thumb{width:100%;max-height:230px;object-fit:contain;border-radius:12px;background:#f2eee4}
+  .spin{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* guess card */
+  .gcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:12px}
+  .glabel{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+  .guess{width:100%;text-align:left;display:flex;align-items:center;gap:10px;border-radius:12px;
+        padding:12px 14px;margin-bottom:8px;background:#fff;border:1px solid var(--line);cursor:pointer}
+  .guess.top{background:#faf6ec;border-color:var(--gold)}
+  .guess .nm{flex:1;font-weight:500}
+  .guess.top .nm{color:#6b541f;font-size:16px}
+  .guess .cf{font-size:12px;color:var(--muted)}
+  .guess .why{font-size:11.5px;color:var(--muted);display:block;font-weight:400}
+  .other{width:100%;padding:11px 14px;border:1px dashed var(--line);border-radius:12px;background:transparent;
+        color:var(--muted);font-size:13.5px;display:flex;align-items:center;gap:8px;cursor:pointer}
+  .typepill{display:inline-block;font-size:11px;color:#6b541f;background:#faf6ec;border:1px solid var(--gold);
+        border-radius:14px;padding:2px 9px}
+
+  /* other input */
+  .cmtrow{display:flex;gap:8px;align-items:flex-start;margin-top:8px}
+  input[type=text]{flex:1;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:12px;padding:11px 12px;outline:none}
+  .mic{flex:none;width:46px;height:46px;border:1px solid var(--line);background:#fff;border-radius:12px;font-size:18px;cursor:pointer}
+  .mic.rec{background:var(--bad);border-color:var(--bad);color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+
+  /* decision */
+  .dhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .dhead .w{font-size:16px;font-weight:500}
+  .dmeta{font-size:12.5px;color:var(--muted);margin-bottom:10px}
+  .answer{font-size:14.5px;line-height:1.55;white-space:pre-wrap;background:#fff;border:1px solid var(--line);
+        border-radius:12px;padding:12px 14px;min-height:40px}
+  .learn{font-size:12.5px;color:var(--ok);display:flex;align-items:center;gap:7px;margin:12px 0}
+  .row{display:flex;gap:8px;margin-top:6px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <span class="logo">FLAG<b>LEAF</b></span>
+    <span class="sub"><span class="who" id="who"></span></span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <a class="tab on" href="/app/scan.html">🔍 Определить</a>
+    <a class="tab" href="/app/">📷 Загрузка</a>
+    <a class="tab" href="/app/assistant.html">💬 Ассистент</a>
+  </nav>
+</header>
+
+<main>
+  <div class="fieldbar">
+    <span>Поле:</span>
+    <select id="field"></select>
+  </div>
+  <div id="stage"></div>
+  <input type="file" id="cam" accept="image/*" capture="environment" class="hidden">
+</main>
+
+<script>
+const API='', TOK='flagleaf_session', $=id=>document.getElementById(id);
+let session=localStorage.getItem(TOK)||'', fieldsAll=[], photoFile=null, photoURL=null;
+const CATMAP={'сорняк':'weed','болезнь':'disease','вредитель':'pest'};
+
+async function api(path,opts={}){
+  const headers=opts.headers||{}; if(session) headers['x-session']=session;
+  const r=await fetch(API+path,{...opts,headers}); let b=null; try{b=await r.json();}catch(e){}
+  if(!r.ok){const err=new Error((b&&b.detail)||('Ошибка '+r.status));err.status=r.status;throw err;} return b;
+}
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function curField(){const v=$('field').value; return fieldsAll.find(f=>String(f.id)===v)||null;}
+
+// ---------- stages ----------
+function stageCamera(){
+  $('stage').innerHTML=
+    '<div class="shootzone" id="shoot"><div class="big">📷</div>'+
+    '<div class="t">Наведите на сорняк и снимите</div>'+
+    '<div class="h">Один сорняк в кадре, при дневном свете, в фокусе. Flagleaf определит его и подскажет по этому полю.</div></div>';
+  $('shoot').onclick=()=>$('cam').click();
+}
+function stageAnalyzing(){
+  $('stage').innerHTML='<div class="center">'+(photoURL?`<img class="thumb" src="${photoURL}">`:'')+
+    '<div class="spin"></div><div style="color:var(--muted)">Определяю…</div></div>';
+}
+function stageError(msg){
+  $('stage').innerHTML=`<div class="center"><div style="color:var(--bad)">${esc(msg)}</div>`+
+    '<button class="btn ghost" onclick="stageCamera()" style="max-width:220px">Снять ещё раз</button></div>';
+}
+function stageGuess(r){
+  const top=r.top||{}, alts=(r.alternatives||[]).slice(0,2);
+  const conf=Number(top.confidence)||0, sure=conf>=60 && top.ru;
+  const cls=top.class? `<span class="typepill">${top.class==='злаковый'?'злаковый':'двудольный'}</span>`:'';
+  let h=`<div class="center">${photoURL?`<img class="thumb" src="${photoURL}">`:''}</div><div class="gcard">`;
+  h+=`<div class="glabel">${sure?'Скорее всего это '+cls:'Не уверен — помогите определить '+cls}</div>`;
+  if(top.ru){
+    h+=`<button class="guess top" data-w="${esc(top.ru)}" data-c="${esc(top.category||'сорняк')}">`+
+       `<span class="nm">${esc(top.ru)}</span><span class="cf">${conf?conf+'%':''}</span></button>`;
+  }
+  for(const a of alts){ const nm=a.name||a; if(!nm) continue;
+    h+=`<button class="guess" data-w="${esc(nm)}" data-c="сорняк"><span class="nm">${esc(nm)}`+
+       (a.why?`<span class="why">${esc(a.why)}</span>`:'')+`</span></button>`;
+  }
+  h+=`<button class="other" id="otherBtn">❓ Другое — я подскажу</button></div>`;
+  h+=`<div class="row"><button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>`;
+  $('stage').innerHTML=h;
+  $('stage').querySelectorAll('.guess').forEach(b=>b.onclick=()=>decide(b.dataset.w,b.dataset.c));
+  $('otherBtn').onclick=stageOther;
+}
+function stageOther(){
+  $('stage').innerHTML=
+    '<div class="gcard"><div class="glabel">Что это за сорняк? Скажите или впишите:</div>'+
+    '<div class="cmtrow"><input type="text" id="otherIn" placeholder="например, осот полевой">'+
+    '<button class="mic" id="mic" aria-label="Сказать голосом">🎤</button></div>'+
+    '<div style="font-size:12px;color:var(--ok);margin-top:10px;display:flex;gap:7px;align-items:center">'+
+    '<span>✓</span><span>Фото сохранится и обучит ИИ Flagleaf.</span></div>'+
+    '<button class="btn" id="otherGo" style="margin-top:12px">Подсказать, чем обработать</button></div>'+
+    '<div class="row"><button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>';
+  $('otherGo').onclick=()=>{const v=$('otherIn').value.trim(); if(v) decide(v,'сорняк');};
+  $('otherIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('otherGo').click();}});
+  setupMic();
+}
+async function decide(weed, ruCat){
+  const f=curField(), crop=f?f.crop:'', fid=f?f.id:'';
+  logToFlywheel(weed, CATMAP[ruCat]||'weed', fid);          // fire-and-forget flywheel
+  $('stage').innerHTML=
+    `<div class="dhead"><span class="w">${esc(weed)}</span>`+
+    `<span class="typepill">${f?esc(f.name):'поле не выбрано'}</span></div>`+
+    `<div class="dmeta">${crop?esc(crop)+' · ':''}решение по этому полю</div>`+
+    '<div class="answer" id="ans"></div>'+
+    '<div class="learn hidden" id="learn"><span>✓</span> +1 наблюдение обучает ИИ Flagleaf</div>'+
+    '<div class="row" id="drow"></div>';
+  const q=`Чем обработать ${crop||'культуру'} от «${weed}»? Пора ли обрабатывать по ЭПВ, в какой норме и сколько обработок нужно?`;
+  try{
+    const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:q,crop:crop})});
+    if(!r.ok||!r.body){ $('ans').textContent='Не удалось получить ответ. Попробуйте ещё раз.'; return; }
+    const rd=r.body.getReader(), dec=new TextDecoder(); let txt='';
+    for(;;){const {value,done}=await rd.read(); if(done)break; txt+=dec.decode(value,{stream:true}); $('ans').textContent=txt; }
+  }catch(e){ $('ans').textContent='Ошибка сети. Попробуйте ещё раз.'; }
+  $('learn').classList.remove('hidden');
+  $('drow').innerHTML='<button class="btn ghost" onclick="stageCamera()">Снять ещё</button>';
+}
+
+async function startRecognize(file){
+  photoFile=file; if(photoURL) URL.revokeObjectURL(photoURL); photoURL=URL.createObjectURL(file);
+  stageAnalyzing();
+  const f=curField(); const fd=new FormData(); fd.append('image',file); if(f&&f.crop) fd.append('crop',f.crop);
+  try{
+    const r=await api('/api/recognize',{method:'POST',body:fd});
+    if(r&&r.ok) stageGuess(r); else stageError('Не удалось распознать. Снимите поближе и почётче.');
+  }catch(e){ stageError(e.status===429?'Слишком много фото за час — попробуйте позже.':'Ошибка. Попробуйте ещё раз.'); }
+}
+function logToFlywheel(species, cat, fid){
+  if(!photoFile) return;
+  const fd=new FormData(); fd.append('photos',photoFile); fd.append('category',cat);
+  fd.append('species',species); if(fid) fd.append('field_id',String(fid));
+  api('/api/submit',{method:'POST',body:fd}).catch(()=>{});   // best-effort; correction = the label
+}
+
+// ---------- voice (reused recorder) ----------
+let rec=false,ctx=null,stream=null,proc=null,chunks=[];
+function setupMic(){ const mic=$('mic'); if(!mic) return; mic.onclick=async()=>{
+  if(rec){ stopRec(); return; }
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ return; }
+  ctx=new (window.AudioContext||window.webkitAudioContext)(); const src=ctx.createMediaStreamSource(stream);
+  proc=ctx.createScriptProcessor(4096,1,1); chunks=[];
+  proc.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(proc); proc.connect(ctx.destination);
+  rec=true; mic.classList.add('rec'); mic.textContent='⏹'; };
+}
+function stopRec(){ const mic=$('mic'); rec=false; if(mic){mic.classList.remove('rec');mic.textContent='🎤';}
+  try{proc.disconnect();}catch(e){} if(stream) stream.getTracks().forEach(t=>t.stop());
+  const inRate=ctx.sampleRate; let len=chunks.reduce((a,c)=>a+c.length,0); const buf=new Float32Array(len); let off=0;
+  for(const c of chunks){buf.set(c,off);off+=c.length;} try{ctx.close();}catch(e){}
+  if(len<inRate*0.3) return;
+  const ratio=inRate/16000,outLen=Math.floor(buf.length/ratio),out=new Int16Array(outLen);
+  for(let i=0;i<outLen;i++){const s=Math.max(-1,Math.min(1,buf[Math.floor(i*ratio)]||0));out[i]=s<0?s*0x8000:s*0x7FFF;}
+  fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:out.buffer})
+    .then(r=>r.json()).then(j=>{ if(j.text&&$('otherIn')){const i=$('otherIn');i.value=(i.value?i.value+' ':'')+j.text;i.focus();} }).catch(()=>{});
+}
+
+// ---------- boot ----------
+$('cam').onchange=e=>{ const f=e.target.files[0]; if(f) startRecognize(f); e.target.value=''; };
+async function boot(){
+  if(!session){ location.href='/app/'; return; }
+  let me; try{ me=await api('/api/me'); }catch(e){ session=''; localStorage.removeItem(TOK); location.href='/app/'; return; }
+  $('who').textContent=me.name||'';
+  $('who').insertAdjacentHTML('afterend',' · <button class="logout" id="lo">выйти</button>');
+  $('lo').onclick=()=>{ session=''; localStorage.removeItem(TOK); location.href='/app/'; };
+  if(me.role==='chief_agronomist'||me.role==='admin'){
+    const nav=$('tabs'); const a=document.createElement('a'); a.className='tab'; a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
+  }
+  try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
+    $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
+    const last=localStorage.getItem('scanField'); if(last&&fieldsAll.some(f=>String(f.id)===last)) $('field').value=last;
+    $('field').onchange=()=>localStorage.setItem('scanField',$('field').value);
+  }catch(e){}
+  stageCamera();
+}
+boot();
+</script>
+</body>
+</html>
