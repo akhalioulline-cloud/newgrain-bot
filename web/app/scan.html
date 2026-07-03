@@ -123,6 +123,7 @@
   </div>
   <div id="stage"></div>
   <input type="file" id="cam" accept="image/*" capture="environment" class="hidden">
+  <input type="file" id="gal" accept="image/*" class="hidden">
 </main>
 
 <script>
@@ -143,8 +144,10 @@ function stageCamera(){
   $('stage').innerHTML=
     '<div class="shootzone" id="shoot"><div class="big">📷</div>'+
     '<div class="t">Наведите на сорняк и снимите</div>'+
-    '<div class="h">Один сорняк в кадре, при дневном свете, в фокусе. Flagleaf определит его и подскажет по этому полю.</div></div>';
+    '<div class="h">Один сорняк в кадре, при дневном свете, в фокусе. Flagleaf определит его и подскажет по этому полю.</div></div>'+
+    '<button class="btn ghost" id="galBtn" style="margin-top:12px">🖼 Выбрать из галереи</button>';
   $('shoot').onclick=()=>$('cam').click();
+  $('galBtn').onclick=()=>$('gal').click();
 }
 function stageAnalyzing(){
   $('stage').innerHTML='<div class="center">'+(photoURL?`<img class="thumb" src="${photoURL}">`:'')+
@@ -249,6 +252,7 @@ function stopRec(){ const mic=$('mic'); rec=false; if(mic){mic.classList.remove(
 
 // ---------- boot ----------
 $('cam').onchange=e=>{ const f=e.target.files[0]; if(f) startRecognize(f); e.target.value=''; };
+$('gal').onchange=e=>{ const f=e.target.files[0]; if(f) startRecognize(f); e.target.value=''; };
 $('navBack').onclick=()=>history.back(); $('navFwd').onclick=()=>history.forward(); $('navRefresh').onclick=()=>location.reload();
 async function boot(){
   if(!session){ location.href='/app/'; return; }
