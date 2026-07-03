@@ -31,9 +31,9 @@
         font-size:17px;line-height:1;color:var(--ink);cursor:pointer;padding:0}
   .navb:active{background:#f0ece2}
   .tabs{display:none;border-top:1px solid var(--line)}     /* shown after login */
-  .tabs.show{display:flex}
-  .tab{flex:1;text-align:center;padding:10px 8px;font-size:14px;font-weight:600;color:var(--muted);
-       text-decoration:none;border-bottom:2px solid transparent}
+  .tabs.show{display:flex;overflow-x:auto}
+  .tab{flex:1;text-align:center;padding:10px 5px;font-size:13px;font-weight:600;color:var(--muted);
+       text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
   .tab.on{color:var(--ink);border-bottom-color:var(--gold)}
   .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
   .logo b{color:var(--gold)}
@@ -161,8 +161,8 @@
     <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span><br><a href="/chat">демо-чат</a></span>
   </div>
   <nav class="tabs" id="tabs">
-    <a class="tab" href="/app/scan.html">🔍 Определить</a>
-    <a class="tab on" href="/app/">📷 Загрузка</a>
+    <a class="tab" href="/app/scan.html">🔍 Что это?</a>
+    <a class="tab on" href="/app/">🔭 Скаутинг</a>
     <a class="tab" href="/app/assistant.html">💬 Ассистент</a>
   </nav>
 </header>
@@ -224,7 +224,7 @@
     <div class="note" id="fieldNote"></div>
   </div>
 
-  <label class="scoutmode">
+  <label class="scoutmode hidden" id="scoutToggle">
     <input type="checkbox" id="scoutMode">
     <span>🔍 Режим обследования поля</span>
   </label>
@@ -415,7 +415,7 @@ async function enterApp(me){
   addReviewTab(me);                              // «Проверка» tab — chief agronomist only
   buildCats();
   buildSpecies();
-  applyScoutMode(localStorage.getItem('scoutMode')==='1');   // restore scouting session mode
+  applyScoutMode(true);                          // «Скаутинг» tab = scouting-only (toggle hidden)
   show('upload');
   refreshPending(); flushQueue();                // surface + auto-send anything queued offline
   maybeShowPushBanner(); ensurePushIfGranted();  // offer / refresh push subscription

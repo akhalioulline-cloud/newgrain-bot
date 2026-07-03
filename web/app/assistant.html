@@ -30,8 +30,8 @@
   .navb{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;
         font-size:17px;line-height:1;color:var(--ink);cursor:pointer;padding:0}
   .navb:active{background:#f0ece2}
-  .tabs{display:flex;border-top:1px solid var(--line)}
-  .tab{flex:1;text-align:center;padding:10px 8px;font-size:14px;font-weight:600;color:var(--muted);
+  .tabs{display:flex;border-top:1px solid var(--line);overflow-x:auto}
+  .tab{flex:1;text-align:center;padding:10px 5px;font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;
        text-decoration:none;border-bottom:2px solid transparent}
   .tab.on{color:var(--ink);border-bottom-color:var(--gold)}
   .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
@@ -117,8 +117,8 @@
     <span class="sub">ИИ-агроном</span>
   </div>
   <nav class="tabs">
-    <a class="tab" href="/app/scan.html">🔍 Определить</a>
-    <a class="tab" href="/app/">📷 Загрузка</a>
+    <a class="tab" href="/app/scan.html">🔍 Что это?</a>
+    <a class="tab" href="/app/">🔭 Скаутинг</a>
     <a class="tab on" href="/app/assistant.html">💬 Ассистент</a>
   </nav>
 </header>
