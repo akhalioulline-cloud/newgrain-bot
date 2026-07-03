@@ -38,6 +38,8 @@
   .logo b{color:var(--gold)}
   .sub{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.2}
   .sub a{color:var(--gold);text-decoration:none}
+  .sub .who{color:var(--ink);font-weight:500}
+  .logout{color:var(--gold);cursor:pointer;background:none;border:none;font:inherit;padding:0}
   #chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
         max-width:760px;width:100%;margin:0 auto}
   .msg{max-width:88%;padding:12px 14px;border-radius:14px;font-size:15px;line-height:1.5;
@@ -114,7 +116,7 @@
       <button class="navb" id="navRefresh" title="Обновить">⟳</button>
     </div>
     <span class="logo">FLAG<b>LEAF</b></span>
-    <span class="sub">ИИ-агроном</span>
+    <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span></span>
   </div>
   <nav class="tabs">
     <a class="tab" href="/app/scan.html">🔍 Что это?</a>
@@ -396,23 +398,30 @@ document.getElementById('navBack').onclick = () => history.back();
 document.getElementById('navFwd').onclick = () => history.forward();
 document.getElementById('navRefresh').onclick = () => location.reload();
 
-// Show the «Проверка» tab for a logged-in chief agronomist, so the nav is consistent
-// across the app's pages (this assistant page itself needs no login).
+// Header (name · выйти) + the «Проверка» tab for a chief — keeps the top block identical to
+// the other sections. This page itself needs no login (public assistant) → guest fallback.
 (async ()=>{
+  const hdr=document.getElementById('hdrSub'), who=document.getElementById('hdrWho');
+  const guest=()=>{ if(hdr) hdr.textContent='ИИ-агроном'; };
   const s = localStorage.getItem('flagleaf_session') || '';
-  if(!s) return;
+  if(!s){ guest(); return; }
+  let me;
   try{
     const r = await fetch('/api/me',{headers:{'x-session':s}});
-    if(!r.ok) return;
-    const me = await r.json();
-    if(me.role!=='chief_agronomist' && me.role!=='admin') return;
+    if(!r.ok){ guest(); return; }
+    me = await r.json();
+  }catch(e){ guest(); return; }
+  if(who) who.textContent=me.name||'';
+  if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
+  const lo=document.getElementById('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem('flagleaf_session'); location.href='/app/'; };
+  if(me.role==='chief_agronomist' || me.role==='admin'){
     const nav = document.querySelector('nav.tabs');
-    if(!nav || nav.querySelector('.tab-review')) return;
-    const a=document.createElement('a'); a.className='tab tab-review';
-    a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
-    const c = await fetch('/api/review/count',{headers:{'x-session':s}});
-    if(c.ok){ const {count}=await c.json(); if(count>0) a.textContent=`✅ Проверка (${count})`; }
-  }catch(e){}
+    if(nav && !nav.querySelector('.tab-review')){
+      const a=document.createElement('a'); a.className='tab tab-review';
+      a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
+      try{ const c = await fetch('/api/review/count',{headers:{'x-session':s}}); if(c.ok){ const {count}=await c.json(); if(count>0) a.textContent=`✅ Проверка (${count})`; } }catch(e){}
+    }
+  }
 })();
 </script>
 <script>
