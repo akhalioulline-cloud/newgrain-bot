@@ -120,6 +120,7 @@
   <div class="fieldbar">
     <span>Поле:</span>
     <select id="field"></select>
+    <select id="crop" class="hidden"></select>
   </div>
   <div id="stage"></div>
   <input type="file" id="cam" accept="image/*" capture="environment" class="hidden">
@@ -138,6 +139,7 @@ async function api(path,opts={}){
 }
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function curField(){const v=$('field').value; return fieldsAll.find(f=>String(f.id)===v)||null;}
+function curCrop(){ const f=curField(); if(f) return f.crop||''; return $('crop').value||''; }   // pilot field → its crop; другое поле → chosen crop
 
 // ---------- stages ----------
 function stageCamera(){
@@ -193,11 +195,11 @@ function stageOther(){
   setupMic();
 }
 async function decide(weed, ruCat){
-  const f=curField(), crop=f?f.crop:'', fid=f?f.id:'';
+  const f=curField(), crop=curCrop(), fid=f?f.id:'';
   logToFlywheel(weed, CATMAP[ruCat]||'weed', fid);          // fire-and-forget flywheel
   $('stage').innerHTML=
     `<div class="dhead"><span class="w">${esc(weed)}</span>`+
-    `<span class="typepill">${f?esc(f.name):'поле не выбрано'}</span></div>`+
+    `<span class="typepill">${f?esc(f.name):'другое поле'}</span></div>`+
     `<div class="dmeta">${crop?esc(crop)+' · ':''}решение по этому полю</div>`+
     '<div class="answer" id="ans"></div>'+
     '<div class="learn hidden" id="learn"><span>✓</span> +1 наблюдение обучает ИИ Flagleaf</div>'+
@@ -217,7 +219,7 @@ async function decide(weed, ruCat){
 async function startRecognize(file){
   photoFile=file; if(photoURL) URL.revokeObjectURL(photoURL); photoURL=URL.createObjectURL(file);
   stageAnalyzing();
-  const f=curField(); const fd=new FormData(); fd.append('image',file); if(f&&f.crop) fd.append('crop',f.crop);
+  const crop=curCrop(); const fd=new FormData(); fd.append('image',file); if(crop) fd.append('crop',crop);
   try{
     const r=await api('/api/recognize',{method:'POST',body:fd});
     if(r&&r.ok) stageGuess(r); else stageError('Не удалось распознать. Снимите поближе и почётче.');
@@ -274,9 +276,13 @@ async function boot(){
   try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
     $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')
       +'<option value="">— другое поле —</option>';
+    const crops=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))];
+    $('crop').innerHTML='<option value="">— культура —</option>'+crops.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
     const last=localStorage.getItem('scanField');
-    if(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) $('field').value=last;
-    $('field').onchange=()=>localStorage.setItem('scanField',$('field').value);
+    $('field').value=(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) ? last : '';   // default: другое поле
+    const toggleCrop=()=>$('crop').classList.toggle('hidden',$('field').value!=='');
+    toggleCrop();
+    $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); };
   }catch(e){}
   stageCamera();
 }
