@@ -176,26 +176,23 @@ function stageGuess(r){
     h+=`<button class="guess" data-w="${esc(nm)}" data-c="сорняк"><span class="nm">${esc(nm)}`+
        (a.why?`<span class="why">${esc(a.why)}</span>`:'')+`</span></button>`;
   }
-  h+=`<button class="other" id="otherBtn">❓ Другое — я подскажу</button></div>`;
+  h+=`<button class="other" id="otherBtn">❓ Другое — я подскажу</button>`
+    +`<div id="otherArea" class="hidden" style="margin-top:8px">`
+    +`<div class="cmtrow"><input type="text" id="otherIn" placeholder="скажите или впишите, что это"><button class="mic" id="mic" aria-label="Сказать голосом">🎤</button></div>`
+    +`<button class="btn" id="otherGo" style="margin-top:10px">Подсказать, что делать</button></div></div>`;
   const saveBtn = photoFromCam ? '<button class="btn ghost" id="saveBtn">💾 В галерею</button>' : '';
   h+=`<div class="row">${saveBtn}<button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>`;
   $('stage').innerHTML=h;
   $('stage').querySelectorAll('.guess').forEach(b=>b.onclick=()=>decide(b.dataset.w,b.dataset.c));
-  $('otherBtn').onclick=stageOther;
+  // «Другое» just reveals the input below — the photo + guesses stay visible and tappable
+  // in case you change your mind and pick one of them after all.
+  $('otherBtn').onclick=()=>{
+    $('otherArea').classList.remove('hidden'); $('otherBtn').classList.add('hidden');
+    setupMic(); $('otherIn').focus();
+    $('otherGo').onclick=()=>{ const v=$('otherIn').value.trim(); if(v) decide(v,''); };
+    $('otherIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('otherGo').click(); } });
+  };
   if($('saveBtn')) $('saveBtn').onclick=async()=>{ if(await saveToGallery()) $('saveBtn').textContent='✓ Сохранено'; };
-}
-function stageOther(){
-  $('stage').innerHTML=
-    '<div class="gcard"><div class="glabel">Что это за сорняк? Скажите или впишите:</div>'+
-    '<div class="cmtrow"><input type="text" id="otherIn" placeholder="например, осот полевой">'+
-    '<button class="mic" id="mic" aria-label="Сказать голосом">🎤</button></div>'+
-    '<div style="font-size:12px;color:var(--ok);margin-top:10px;display:flex;gap:7px;align-items:center">'+
-    '<span>✓</span><span>Фото сохранится и обучит ИИ Flagleaf.</span></div>'+
-    '<button class="btn" id="otherGo" style="margin-top:12px">Подсказать, чем обработать</button></div>'+
-    '<div class="row"><button class="btn ghost" onclick="stageCamera()">Снять ещё</button></div>';
-  $('otherGo').onclick=()=>{const v=$('otherIn').value.trim(); if(v) decide(v,'');};   // free-text: don't assume weed
-  $('otherIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('otherGo').click();}});
-  setupMic();
 }
 function buildQuestion(obj, ruCat, crop){
   const c = crop || 'культуру';
