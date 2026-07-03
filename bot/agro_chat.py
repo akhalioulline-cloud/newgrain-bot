@@ -245,8 +245,9 @@ async def _registry_grounding(question: str, ct) -> str | None:
         seen.add(p["product_name"])
         maker = producer_label(p.get("registrant"))   # tag major producers inline
         tag = f" [{maker}]" if maker else ""
-        lines.append(f"• {p['product_name']}{tag} (д.в. {p['active_substances']}) — "
-                     f"{p['target']}; норма {p['rate']}")
+        # No target text here on purpose — it's the generic «однолетние двудольные…» phrase the
+        # model would echo on every line. Feed only what differentiates: name, maker, д.в., dose.
+        lines.append(f"• {p['product_name']}{tag} — д.в. {p['active_substances']}, норма {p['rate']}")
         if len(lines) >= 20:
             break
     head = (f"ЗАРЕГИСТРИРОВАННЫЕ для «{crop}» препараты (Госкаталог)"
