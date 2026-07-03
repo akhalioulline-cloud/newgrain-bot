@@ -220,9 +220,14 @@ async def _registry_grounding(question: str, ct) -> str | None:
     crop, target, klass = ct["crop"], ct.get("target"), ct.get("weed_class")
     prods = await get_registered_products(crop, target) if target else []
     used = target
-    if not prods and klass:                  # «живокость»(0) → «двудольн»(30): the real options
-        prods = await get_registered_products(crop, klass)
-        used = klass
+    # A narrow target («осот» → 3 products, mostly one maker) hides the real choice: the whole weed
+    # CLASS is registered and works (осот is двудольный). Widen to the class so the answer shows the
+    # true brand spread (Август/Bayer/Щёлково/BASF…) — target-specific first, then the rest, deduped.
+    if klass and len(prods) < 6:
+        extra = await get_registered_products(crop, klass)
+        seen = {p["product_name"] for p in prods}
+        prods = list(prods) + [p for p in extra if p["product_name"] not in seen]
+        used = target or klass
     if not prods and not target and not klass:   # generic «чем обработать подсолнечник»
         prods = await get_registered_products(crop)
     if not prods:
