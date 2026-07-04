@@ -292,8 +292,7 @@ async function boot(){
   ME=me; $('hdrWho').textContent=me.name||'';
   $('hdrSub').insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
   $('lo').onclick=()=>{ localStorage.removeItem(TOK); location.replace('/app/'); };
-  if(me.role==='chief_agronomist'||me.role==='admin'){ const nav=$('tabs');
-    const a=document.createElement('a'); a.className='tab'; a.href='/app/assistant.html?review=1'; a.textContent='✅ Проверка'; nav.appendChild(a); }
+  // No separate «Проверка» — the chief verifies posts right here in the feed (👍/👎 + comments).
   try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
     $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')+'<option value="">— другое поле —</option>';
     const merged=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))], seen=new Set(merged.map(c=>c.toLowerCase()));

@@ -971,11 +971,9 @@ async function boot(){
   refreshPending(); flushQueue();
   maybeShowPushBanner(); ensurePushIfGranted();
   loadContrib();
-  // «Личное» stays private — the review digest shows ONLY when opened via the ✅ Проверка tab (?review=1)
-  const wantReview = new URLSearchParams(location.search).get('review') && isChief();
-  const opened = wantReview ? await loadReview() : false;
-  if(wantReview && !opened) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
-  if(!opened) showHero();
+  // Review is no longer a digest — the chief verifies posts right in the feed (👍/👎 + comments).
+  // «Личное» is just the private you↔bot chat.
+  showHero();
 }
 boot();
 </script>
