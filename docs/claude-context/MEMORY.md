@@ -36,3 +36,4 @@ are intentionally excluded.)
 - [trading-project](trading-project.md) — SEPARATE parallel project in ~/trading: crypto systematic-trading learning sandbox (OKX, $1000 educational, no MOEX); backtest/robustness/paper-trade toolkit
 - [newgrain-app-v2-vision](newgrain-app-v2-vision.md) — App v2 strategy: perception-data company, re-pointed journey, native/offline, model/data, robotics thesis, team-social (full plan docs/app-v2-plan.md)
 - [newgrain-flagleaf-ear-native](newgrain-flagleaf-ear-native.md) — Flagleaf/Ear separation + go-native-via-Expo decision & rationale
+- [feedback-backlog-md](feedback-backlog-md.md) — backlog lives at docs/backlog.md; park deferred items there, show on request
