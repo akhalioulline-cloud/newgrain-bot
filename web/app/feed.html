@@ -39,8 +39,9 @@
   .fieldbar select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:#fff;flex:1;outline:none}
   #geoNote{font-size:12px;color:#6b6b6b;background:#f1f5ee;border-bottom:1px solid #dde6d5;padding:6px 14px;max-width:760px;margin:0 auto;width:100%}
 
-  main{flex:1;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:12px}
-  .newchip{align-self:center;font:inherit;font-size:13px;color:var(--gold);background:#fff;border:1px solid var(--gold);border-radius:16px;padding:6px 14px;cursor:pointer}
+  main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+  .newchip{position:fixed;left:50%;transform:translateX(-50%);bottom:150px;z-index:9;font:inherit;font-size:13px;
+           color:#fff;background:var(--gold);border:none;border-radius:16px;padding:8px 16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.22)}
   .post{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
   .phead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px}
   .pav{width:30px;height:30px;border-radius:50%;background:#efe7d2;color:#6b541f;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:13px;flex:none}
@@ -156,17 +157,20 @@ function curCrop(){ const f=curField(); return f?(f.crop||''):($('crop').value||
 function isChief(){ return ME && (ME.role==='chief_agronomist'||ME.role==='admin'); }
 
 // ---------- feed ----------
-async function loadFeed(){
+async function loadFeed(toBottom){
   let data; try{ data=await api('/api/feed'); }catch(e){ if(e.status===401){ location.replace('/app/'); return; } return; }
   ME=data.me; posts=data.posts||[];
   topId = posts.length ? posts[0].id : 0;
+  const nc=$('newChip'); if(nc) nc.remove();
+  const el=$('feed'); const prev=el.scrollTop;
   renderFeed();
+  el.scrollTop = toBottom ? el.scrollHeight : prev;   // stay put on reactions/polls; jump to newest on demand
 }
 function renderFeed(){
   const el=$('feed');
   if(!posts.length){ el.innerHTML='<div class="empty">Пока пусто. Пришлите фото/видео с поля или напишите наблюдение — оно появится здесь для всей команды.</div>'; return; }
   el.innerHTML='';
-  posts.forEach(p=>el.appendChild(renderPost(p)));
+  [...posts].reverse().forEach(p=>el.appendChild(renderPost(p)));   // oldest → newest, like a chat
 }
 function renderPost(p){
   const c=document.createElement('div'); c.className='post'; c.dataset.id=p.id;
@@ -196,7 +200,7 @@ function renderPost(p){
   const cf=c.querySelector('.cmtform'), inp=cf.querySelector('input'), btn=cf.querySelector('button');
   const send=async()=>{ const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
     try{ await api(`/api/feed/${p.id}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})}); }
-    catch(e){} btn.disabled=false; loadFeed(); };
+    catch(e){} btn.disabled=false; loadFeed(true); };
   btn.onclick=send; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();send();} });
   return c;
 }
@@ -231,8 +235,8 @@ async function createPost(){
   if(file) fd.append(pendingIsVideo?'video':'image', file);
   $('q').value=''; $('q').style.height='auto'; setFile(null);
   const el=$('feed'); const wait=document.createElement('div'); wait.className='post'; wait.innerHTML='<div style="color:var(--muted);font-size:14px">Публикую…' + (file?' (ИИ анализирует '+(file.type.startsWith('video')?'видео':'фото')+'…)':'') + '</div>';
-  el.prepend(wait);
-  try{ await api('/api/feed/post',{method:'POST',body:fd}); await loadFeed(); }
+  el.appendChild(wait); el.scrollTop=el.scrollHeight;
+  try{ await api('/api/feed/post',{method:'POST',body:fd}); await loadFeed(true); }
   catch(e){ wait.querySelector('div').textContent = e.status===429?'Слишком много постов — попробуйте позже.':'Не удалось опубликовать. Попробуйте ещё раз.'; }
   finally{ $('send').disabled=false; }
 }
@@ -271,14 +275,16 @@ async function geoLocate(){
 // ---------- polling for new posts (non-disruptive) ----------
 async function poll(){
   try{ const d=await api('/api/feed'); const nt=(d.posts&&d.posts[0]&&d.posts[0].id)||0;
-    if(nt>topId){ let chip=$('newChip'); if(!chip){ chip=document.createElement('button'); chip.id='newChip'; chip.className='newchip';
-      chip.onclick=()=>{ chip.remove(); loadFeed(); window.scrollTo({top:0,behavior:'smooth'}); }; $('feed').prepend(chip); }
-      chip.textContent='· новые посты — обновить'; } }catch(e){}
+    if(nt>topId){ const el=$('feed'); const nearBottom=(el.scrollHeight-el.scrollTop-el.clientHeight)<140;
+      if(nearBottom) loadFeed(true); else showNewChip(); }
+  }catch(e){}
 }
+function showNewChip(){ if($('newChip')) return; const chip=document.createElement('button'); chip.id='newChip'; chip.className='newchip';
+  chip.textContent='↓ новые сообщения'; chip.onclick=()=>{ chip.remove(); loadFeed(true); }; document.body.appendChild(chip); }
 
 // ---------- boot ----------
 $('navBack').onclick=()=>window.history.back();
-$('navRefresh').onclick=()=>loadFeed();
+$('navRefresh').onclick=()=>loadFeed(true);
 async function boot(){
   if(!session){ location.replace('/app/'); return; }
   let me=null; try{ me=await api('/api/me'); }catch(e){}
@@ -298,7 +304,7 @@ async function boot(){
     $('field').onchange=()=>{ toggleCrop(); $('geoNote').classList.add('hidden'); };
   }catch(e){}
   geoLocate();
-  await loadFeed();
+  await loadFeed(true);
   setInterval(poll, 15000);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') poll(); });
 }

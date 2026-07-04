@@ -727,8 +727,30 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
     if re.match(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]", txt, re.I):   # bot replies only when called
         q2 = re.sub(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]+", "", txt, flags=re.I).strip() or txt
         try:
-            plan, field_ctx = await _field_route(q2)
-            ans = plan if plan else await agro_answer(_crop_q(q2, post["crop"] or ""), context=field_ctx)
+            plan, field_ctx = await _field_route(q2)          # explicit «поле N» in the comment wins
+            if plan:
+                ans = plan
+            else:
+                # «это поле» / follow-ups → resolve the thread's field: the post's own field,
+                # else the field named in the ORIGINAL post text
+                if not field_ctx and post["field_name"]:
+                    try:
+                        field_ctx = await field_card_text(post["field_name"], None)
+                    except Exception:
+                        field_ctx = None
+                if not field_ctx and post["body"]:
+                    _, field_ctx = await _field_route(post["body"])
+                # prior conversation so the bot remembers the thread
+                hist = []
+                if post["body"]:
+                    hist.append(f"{post['author']}: {post['body']}")
+                for c in await get_feed_comments(post_id):
+                    who = "Flagleaf" if c["is_bot"] else (c["author"] or "агроном")
+                    b = (c["body"] or "").strip()
+                    if b:
+                        hist.append(f"{who}: {b[:1200]}")
+                history = "\n".join(hist)[-4000:] or None
+                ans = await agro_answer(_crop_q(q2, post["crop"] or ""), context=field_ctx, history=history)
             if ans:
                 await add_feed_comment(post_id, None, True, ans)
         except Exception:
