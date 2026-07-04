@@ -172,6 +172,12 @@ function renderFeed(){
   el.innerHTML='';
   [...posts].reverse().forEach(p=>el.appendChild(renderPost(p)));   // oldest → newest, like a chat
 }
+function commentHtml(cm){
+  return `<div class="cmt ${cm.is_bot?'bot':''}"><span class="ca">${cm.is_bot?'🤖 ':''}${esc(cm.author)}</span>`+
+    `${cm.chief?'<span class="chiefbadge">старший</span>':''}<span class="ct">${esc(when(cm.created_at))}</span>`+
+    `<div class="cb">${esc(cm.body)}</div></div>`;
+}
+const BOT_ADDR=/^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]/i;
 function renderPost(p){
   const c=document.createElement('div'); c.className='post'; c.dataset.id=p.id;
   const media = p.media ? (p.is_video
@@ -184,23 +190,32 @@ function renderPost(p){
     ? `<button class="pbtn up${p.my_reaction==='up'?' on up':''}" data-v="up">👍 <span class="n">${p.ups||''}</span></button>`+
       `<button class="pbtn down${p.my_reaction==='down'?' on down':''}" data-v="down">👎 <span class="n">${p.downs||''}</span></button>`
     : '') + verdict;
-  // the whole discussion — bot (Flagleaf) and people — shown inline as a chat thread
-  const thread = (p.thread||[]).map(cm=>
-    `<div class="cmt ${cm.is_bot?'bot':''}"><span class="ca">${cm.is_bot?'🤖 ':''}${esc(cm.author)}</span>`+
-    `${cm.chief?'<span class="chiefbadge">старший</span>':''}<span class="ct">${esc(when(cm.created_at))}</span>`+
-    `<div class="cb">${esc(cm.body)}</div></div>`).join('');
   c.innerHTML=
     `<div class="phead"><span class="pav">${esc(initials(p.author))}</span><span class="pauth">${esc(p.author)}</span>`+
     `<span class="pmeta">${esc(when(p.created_at))}${p.field?'<br>📍 '+esc(p.field):''}</span></div>`+
     (p.body?`<div class="pbody">${esc(p.body)}</div>`:'')+media+
     (react?`<div class="pacts">${react}</div>`:'')+
-    `<div class="thread">${thread}</div>`+
+    `<div class="thread">${(p.thread||[]).map(commentHtml).join('')}</div>`+
     `<div class="cmtform"><input placeholder="Ответить… (напишите «бот …», чтобы спросить ИИ)"><button>➤</button></div>`;
   c.querySelectorAll('.pbtn[data-v]').forEach(b=>b.onclick=()=>react(p.id, b.dataset.v, b));
-  const cf=c.querySelector('.cmtform'), inp=cf.querySelector('input'), btn=cf.querySelector('button');
-  const send=async()=>{ const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
-    try{ await api(`/api/feed/${p.id}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})}); }
-    catch(e){} btn.disabled=false; loadFeed(true); };
+  const cf=c.querySelector('.cmtform'), inp=cf.querySelector('input'), btn=cf.querySelector('button'), th=c.querySelector('.thread');
+  // Post the comment WITHOUT reloading/scrolling the whole feed — stay in this thread, show my
+  // message + a «печатает…» indicator while the bot (which answers synchronously) is thinking.
+  const send=async()=>{
+    const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
+    th.insertAdjacentHTML('beforeend', commentHtml({author:(ME&&ME.name)||'Вы', is_bot:false, chief:isChief(), body:v, created_at:new Date().toISOString()}));
+    let typing=null;
+    if(BOT_ADDR.test(v)){ typing=document.createElement('div'); typing.className='cmt bot';
+      typing.innerHTML='<span class="ca">🤖 Flagleaf</span><div class="cb" style="color:var(--muted)">печатает…</div>'; th.appendChild(typing); }
+    th.lastElementChild.scrollIntoView({block:'nearest'});
+    try{
+      await api(`/api/feed/${p.id}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})});
+      const cs=(await api(`/api/feed/${p.id}/comments`)).comments||[];
+      th.innerHTML=cs.map(commentHtml).join('');
+      th.lastElementChild && th.lastElementChild.scrollIntoView({block:'nearest'});
+    }catch(e){ if(typing) typing.querySelector('.cb').textContent='(не удалось — попробуйте ещё раз)'; }
+    btn.disabled=false;
+  };
   btn.onclick=send; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();send();} });
   return c;
 }
