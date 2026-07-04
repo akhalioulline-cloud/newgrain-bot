@@ -194,9 +194,9 @@
 
 <form id="form">
   <input type="file" id="cam" accept="image/*" capture="environment" hidden>
-  <input type="file" id="gal" accept="image/*" hidden>
+  <input type="file" id="gal" accept="image/*,video/*" hidden>
   <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото" aria-label="Снять фото">📷</button>
-  <button type="button" class="iconbtn" id="galBtn" title="Из галереи / файл" aria-label="Из галереи">🖼</button>
+  <button type="button" class="iconbtn" id="galBtn" title="Фото или видео" aria-label="Фото или видео">🖼</button>
   <button type="button" class="iconbtn" id="mic" title="Голосовой ввод" aria-label="Голосовой ввод">🎤</button>
   <textarea id="q" rows="1" placeholder="Вопрос или фото…"></textarea>
   <button type="submit" class="iconbtn send" id="send" title="Отправить" aria-label="Отправить">➤</button>
@@ -222,7 +222,8 @@
 <script>
 const TOK='flagleaf_session', $=id=>document.getElementById(id);
 let session=localStorage.getItem(TOK)||'', fieldsAll=[], ME=null;
-let pendingFile=null, pendingURL=null, pendingFromCam=false;
+let pendingFile=null, pendingURL=null, pendingFromCam=false, pendingIsVideo=false;
+const MAX_VIDEO=60*1024*1024;   // ~60 MB — keep clips short
 let awaitingCrop=false;                 // bot's last answer asked which crop it is
 let started=false;                      // once true, the empty-state hero is gone
 const chatHist=[];                      // {role:'user'|'bot', text} — follow-up context
@@ -245,8 +246,10 @@ function curCrop(){const f=curField(); if(f) return f.crop||''; return cropSel.v
 // ---------- chat bubbles ----------
 function add(text, who){ const d=document.createElement('div'); d.className='msg '+who; d.textContent=text;
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d; }
-function addUser(text, imgUrl){ const d=document.createElement('div'); d.className='msg user';
-  if(imgUrl){ const im=document.createElement('img'); im.src=imgUrl; d.appendChild(im); }
+function addUser(text, mediaUrl, isVideo){ const d=document.createElement('div'); d.className='msg user';
+  if(mediaUrl){ const m=document.createElement(isVideo?'video':'img'); m.src=mediaUrl;
+    if(isVideo){ m.controls=true; m.playsInline=true; m.style.cssText='max-width:220px;border-radius:8px;display:block;margin-bottom:6px'; }
+    d.appendChild(m); }
   if(text){ d.appendChild(document.createTextNode(text)); }
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; }
 function killHero(){ started=true; const h=$('hero'); if(h) h.remove(); }
@@ -257,7 +260,7 @@ function showHero(){
   const h=document.createElement('div'); h.className='hero'; h.id='hero';
   h.innerHTML='<div class="big">📷</div><div class="t">Сфотографируйте — что это?</div>'+
     '<div class="h">Один сорняк, болезнь или вредитель в кадре, при дневном свете. Определю и подскажу, чем обработать это поле.</div>'+
-    '<div class="gl" id="heroGal">🖼 или выбрать из галереи</div>';
+    '<div class="gl" id="heroGal">🖼 фото или видео из галереи</div>';
   chat.appendChild(h);
   h.onclick=e=>{ if(e.target.id==='heroGal') return; $('cam').click(); };
   $('heroGal').onclick=e=>{ e.stopPropagation(); $('gal').click(); };
@@ -265,11 +268,13 @@ function showHero(){
 
 // ---------- staged photo ----------
 function setFile(f, fromCam){
-  pendingFile=f; pendingFromCam=!!fromCam;
+  pendingFile=f; pendingFromCam=!!fromCam; pendingIsVideo=!!(f && (f.type||'').startsWith('video'));
   if(pendingURL){ URL.revokeObjectURL(pendingURL); pendingURL=null; }
-  if(f){ pendingURL=URL.createObjectURL(f); thumb.src=pendingURL; attname.textContent='Фото готово — отправьте или добавьте вопрос';
+  if(f){ pendingURL=URL.createObjectURL(f);
+    if(pendingIsVideo){ thumb.style.display='none'; attname.textContent='🎬 Видео готово — отправьте или добавьте вопрос'; }
+    else { thumb.style.display=''; thumb.src=pendingURL; attname.textContent='Фото готово — отправьте или добавьте вопрос'; }
     att.style.display='flex'; q.placeholder='Добавьте вопрос — или просто отправьте'; q.focus(); }
-  else { att.style.display='none'; $('cam').value=''; $('gal').value=''; q.placeholder='Вопрос или фото…'; }
+  else { att.style.display='none'; $('cam').value=''; $('gal').value=''; q.placeholder='Вопрос или фото…'; pendingIsVideo=false; }
 }
 $('camBtn').onclick=()=>$('cam').click();
 $('galBtn').onclick=()=>$('gal').click();
@@ -281,18 +286,22 @@ q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min
 
 // ---------- send ----------
 async function ask(){
-  const text=q.value.trim(); const file=pendingFile; const crop=curCrop();
+  const text=q.value.trim(); const file=pendingFile; const crop=curCrop(); const isVid=pendingIsVideo;
   if(!text && !file) return;
-  q.value=''; q.style.height='auto';
   if(!file && isChief() && REVIEW_RE.test(text)){        // chief pulls up the review queue by voice/text
-    addUser(text,null); killHero();
+    q.value=''; q.style.height='auto'; addUser(text,null); killHero();
     const had=await loadReview(); if(!had) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
     return;
   }
+  if(file && isVid && file.size>MAX_VIDEO){
+    add('Видео великовато — снимите покороче (5–15 секунд) и пришлите снова.','bot'); return;
+  }
+  q.value=''; q.style.height='auto';
   const url=file?pendingURL:null; pendingURL=null;   // hand the object URL to the bubble
   setFile(null);
   killHero();
-  if(file) runPhoto(file, text, crop, url);
+  if(file && isVid) runVideo(file, text, crop, url);
+  else if(file) runPhoto(file, text, crop, url);
   else runChat(text, crop, null);
 }
 form.addEventListener('submit', e=>{ e.preventDefault(); ask(); });
@@ -347,6 +356,22 @@ async function diagnose(file, caption, crop){
     if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
     const j=await r.json(); const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
     if(j.answer) finishAnswer(t, ans, caption, crop); else { t.textContent=ans; t.className='msg bot'; }
+  }catch(e){ t.textContent='Ошибка сети. Попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ $('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
+}
+
+// short video → sharp frames + narration → grounded comment (server does the heavy lifting)
+async function runVideo(file, caption, crop, url){
+  if(!curField() && !crop){ setFile(file, pendingFromCam); nudgeCrop(); return; }   // need a crop first
+  addUser(caption, url, true);
+  const t=add('Смотрю видео и разбираю кадры — это занимает чуть дольше…','bot typing'); $('send').disabled=true;
+  try{
+    const fd=new FormData(); fd.append('video',file); fd.append('question',caption); fd.append('crop',crop);
+    const r=await fetch('/api/diagnose-video',{method:'POST',body:fd});
+    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
+    if(r.status===413){ t.textContent='Видео слишком большое — снимите короче (5–15 сек).'; t.className='msg bot'; return; }
+    const j=await r.json(); const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
+    if(j.answer) finishAnswer(t, ans, caption||'[видео поля]', crop); else { t.textContent=ans; t.className='msg bot'; }
   }catch(e){ t.textContent='Ошибка сети. Попробуйте ещё раз.'; t.className='msg bot'; }
   finally{ $('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
 }
@@ -637,7 +662,7 @@ $('navRefresh').onclick=()=>location.reload();
 // ---------- boot ----------
 async function boot(){
   const hdr=$('hdrSub'), who=$('hdrWho');
-  add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте сорняк, болезнь или вредителя — определю и подскажу, чем обработать это поле. Или спросите текстом/голосом 🎤 — про препараты, ЭПВ, историю и план поля.', 'bot');
+  add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте или снимите короткое видео (5–15 сек) сорняка, болезни или вредителя — определю и подскажу, чем обработать это поле. Или спросите текстом/голосом 🎤 — про препараты, ЭПВ, историю и план поля.', 'bot');
   // header (name · выйти) + fields — public assistant, so guest is fine
   const guest=()=>{ if(hdr) hdr.textContent='ИИ-агроном'; };
   if(session){

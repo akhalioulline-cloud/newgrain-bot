@@ -53,7 +53,10 @@ from bot.db import (
     update_submission,
 )
 from bot.diagnose import diagnose as diagnose_photo
+from bot.diagnose import diagnose_video as diagnose_video_frames
 from bot.diagnose import _vision_sync as _vision_recognize
+from bot.video_frames import extract_frames
+from bot.video_transcribe import transcribe_video
 from bot.email_send import email_enabled, send_login_code
 from bot.field_plan import generate_field_plan
 from bot.push import push_enabled, send_push
@@ -643,6 +646,38 @@ async def diagnose(request: Request, image: UploadFile, question: str = Form("")
         "Не удалось обработать фото автоматически (возможно, временный сбой распознавания). "
         "Опишите проблему словами — какая культура, после какой обработки, какие симптомы — "
         "и я отвечу по описанию. Либо повторите попытку через минуту.")}
+
+
+MAX_VIDEO_COMMENT = 60 * 1024 * 1024      # ~60 MB — a short clip; long videos are slow on mobile
+
+
+@app.post("/api/diagnose-video")
+async def diagnose_video_ep(request: Request, video: UploadFile,
+                            question: str = Form(""), crop: str = Form("")):
+    """Comment on a short field video: pull the sharpest frames (ffmpeg) + transcribe the voice
+    narration, then let the in-RU vision model reason across the frames. It reads stills, not
+    motion — a video is treated as a burst of photos plus what the agronomist said."""
+    data = await video.read()
+    if not data:
+        raise HTTPException(400, "empty video")
+    if len(data) > MAX_VIDEO_COMMENT:
+        raise HTTPException(413, "Видео слишком большое — снимите короче (5–15 сек).")
+    if not await _rate_ok(_client_ip(request), "diag", DIAG_PER_HOUR):
+        raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
+    frames = await asyncio.to_thread(extract_frames, data)
+    if not frames:
+        return {"answer": "Не удалось прочитать видео. Пришлите короткий ролик (5–15 сек) "
+                          "или отдельное фото крупным планом."}
+    narration = ""
+    try:
+        narration = await asyncio.to_thread(transcribe_video, data)
+    except Exception:
+        logger.exception("diagnose-video: transcription failed")
+    ans = await diagnose_video_frames(frames, question.strip() or None,
+                                      crop.strip() or None, None, narration or None)
+    return {"answer": ans or (
+        "Не удалось разобрать видео автоматически. Опишите проблему словами "
+        "или пришлите чёткое фото крупным планом.")}
 
 
 @app.post("/api/recognize")

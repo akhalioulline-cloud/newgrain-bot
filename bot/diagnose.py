@@ -124,17 +124,19 @@ _DIAG_SYS = (
 )
 
 
-def _vision_sync(img: bytes) -> dict | None:
+def _vision_call(frames: list[bytes], intro: str = "") -> dict | None:
+    """Vision (qwen) identify — one image, or several frames of the SAME subject pulled from a
+    video, sent together so the model reasons across them. `intro` prepends video context."""
     if not (settings.yc_api_key and settings.yc_folder_id):
         return None
-    img = _prep_image(img)
+    content = [{"type": "text", "text": (intro + "\n" if intro else "") + _VISION_SYS}]
+    for fr in frames[:5]:
+        img = _prep_image(fr)
+        content.append({"type": "image_url",
+                        "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}})
     body = {
         "model": f"gpt://{settings.yc_folder_id}/{_QWEN_MODEL}/latest",
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": _VISION_SYS},
-            {"type": "image_url",
-             "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}},
-        ]}],
+        "messages": [{"role": "user", "content": content}],
         # The brevity directive in _VISION_SYS bounds reasoning to ~1k tokens, so this ceiling
         # is just a safety net (a truncated reasoning = finish=length + empty content → None).
         "temperature": 0, "max_tokens": 8000,
@@ -171,6 +173,11 @@ def _vision_sync(img: bytes) -> dict | None:
     return None
 
 
+def _vision_sync(img: bytes) -> dict | None:
+    """Single-image identify (photo path / scan recognition)."""
+    return _vision_call([img])
+
+
 def _fmt_vision(vd: dict) -> str:
     parts = [f"diagnosis: {vd.get('diagnosis')}",
              f"latin: {vd.get('latin')}",
@@ -184,20 +191,13 @@ def _fmt_vision(vd: dict) -> str:
     return "\n".join(parts)
 
 
-async def diagnose(img: bytes, question: str | None, crop: str | None,
-                   field_name: str | None) -> str | None:
-    """Structured diagnosis + grounded advice for a field photo. `crop`/`field_name` are
-    the KNOWN field context (skip 'what crop?' when we have it). None on failure."""
-    if not (settings.yc_api_key and settings.yc_folder_id):
-        return None
-    vd = await asyncio.to_thread(_vision_sync, img)
-    if not vd or not vd.get("diagnosis"):
-        return None
+async def _compose(vd: dict, question: str | None, crop: str | None,
+                   field_name: str | None, extra_ctx: str | None = None) -> str | None:
+    """Turn a vision result (vd) into the grounded, structured answer. Shared by the photo
+    and video paths. `extra_ctx` carries anything extra (e.g. a video's voice narration)."""
     # qwen is ~coin-flip on lookalike broadleaf seedlings (марь↔щирица↔амброзия, even weed↔crop)
-    # yet stays overconfident (verified: calls марь белая «щирица»/«гречиха» at 80-90%). When it
-    # itself lists an alternative, that's its own uncertainty signal — temper the DISPLAYED
-    # confidence so the answer reads as a hedged suggestion, not authority (the agronomist
-    # decides; see newgrain-weedid-llm-bakeoff).
+    # yet stays overconfident. When it itself lists an alternative, that's its own uncertainty
+    # signal — temper the DISPLAYED confidence so the answer reads as a hedged suggestion.
     if vd.get("differential"):
         try:
             if int(vd.get("confidence") or 0) > 60:
@@ -205,9 +205,8 @@ async def diagnose(img: bytes, question: str | None, crop: str | None,
         except (TypeError, ValueError):
             pass
     target = str(vd["diagnosis"])
-    # Reuse agro_chat grounding. For WEEDS the species is unreliable but the CLASS (двудольный/
-    # злаковый) is not — and the class + crop is what actually drives the registered-product list.
-    # So ground the treatment on the class, not the guessed species.
+    # For WEEDS the species is unreliable but the CLASS (двудольный/злаковый) is not — and the
+    # class + crop is what actually drives the registered-product list. Ground on the class.
     wc = str(vd.get("weed_class") or "")
     cls = ("двудольных" if "двудол" in wc else "злаковых" if "злак" in wc else "")
     if str(vd.get("category")) == "сорняк" and cls:
@@ -222,6 +221,8 @@ async def diagnose(img: bytes, question: str | None, crop: str | None,
            (f"КУЛЬТУРА (из карточки поля {field_name}): {crop}" if crop
             else "КУЛЬТУРА: не указана — попроси подтвердить."),
            "РАСПОЗНАВАНИЕ (по фото):\n" + _fmt_vision(vd)]
+    if extra_ctx:
+        ctx.append(extra_ctx)
     if grounding:
         ctx.append(grounding)
     if literature:
@@ -231,3 +232,33 @@ async def diagnose(img: bytes, question: str | None, crop: str | None,
     except Exception:
         logger.exception("diagnose compose failed")
         return None
+
+
+async def diagnose(img: bytes, question: str | None, crop: str | None,
+                   field_name: str | None) -> str | None:
+    """Structured diagnosis + grounded advice for a field photo. `crop`/`field_name` are
+    the KNOWN field context (skip 'what crop?' when we have it). None on failure."""
+    if not (settings.yc_api_key and settings.yc_folder_id):
+        return None
+    vd = await asyncio.to_thread(_vision_sync, img)
+    if not vd or not vd.get("diagnosis"):
+        return None
+    return await _compose(vd, question, crop, field_name)
+
+
+async def diagnose_video(frames: list[bytes], question: str | None, crop: str | None,
+                         field_name: str | None, narration: str | None) -> str | None:
+    """Comment on a short field video. The in-RU vision model reads STILLS, not motion — so we
+    hand it the sharpest frames pulled from the clip and let it reason across them, and fold the
+    voice narration (if any) into the answer. None on failure."""
+    if not (settings.yc_api_key and settings.yc_folder_id) or not frames:
+        return None
+    vd = await asyncio.to_thread(
+        _vision_call, frames,
+        "Это НЕСКОЛЬКО КАДРОВ из одного короткого видео с поля (тот же участок). Определи объект "
+        "по всем кадрам вместе; если на кадрах разные объекты — опиши главную проблему.")
+    if not vd or not vd.get("diagnosis"):
+        return None
+    extra = (f"ГОЛОСОВОЙ КОММЕНТАРИЙ АГРОНОМА С ВИДЕО (расшифровка) — учитывай как описание "
+             f"проблемы: «{narration.strip()}»") if narration and narration.strip() else None
+    return await _compose(vd, question, crop, field_name, extra_ctx=extra)
