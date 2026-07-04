@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform,
-  Pressable, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform,
+  Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -103,36 +103,86 @@ function Login({ onDone }: { onDone: () => void }) {
 // ─────────────────────────── logged-in shell ───────────────────────────
 function Main({ onLogout }: { onLogout: () => void }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [me, setMe] = useState<any>(null);
-  const [tab, setTab] = useState<'feed' | 'dm'>('feed');
-  const [tabBarH, setTabBarH] = useState(56 + Math.max(insets.bottom, 8));
+  const [open, setOpen] = useState<null | 'feed' | 'dm'>(null);
+  const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); }, []);
-  const headerPad = insets.top + 50;
+  const headerPad = insets.top + 52;
+  const openChat = (t: 'feed' | 'dm') => {
+    setOpen(t);
+    Animated.timing(slide, { toValue: 1, duration: 240, useNativeDriver: true }).start();
+  };
+  const back = () => {
+    Keyboard.dismiss();
+    Animated.timing(slide, { toValue: 0, duration: 210, useNativeDriver: true }).start(({ finished }) => { if (finished) setOpen(null); });
+  };
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      {/* content fills the whole screen; header + composer + tab bar all hover over it */}
-      <View style={{ flex: 1 }}>{tab === 'feed' ? <FeedView onLogout={onLogout} headerPad={headerPad} tabBarH={tabBarH} /> : <DmView headerPad={headerPad} tabBarH={tabBarH} />}</View>
+      <ChatList me={me} onLogout={onLogout} onOpen={openChat} headerPad={headerPad} insetsTop={insets.top} bottomInset={insets.bottom} />
 
-      <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
+      {open && (
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: BG, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}>
+          {open === 'feed'
+            ? <FeedView onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />
+            : <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
+          <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
+            <View style={styles.chatHdrRow}>
+              <Pressable onPress={back} hitSlop={12} style={styles.backBtn}><Ionicons name="chevron-back" size={27} color={GOLD} /></Pressable>
+              <View style={[styles.rowAv, open === 'feed' ? styles.avGroup : styles.avBot]}>
+                {open === 'feed' ? <Ionicons name="people" size={17} color="#fff" /> : <MaterialCommunityIcons name="robot-outline" size={17} color="#fff" />}
+              </View>
+              <Text style={styles.chatHdrTitle} numberOfLines={1}>{open === 'feed' ? 'Лента команды' : 'Flagleaf · ИИ-агроном'}</Text>
+            </View>
+          </BlurView>
+        </Animated.View>
+      )}
+    </View>
+  );
+}
+
+// ─────────────────────── chat list (home) ───────────────────────
+function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
+  { me: any; onLogout: () => void; onOpen: (t: 'feed' | 'dm') => void; headerPad: number; insetsTop: number; bottomInset: number }) {
+  const [last, setLast] = useState<any>(null);
+  useEffect(() => { api.get('/api/feed').then((d) => setLast((d.posts || [])[0] || null)).catch(() => {}); }, []);
+  const feedPreview = last
+    ? `${last.author || ''}: ${last.body || (last.is_video ? '🎥 видео' : last.media ? '📷 фото' : '…')}`.trim()
+    : 'Наблюдения команды, ответы ИИ, проверка старшим';
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: headerPad + 6, paddingBottom: bottomInset + 16 }}>
+        <ChatRow onPress={() => onOpen('feed')} avStyle={styles.avGroup}
+          icon={<Ionicons name="people" size={24} color="#fff" />}
+          title="Лента команды" pinned time={when(last?.created_at)} preview={feedPreview} />
+        <ChatRow onPress={() => onOpen('dm')} avStyle={styles.avBot}
+          icon={<MaterialCommunityIcons name="robot-outline" size={23} color="#fff" />}
+          title="Flagleaf · ИИ-агроном" preview="Личный чат: препараты, ЭПВ, история и план поля" />
+      </ScrollView>
+
+      <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insetsTop, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
         <View style={styles.headerRow}>
           <Logo />
           <Text style={styles.hdrRight}>{me?.name || ''} · <Text style={{ color: GOLD }} onPress={onLogout}>выйти</Text></Text>
         </View>
       </BlurView>
-
-      <BlurView intensity={80} tint="light" onLayout={(e) => setTabBarH(e.nativeEvent.layout.height)}
-        style={[styles.tabbarGlass, { paddingBottom: Math.max(insets.bottom, 8), position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10 }]}>
-        <TabBtn icon="albums-outline" label="Лента" active={tab === 'feed'} onPress={() => setTab('feed')} />
-        <TabBtn icon="chatbubble-outline" label="Личное" active={tab === 'dm'} onPress={() => setTab('dm')} />
-      </BlurView>
     </View>
   );
 }
-function TabBtn({ icon, label, active, onPress }: { icon: any; label: string; active: boolean; onPress: () => void }) {
+function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned }:
+  { onPress: () => void; icon: any; avStyle: any; title: string; preview: string; time?: string; pinned?: boolean }) {
   return (
-    <Pressable style={styles.tab} onPress={onPress}>
-      <Ionicons name={icon} size={23} color={active ? GOLD : MUTED} />
-      <Text style={{ fontSize: 11, marginTop: 3, color: active ? GOLD : MUTED, fontWeight: active ? '600' : '400' }}>{label}</Text>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.chatRow, pressed && { backgroundColor: 'rgba(120,90,30,0.05)' }]}>
+      <View style={[styles.rowAvLg, avStyle]}>{icon}</View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
+          {pinned && <Ionicons name="pin" size={13} color={MUTED} style={{ marginLeft: 5 }} />}
+          <View style={{ flex: 1 }} />
+          {!!time && <Text style={styles.rowTime}>{time}</Text>}
+        </View>
+        <Text style={styles.rowPreview} numberOfLines={1}>{preview}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -151,7 +201,7 @@ function Composer({ value, onChange, onSend, busy, placeholder, camera }:
 }
 
 // ─────────────────────────── feed ───────────────────────────
-function FeedView({ onLogout, headerPad, tabBarH }: { onLogout: () => void; headerPad: number; tabBarH: number }) {
+function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; headerPad: number; bottomInset: number }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
@@ -170,12 +220,12 @@ function FeedView({ onLogout, headerPad, tabBarH }: { onLogout: () => void; head
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={GOLD} /></View> : (
         <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)} style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: tabBarH + 74, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
           ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kbOpen ? 0 : tabBarH }}>
+        <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={publish} busy={busy} camera placeholder="Сообщение команде…" />
         </View>
       </KeyboardAvoidingView>
@@ -234,7 +284,7 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
 }
 
 // ─────────────────────────── DM (you↔bot) ───────────────────────────
-function DmView({ headerPad, tabBarH }: { headerPad: number; tabBarH: number }) {
+function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: number }) {
   const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string }[]>([
     { role: 'bot', text: 'Здравствуйте! Я ИИ-агроном Flagleaf. Здесь мы говорим лично — спросите про препараты, ЭПВ, историю или план поля.' },
   ]);
@@ -256,14 +306,14 @@ function DmView({ headerPad, tabBarH }: { headerPad: number; tabBarH: number }) 
   return (
     <View style={{ flex: 1 }}>
       <FlatList data={[...msgs].reverse()} inverted keyExtractor={(_, i) => String(i)} style={StyleSheet.absoluteFill}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: tabBarH + 74, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
             <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
           </View>
         )} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kbOpen ? 0 : tabBarH }}>
+        <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
         </View>
       </KeyboardAvoidingView>
@@ -290,8 +340,20 @@ const styles = StyleSheet.create({
   headerGlass: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(120,90,30,0.12)' },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   hdrRight: { marginLeft: 'auto', fontSize: 12, color: MUTED },
-  tabbarGlass: { flexDirection: 'row', paddingTop: 8 },
-  tab: { flex: 1, alignItems: 'center' },
+  // chat-list home
+  chatRow: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 16, paddingVertical: 13 },
+  rowAvLg: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
+  rowAv: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  avGroup: { backgroundColor: GOLD },
+  avBot: { backgroundColor: INK },
+  rowTop: { flexDirection: 'row', alignItems: 'center' },
+  rowTitle: { fontSize: 16.5, fontWeight: '700', color: INK, flexShrink: 1 },
+  rowTime: { fontSize: 12, color: MUTED },
+  rowPreview: { fontSize: 14, color: MUTED, marginTop: 3 },
+  // chat header (inside an open conversation)
+  chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 6, paddingRight: 16, paddingVertical: 9, gap: 9 },
+  backBtn: { padding: 2 },
+  chatHdrTitle: { fontSize: 16, fontWeight: '700', color: INK, flexShrink: 1 },
   empty: { textAlign: 'center', color: MUTED, fontSize: 14, padding: 24, lineHeight: 20 },
   // post card
   post: { backgroundColor: '#fff', borderRadius: 22, padding: 14, ...softShadow },
