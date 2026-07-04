@@ -60,6 +60,8 @@ from bot.db import (
     get_feed_comments_bulk,
     get_feed_post,
 )
+from bot import flagleaf
+from bot.flagleaf import _field_route      # Flagleaf owns field-routing now (also used by /api/chat)
 from bot.diagnose import diagnose as diagnose_photo
 from bot.diagnose import diagnose_video as diagnose_video_frames
 from bot.diagnose import _vision_sync as _vision_recognize
@@ -617,10 +619,6 @@ def _presign(url):
         return None
 
 
-def _crop_q(txt: str, crop: str) -> str:
-    return f"Культура: {crop}. {txt}" if crop else txt
-
-
 @app.get("/api/feed")
 async def feed_list(user=Depends(require_user)):
     """The farm's shared feed (newest first): each post's author, media, field, bot reply count,
@@ -663,21 +661,19 @@ async def feed_comments_list(post_id: int, user=Depends(require_user)):
 async def feed_create(request: Request, user=Depends(require_user),
                       body: str = Form(""), field_id: str = Form(""), crop: str = Form(""),
                       image: UploadFile | None = File(None), video: UploadFile | None = File(None)):
-    """Create a shared post — media (photo/video, filed as scouting for learning) and/or text —
-    and attach the bot's reply as the first comment."""
+    """Create a shared post — media (photo/video, filed as scouting for learning) and/or text.
+    Ear stores the message, then asks its Flagleaf participant for a reply (if any)."""
     if not await _rate_ok(_client_ip(request), "feed", FEED_PER_HOUR):
         raise HTTPException(429, "Слишком много постов. Попробуйте позже.")
     txt = body.strip()
     fid = int(field_id) if field_id.strip().isdigit() else None
-    sub_id, reply = None, None
+    cr = crop.strip() or None
+    sub_id, ctx = None, None
     if image is not None:
         img = await image.read()
         if img and len(img) <= MAX_IMG:
             sub_id = await _store_photo_submission(user, img, image.content_type or "image/jpeg", field_id, txt)
-            try:
-                reply = await diagnose_photo(img, txt or None, crop.strip() or None, None)
-            except Exception:
-                logger.exception("feed: photo diagnose failed")
+            ctx = flagleaf.Context(image=img, text=txt or None, crop=cr)
     elif video is not None:
         data = await video.read()
         if data and len(data) <= MAX_VIDEO_COMMENT:
@@ -685,28 +681,16 @@ async def feed_create(request: Request, user=Depends(require_user),
                 sub_id = await _store_scout_video(user, data, video.content_type or "video/mp4", field_id, txt)
             except Exception:
                 logger.exception("feed: video store failed")
-            frames = await asyncio.to_thread(extract_frames, data)
-            narration = ""
-            try:
-                narration = await asyncio.to_thread(transcribe_video, data)
-            except Exception:
-                pass
-            if frames:
-                try:
-                    reply = await diagnose_video_frames(frames, txt or None, crop.strip() or None, None, narration or None)
-                except Exception:
-                    logger.exception("feed: video diagnose failed")
+            ctx = flagleaf.Context(video=data, text=txt or None, crop=cr)
     elif txt:
-        try:
-            plan, field_ctx = await _field_route(txt)   # «что на поле 121?» → real field data
-            reply = plan if plan else await agro_answer(_crop_q(txt, crop.strip()), context=field_ctx)
-        except Exception:
-            logger.exception("feed: text answer failed")
+        ctx = flagleaf.Context(text=txt, crop=cr)
     if not (sub_id or txt):
         raise HTTPException(400, "Пустой пост.")
     post_id = await create_feed_post(user["farm_id"], user["id"], sub_id, fid, txt or None)
-    if reply:
-        await add_feed_comment(post_id, None, True, reply)
+    if ctx is not None:                              # Ear asks its Flagleaf participant
+        reply = await flagleaf.respond(ctx)
+        if reply:
+            await add_feed_comment(post_id, None, True, reply)
     return {"ok": True, "post_id": post_id}
 
 
@@ -716,7 +700,7 @@ class FeedComment(BaseModel):
 
 @app.post("/api/feed/{post_id}/comment")
 async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_user)):
-    """A discussion comment. The bot stays silent (just learns) unless directly addressed («бот …»)."""
+    """A discussion comment. Flagleaf stays silent (just learns) unless addressed («бот …»)."""
     txt = (body.body or "").strip()
     if not txt:
         raise HTTPException(400, "Пустой комментарий.")
@@ -724,37 +708,21 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
     if not post:
         raise HTTPException(404, "Пост не найден.")
     await add_feed_comment(post_id, user["id"], False, txt)
-    if re.match(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]", txt, re.I):   # bot replies only when called
-        q2 = re.sub(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]+", "", txt, flags=re.I).strip() or txt
-        try:
-            plan, field_ctx = await _field_route(q2)          # explicit «поле N» in the comment wins
-            if plan:
-                ans = plan
-            else:
-                # «это поле» / follow-ups → resolve the thread's field: the post's own field,
-                # else the field named in the ORIGINAL post text
-                if not field_ctx and post["field_name"]:
-                    try:
-                        field_ctx = await field_card_text(post["field_name"], None)
-                    except Exception:
-                        field_ctx = None
-                if not field_ctx and post["body"]:
-                    _, field_ctx = await _field_route(post["body"])
-                # prior conversation so the bot remembers the thread
-                hist = []
-                if post["body"]:
-                    hist.append(f"{post['author']}: {post['body']}")
-                for c in await get_feed_comments(post_id):
-                    who = "Flagleaf" if c["is_bot"] else (c["author"] or "агроном")
-                    b = (c["body"] or "").strip()
-                    if b:
-                        hist.append(f"{who}: {b[:1200]}")
-                history = "\n".join(hist)[-4000:] or None
-                ans = await agro_answer(_crop_q(q2, post["crop"] or ""), context=field_ctx, history=history)
-            if ans:
-                await add_feed_comment(post_id, None, True, ans)
-        except Exception:
-            logger.exception("feed: bot comment reply failed")
+    if flagleaf.addressed(txt):                       # «бот …» → ask the Flagleaf participant
+        # Ear owns the conversation: build the thread transcript + the thread's field, hand to Flagleaf
+        hist = []
+        if post["body"]:
+            hist.append(f"{post['author']}: {post['body']}")
+        for c in await get_feed_comments(post_id):
+            who = "Flagleaf" if c["is_bot"] else (c["author"] or "агроном")
+            b = (c["body"] or "").strip()
+            if b:
+                hist.append(f"{who}: {b[:1200]}")
+        reply = await flagleaf.respond(flagleaf.Context(
+            text=flagleaf.strip_address(txt), crop=(post["crop"] or None),
+            field_hint=(post["field_name"] or None), history="\n".join(hist)[-4000:] or None))
+        if reply:
+            await add_feed_comment(post_id, None, True, reply)
     return {"ok": True}
 
 
@@ -783,37 +751,6 @@ async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
             except Exception:
                 logger.exception("feed react: submission status update failed")
     return {"ok": True}
-
-
-# The web chat has no slash-commands, so field questions must be answered in-chat: detect a
-# field reference (any phrasing — «что было на поле 39», «история поля 39», «поле 39») and a plan
-# intent, then pull the same field card / plan generator the Telegram bot uses.
-_FIELD_REF_RE = re.compile(r"пол[еяю]\s*№?\s*(\d+[а-я]?(?:\s*/\s*\d+)?)", re.I)
-_PLAN_RE = re.compile(r"\bплан|работ\w*\s+по\s+пол", re.I)
-
-
-def _field_ref(q: str):
-    m = _FIELD_REF_RE.search((q or "").replace("ё", "е"))
-    return re.sub(r"\s+", "", m.group(1)) if m else None
-
-
-async def _field_route(q: str):
-    """Returns (plan_or_none, field_context_or_none) for a field question. plan_or_none is a
-    ready answer to return verbatim; field_context is the field card to ground the LLM answer."""
-    ref = _field_ref(q)
-    if not ref:
-        return None, None
-    if _PLAN_RE.search(q):
-        try:
-            return await generate_field_plan(ref, None), None
-        except Exception:
-            logger.exception("web field plan failed")
-            return None, None
-    try:
-        return None, await field_card_text(ref, None)
-    except Exception:
-        logger.exception("web field card failed")
-        return None, None
 
 
 @app.post("/api/chat")
