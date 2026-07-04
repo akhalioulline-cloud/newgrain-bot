@@ -95,18 +95,20 @@ function Main({ onLogout }: { onLogout: () => void }) {
   const [me, setMe] = useState<any>(null);
   const [tab, setTab] = useState<'feed' | 'dm'>('feed');
   useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); }, []);
+  const headerPad = insets.top + 50;
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      <BlurView intensity={40} tint="light" style={[styles.headerGlass, { paddingTop: insets.top }]}>
+      {/* content sits BEHIND the header so cards blur through the glass as you scroll */}
+      <View style={{ flex: 1 }}>{tab === 'feed' ? <FeedView onLogout={onLogout} headerPad={headerPad} /> : <DmView headerPad={headerPad} />}</View>
+
+      <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
         <View style={styles.headerRow}>
           <Logo />
           <Text style={styles.hdrRight}>{me?.name || ''} · <Text style={{ color: GOLD }} onPress={onLogout}>выйти</Text></Text>
         </View>
       </BlurView>
 
-      <View style={{ flex: 1 }}>{tab === 'feed' ? <FeedView onLogout={onLogout} /> : <DmView />}</View>
-
-      <BlurView intensity={40} tint="light" style={[styles.tabbarGlass, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <BlurView intensity={75} tint="light" style={[styles.tabbarGlass, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <TabBtn icon="albums-outline" label="Лента" active={tab === 'feed'} onPress={() => setTab('feed')} />
         <TabBtn icon="chatbubble-outline" label="Личное" active={tab === 'dm'} onPress={() => setTab('dm')} />
       </BlurView>
@@ -136,7 +138,7 @@ function Composer({ value, onChange, onSend, busy, placeholder, camera }:
 }
 
 // ─────────────────────────── feed ───────────────────────────
-function FeedView({ onLogout }: { onLogout: () => void }) {
+function FeedView({ onLogout, headerPad }: { onLogout: () => void; headerPad: number }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
@@ -154,7 +156,7 @@ function FeedView({ onLogout }: { onLogout: () => void }) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {loading ? <View style={styles.center}><ActivityIndicator color={GOLD} /></View> : (
         <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)}
-          contentContainerStyle={{ padding: 14, gap: 14 }} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
           ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text>} />
       )}
@@ -214,7 +216,7 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
 }
 
 // ─────────────────────────── DM (you↔bot) ───────────────────────────
-function DmView() {
+function DmView({ headerPad }: { headerPad: number }) {
   const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string }[]>([
     { role: 'bot', text: 'Здравствуйте! Я ИИ-агроном Flagleaf. Здесь мы говорим лично — спросите про препараты, ЭПВ, историю или план поля.' },
   ]);
@@ -235,7 +237,7 @@ function DmView() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <FlatList data={[...msgs].reverse()} inverted keyExtractor={(_, i) => String(i)}
-        contentContainerStyle={{ padding: 14, gap: 8 }} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
             <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
