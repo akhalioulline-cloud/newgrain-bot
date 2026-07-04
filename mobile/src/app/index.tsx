@@ -94,12 +94,13 @@ function Main({ onLogout }: { onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const [me, setMe] = useState<any>(null);
   const [tab, setTab] = useState<'feed' | 'dm'>('feed');
+  const [tabBarH, setTabBarH] = useState(56 + Math.max(insets.bottom, 8));
   useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); }, []);
   const headerPad = insets.top + 50;
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      {/* content sits BEHIND the header so cards blur through the glass as you scroll */}
-      <View style={{ flex: 1 }}>{tab === 'feed' ? <FeedView onLogout={onLogout} headerPad={headerPad} /> : <DmView headerPad={headerPad} />}</View>
+      {/* content fills the whole screen; header + composer + tab bar all hover over it */}
+      <View style={{ flex: 1 }}>{tab === 'feed' ? <FeedView onLogout={onLogout} headerPad={headerPad} tabBarH={tabBarH} /> : <DmView headerPad={headerPad} tabBarH={tabBarH} />}</View>
 
       <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
         <View style={styles.headerRow}>
@@ -108,7 +109,8 @@ function Main({ onLogout }: { onLogout: () => void }) {
         </View>
       </BlurView>
 
-      <BlurView intensity={75} tint="light" style={[styles.tabbarGlass, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <BlurView intensity={80} tint="light" onLayout={(e) => setTabBarH(e.nativeEvent.layout.height)}
+        style={[styles.tabbarGlass, { paddingBottom: Math.max(insets.bottom, 8), position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10 }]}>
         <TabBtn icon="albums-outline" label="Лента" active={tab === 'feed'} onPress={() => setTab('feed')} />
         <TabBtn icon="chatbubble-outline" label="Личное" active={tab === 'dm'} onPress={() => setTab('dm')} />
       </BlurView>
@@ -127,18 +129,18 @@ function TabBtn({ icon, label, active, onPress }: { icon: any; label: string; ac
 function Composer({ value, onChange, onSend, busy, placeholder, camera }:
   { value: string; onChange: (s: string) => void; onSend: () => void; busy: boolean; placeholder: string; camera?: boolean }) {
   return (
-    <View style={styles.composer}>
+    <BlurView intensity={70} tint="light" style={styles.composer}>
       {camera && <Pressable style={styles.iconCircle}><Ionicons name="camera-outline" size={20} color={GOLD} /></Pressable>}
       <TextInput style={styles.capsule} value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={MUTED} multiline />
       <Pressable style={[styles.sendCircle, busy && styles.off]} onPress={onSend} disabled={busy}>
         <Ionicons name="arrow-up" size={22} color="#fff" />
       </Pressable>
-    </View>
+    </BlurView>
   );
 }
 
 // ─────────────────────────── feed ───────────────────────────
-function FeedView({ onLogout, headerPad }: { onLogout: () => void; headerPad: number }) {
+function FeedView({ onLogout, headerPad, tabBarH }: { onLogout: () => void; headerPad: number; tabBarH: number }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
@@ -153,15 +155,19 @@ function FeedView({ onLogout, headerPad }: { onLogout: () => void; headerPad: nu
     try { await api.postForm('/api/feed/post', formData({ body: b })); await load(); } catch {} finally { setBusy(false); }
   };
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={GOLD} /></View> : (
-        <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
+        <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)} style={StyleSheet.absoluteFill}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: tabBarH + 74, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
           ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text>} />
       )}
-      <Composer value={text} onChange={setText} onSend={publish} busy={busy} camera placeholder="Сообщение команде…" />
-    </KeyboardAvoidingView>
+      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
+        <View style={{ marginBottom: tabBarH }}>
+          <Composer value={text} onChange={setText} onSend={publish} busy={busy} camera placeholder="Сообщение команде…" />
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -216,7 +222,7 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
 }
 
 // ─────────────────────────── DM (you↔bot) ───────────────────────────
-function DmView({ headerPad }: { headerPad: number }) {
+function DmView({ headerPad, tabBarH }: { headerPad: number; tabBarH: number }) {
   const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string }[]>([
     { role: 'bot', text: 'Здравствуйте! Я ИИ-агроном Flagleaf. Здесь мы говорим лично — спросите про препараты, ЭПВ, историю или план поля.' },
   ]);
@@ -235,16 +241,20 @@ function DmView({ headerPad }: { headerPad: number }) {
     } finally { setBusy(false); }
   };
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <FlatList data={[...msgs].reverse()} inverted keyExtractor={(_, i) => String(i)}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+    <View style={{ flex: 1 }}>
+      <FlatList data={[...msgs].reverse()} inverted keyExtractor={(_, i) => String(i)} style={StyleSheet.absoluteFill}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: tabBarH + 74, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
             <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
           </View>
         )} />
-      <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
-    </KeyboardAvoidingView>
+      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
+        <View style={{ marginBottom: tabBarH }}>
+          <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -267,7 +277,7 @@ const styles = StyleSheet.create({
   headerGlass: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(120,90,30,0.12)' },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   hdrRight: { marginLeft: 'auto', fontSize: 12, color: MUTED },
-  tabbarGlass: { flexDirection: 'row', paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(120,90,30,0.12)' },
+  tabbarGlass: { flexDirection: 'row', paddingTop: 8 },
   tab: { flex: 1, alignItems: 'center' },
   empty: { textAlign: 'center', color: MUTED, fontSize: 14, padding: 24, lineHeight: 20 },
   // post card
@@ -303,7 +313,8 @@ const styles = StyleSheet.create({
   bubbleBotTxt: { fontSize: 15, lineHeight: 21, color: INK },
   bubbleUserTxt: { fontSize: 15, lineHeight: 21, color: '#fff' },
   // composer
-  composer: { flexDirection: 'row', gap: 9, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: '#fff', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: LINE, alignItems: 'flex-end' },
+  composerHover: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  composer: { flexDirection: 'row', gap: 9, paddingHorizontal: 12, paddingVertical: 9, alignItems: 'flex-end' },
   iconCircle: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: '#e4dcca', alignItems: 'center', justifyContent: 'center' },
   capsule: { flex: 1, minHeight: 42, maxHeight: 120, borderRadius: 22, paddingHorizontal: 16, paddingTop: 11, paddingBottom: 11, fontSize: 16, backgroundColor: '#f3eee2', color: INK },
   sendCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center', ...softShadow, shadowColor: GOLD, shadowOpacity: 0.4 },
