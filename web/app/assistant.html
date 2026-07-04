@@ -198,7 +198,7 @@
   <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото" aria-label="Снять фото">📷</button>
   <button type="button" class="iconbtn" id="galBtn" title="Из галереи / файл" aria-label="Из галереи">🖼</button>
   <button type="button" class="iconbtn" id="mic" title="Голосовой ввод" aria-label="Голосовой ввод">🎤</button>
-  <textarea id="q" rows="1" placeholder="Вопрос агроному или фото…"></textarea>
+  <textarea id="q" rows="1" placeholder="Вопрос или фото…"></textarea>
   <button type="submit" class="iconbtn send" id="send" title="Отправить" aria-label="Отправить">➤</button>
 </form>
 <div class="contactbar"><button type="button" id="contactBtn" class="contactbtn">📞 Связаться с агрономом</button></div>
@@ -269,7 +269,7 @@ function setFile(f, fromCam){
   if(pendingURL){ URL.revokeObjectURL(pendingURL); pendingURL=null; }
   if(f){ pendingURL=URL.createObjectURL(f); thumb.src=pendingURL; attname.textContent='Фото готово — отправьте или добавьте вопрос';
     att.style.display='flex'; q.placeholder='Добавьте вопрос — или просто отправьте'; q.focus(); }
-  else { att.style.display='none'; $('cam').value=''; $('gal').value=''; q.placeholder='Вопрос агроному или фото…'; }
+  else { att.style.display='none'; $('cam').value=''; $('gal').value=''; q.placeholder='Вопрос или фото…'; }
 }
 $('camBtn').onclick=()=>$('cam').click();
 $('galBtn').onclick=()=>$('gal').click();
@@ -484,7 +484,7 @@ micBtn.onclick=async()=>{
   recording=true; micBtn.classList.add('rec'); micBtn.textContent='⏹'; q.placeholder='Говорите… нажмите ⏹';
 };
 function stopRec(){
-  recording=false; micBtn.classList.remove('rec'); micBtn.textContent='🎤'; q.placeholder='Вопрос агроному или фото…';
+  recording=false; micBtn.classList.remove('rec'); micBtn.textContent='🎤'; q.placeholder='Вопрос или фото…';
   try{ micProc.disconnect(); }catch(e){}
   if(micStream) micStream.getTracks().forEach(t=>t.stop());
   const inRate=audioCtx.sampleRate;
@@ -504,9 +504,9 @@ async function sendAudio(pcm){
   try{
     const r=await fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:pcm});
     const j=await r.json();
-    if(j.text){ q.value=(q.value?q.value+' ':'')+j.text; q.dispatchEvent(new Event('input')); q.focus(); q.placeholder='Вопрос агроному или фото…'; }
-    else { q.placeholder='Не расслышал — повторите'; setTimeout(()=>q.placeholder='Вопрос агроному или фото…',2500); }
-  }catch(e){ q.placeholder='Ошибка распознавания'; setTimeout(()=>q.placeholder='Вопрос агроному или фото…',2500); }
+    if(j.text){ q.value=(q.value?q.value+' ':'')+j.text; q.dispatchEvent(new Event('input')); q.focus(); q.placeholder='Вопрос или фото…'; }
+    else { q.placeholder='Не расслышал — повторите'; setTimeout(()=>q.placeholder='Вопрос или фото…',2500); }
+  }catch(e){ q.placeholder='Ошибка распознавания'; setTimeout(()=>q.placeholder='Вопрос или фото…',2500); }
 }
 
 // ---------- «Связаться с агрономом» ----------
