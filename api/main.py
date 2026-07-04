@@ -52,6 +52,12 @@ from bot.db import (
     get_user_uploads,
     update_submission,
     field_at_point,
+    create_feed_post,
+    add_feed_comment,
+    set_feed_reaction,
+    get_feed,
+    get_feed_comments,
+    get_feed_post,
 )
 from bot.diagnose import diagnose as diagnose_photo
 from bot.diagnose import diagnose_video as diagnose_video_frames
@@ -410,6 +416,34 @@ async def submit(user=Depends(require_user),
 MAX_VIDEO = 400 * 1024 * 1024     # ~400 MB ceiling (covers ~3 min even at high quality)
 
 
+async def _store_photo_submission(user, img: bytes, ctype: str, field_id, comment: str) -> str | None:
+    """Persist one photo as a scouting learning record (S3 + submission, category=scouting →
+    'stored'). Dedup by hash. Returns the submission id, or None if duplicate/failed."""
+    h = hashlib.sha256(img).hexdigest()
+    if await find_duplicate_submission(user["id"], h):
+        return None
+    fid = int(field_id) if str(field_id).strip().isdigit() else None
+    w = ht = lat = lon = None
+    try:
+        im = Image.open(BytesIO(img)); w, ht = im.size; lat, lon = _exif_gps(im)
+    except Exception:
+        pass
+    sid = str(uuid4())
+    ext = "png" if "png" in (ctype or "") else "jpg"
+    key = f"raw/{user['farm_id']}/{fid or 'other'}/{date.today():%Y-%m-%d}/{sid}.{ext}"
+    try:
+        url = await upload_bytes(key, img, ctype or "image/jpeg")
+    except Exception:
+        logger.exception("feed: photo S3 upload failed")
+        return None
+    await create_submission(sid, user["id"], fid, url, w, ht, h)
+    upd = {"category": "scouting", "comment_text": comment.strip() or None, "status": "stored"}
+    if lat is not None:
+        upd.update(gps_lat=lat, gps_lon=lon, gps_source="exif")
+    await update_submission(sid, **upd)
+    return sid
+
+
 async def _store_scout_video(user, data: bytes, ctype: str, field_id, comment: str) -> str | None:
     """Persist a video as a scouting field-state record (S3 + submission + transcription job).
     Junior → pending_review (chief verifies); chief/admin → stored. Returns the submission id."""
@@ -566,10 +600,138 @@ class Geo(BaseModel):
 
 @app.post("/api/field-at-point")
 async def field_at_point_ep(body: Geo, user=Depends(require_user)):
-    """Which field the agronomist is standing in (GPS → PostGIS). Powers the on-field prompt:
-    when they're on ANY field, the assistant asks «что здесь происходит? пришлите видео»."""
+    """Which field the agronomist is standing in (GPS → PostGIS), any field, farm-scoped."""
     f = await field_at_point(body.lat, body.lon, user["farm_id"])
     return {"field": {"id": f["id"], "name": f["name"], "crop": f["crop"]} if f else None}
+
+
+# ─────────────────────────── Group feed (shared team wall) ───────────────────────────
+FEED_PER_HOUR = 60
+
+
+def _presign(url):
+    try:
+        return presigned_get(url, expires=7 * 24 * 3600) if url else None
+    except Exception:
+        return None
+
+
+def _crop_q(txt: str, crop: str) -> str:
+    return f"Культура: {crop}. {txt}" if crop else txt
+
+
+@app.get("/api/feed")
+async def feed_list(user=Depends(require_user)):
+    """The farm's shared feed (newest first): each post's author, media, field, bot reply count,
+    comment count and reaction tallies + the viewer's own reaction."""
+    rows = await get_feed(user["farm_id"], user["id"], 60)
+    posts = [{
+        "id": r["id"], "author": r["author"], "author_id": r["author_id"],
+        "body": r["body"], "field": r["field_name"], "bot_reply": r["bot_reply"],
+        "media": _presign(r["image_url"]), "is_video": bool(r["is_video"]),
+        "comments": r["comments"], "ups": r["ups"], "downs": r["downs"], "my_reaction": r["my_reaction"],
+        "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+    } for r in rows]
+    return {"posts": posts, "me": {"id": user["id"], "role": user["role"], "name": user["full_name"]}}
+
+
+@app.get("/api/feed/{post_id}/comments")
+async def feed_comments_list(post_id: int, user=Depends(require_user)):
+    rows = await get_feed_comments(post_id)
+    return {"comments": [{
+        "id": c["id"], "is_bot": c["is_bot"],
+        "author": ("ИИ-агроном Flagleaf" if c["is_bot"] else c["author"]),
+        "chief": (not c["is_bot"]) and c["author_role"] in ("chief_agronomist", "admin"),
+        "body": c["body"],
+        "created_at": c["created_at"].isoformat() if c["created_at"] else None,
+    } for c in rows]}
+
+
+@app.post("/api/feed/post")
+async def feed_create(request: Request, user=Depends(require_user),
+                      body: str = Form(""), field_id: str = Form(""), crop: str = Form(""),
+                      image: UploadFile | None = File(None), video: UploadFile | None = File(None)):
+    """Create a shared post — media (photo/video, filed as scouting for learning) and/or text —
+    and attach the bot's reply as the first comment."""
+    if not await _rate_ok(_client_ip(request), "feed", FEED_PER_HOUR):
+        raise HTTPException(429, "Слишком много постов. Попробуйте позже.")
+    txt = body.strip()
+    fid = int(field_id) if field_id.strip().isdigit() else None
+    sub_id, reply = None, None
+    if image is not None:
+        img = await image.read()
+        if img and len(img) <= MAX_IMG:
+            sub_id = await _store_photo_submission(user, img, image.content_type or "image/jpeg", field_id, txt)
+            try:
+                reply = await diagnose_photo(img, txt or None, crop.strip() or None, None)
+            except Exception:
+                logger.exception("feed: photo diagnose failed")
+    elif video is not None:
+        data = await video.read()
+        if data and len(data) <= MAX_VIDEO_COMMENT:
+            try:
+                sub_id = await _store_scout_video(user, data, video.content_type or "video/mp4", field_id, txt)
+            except Exception:
+                logger.exception("feed: video store failed")
+            frames = await asyncio.to_thread(extract_frames, data)
+            narration = ""
+            try:
+                narration = await asyncio.to_thread(transcribe_video, data)
+            except Exception:
+                pass
+            if frames:
+                try:
+                    reply = await diagnose_video_frames(frames, txt or None, crop.strip() or None, None, narration or None)
+                except Exception:
+                    logger.exception("feed: video diagnose failed")
+    elif txt:
+        try:
+            reply = await agro_answer(_crop_q(txt, crop.strip()))
+        except Exception:
+            logger.exception("feed: text answer failed")
+    if not (sub_id or txt):
+        raise HTTPException(400, "Пустой пост.")
+    post_id = await create_feed_post(user["farm_id"], user["id"], sub_id, fid, txt or None)
+    if reply:
+        await add_feed_comment(post_id, None, True, reply)
+    return {"ok": True, "post_id": post_id}
+
+
+class FeedComment(BaseModel):
+    body: str
+
+
+@app.post("/api/feed/{post_id}/comment")
+async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_user)):
+    """A discussion comment. The bot stays silent (just learns) unless directly addressed («бот …»)."""
+    txt = (body.body or "").strip()
+    if not txt:
+        raise HTTPException(400, "Пустой комментарий.")
+    post = await get_feed_post(post_id)
+    if not post:
+        raise HTTPException(404, "Пост не найден.")
+    await add_feed_comment(post_id, user["id"], False, txt)
+    if re.match(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]", txt, re.I):   # bot replies only when called
+        try:
+            ans = await agro_answer(_crop_q(txt, post["crop"] or ""))
+            if ans:
+                await add_feed_comment(post_id, None, True, ans)
+        except Exception:
+            logger.exception("feed: bot comment reply failed")
+    return {"ok": True}
+
+
+class FeedReact(BaseModel):
+    verdict: str      # 'up' | 'down' | 'none'
+
+
+@app.post("/api/feed/{post_id}/react")
+async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
+    """The chief's 👍/👎 — the ground-truth signal that a post + the bot's reply is right/wrong."""
+    _require_chief(user)
+    v = body.verdict if body.verdict in ("up", "down", "none") else "none"
+    await set_feed_reaction(post_id, user["id"], v)
+    return {"ok": True}
 
 
 # The web chat has no slash-commands, so field questions must be answered in-chat: detect a

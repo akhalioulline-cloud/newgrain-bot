@@ -5,11 +5,12 @@
  *   - other GETs (icons, fonts, css) → cache-first, then network (and cache it).
  * Bump CACHE to ship a new shell; old caches are pruned on activate.
  */
-const CACHE = 'flagleaf-shell-v46';
+const CACHE = 'flagleaf-shell-v47';
 const SHELL = [
   '/app/',
   '/app/index.html',
   '/app/assistant.html',
+  '/app/feed.html',
   '/app/review.html',
   '/app/scan.html',
   '/app/manifest.json',

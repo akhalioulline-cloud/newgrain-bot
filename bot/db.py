@@ -1110,6 +1110,72 @@ async def count_pending_reviews(farm_id: int | None) -> int:
         return int((await conn.execute(text(sql), params)).scalar() or 0)
 
 
+# ─────────────────────────── Group feed ───────────────────────────
+async def create_feed_post(farm_id, author_id, submission_id, field_id, body):
+    async with engine.begin() as conn:
+        return (await conn.execute(text(
+            "INSERT INTO feed_posts (farm_id, author_id, submission_id, field_id, body) "
+            "VALUES (:farm,:author,:sub,:field,:body) RETURNING id"),
+            {"farm": farm_id, "author": author_id, "sub": submission_id,
+             "field": field_id, "body": body})).scalar()
+
+
+async def add_feed_comment(post_id, author_id, is_bot, body):
+    async with engine.begin() as conn:
+        return (await conn.execute(text(
+            "INSERT INTO feed_comments (post_id, author_id, is_bot, body) "
+            "VALUES (:p,:a,:b,:body) RETURNING id"),
+            {"p": post_id, "a": author_id, "b": is_bot, "body": body})).scalar()
+
+
+async def set_feed_reaction(post_id, user_id, verdict):
+    async with engine.begin() as conn:
+        if verdict in ("up", "down"):
+            await conn.execute(text(
+                "INSERT INTO feed_reactions (post_id,user_id,verdict) VALUES (:p,:u,:v) "
+                "ON CONFLICT (post_id,user_id) DO UPDATE SET verdict=:v, created_at=now()"),
+                {"p": post_id, "u": user_id, "v": verdict})
+        else:  # 'none' → clear
+            await conn.execute(text("DELETE FROM feed_reactions WHERE post_id=:p AND user_id=:u"),
+                               {"p": post_id, "u": user_id})
+
+
+async def get_feed(farm_id, viewer_id, limit=60):
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT p.id, p.body, p.created_at, p.submission_id::text AS submission_id, "
+            "       u.full_name AS author, u.id AS author_id, f.name AS field_name, "
+            "       s.image_url, "
+            "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=s.id) AS is_video, "
+            "       (SELECT c.body FROM feed_comments c WHERE c.post_id=p.id AND c.is_bot ORDER BY c.created_at LIMIT 1) AS bot_reply, "
+            "       (SELECT count(*) FROM feed_comments c WHERE c.post_id=p.id AND NOT c.is_bot) AS comments, "
+            "       (SELECT count(*) FROM feed_reactions r WHERE r.post_id=p.id AND r.verdict='up') AS ups, "
+            "       (SELECT count(*) FROM feed_reactions r WHERE r.post_id=p.id AND r.verdict='down') AS downs, "
+            "       (SELECT verdict FROM feed_reactions r WHERE r.post_id=p.id AND r.user_id=:viewer) AS my_reaction "
+            "FROM feed_posts p JOIN users u ON u.id=p.author_id "
+            "LEFT JOIN fields f ON f.id=p.field_id LEFT JOIN submissions s ON s.id=p.submission_id "
+            "WHERE p.farm_id=:farm ORDER BY p.created_at DESC LIMIT :lim"),
+            {"farm": farm_id, "viewer": viewer_id, "lim": limit})).mappings().all()
+
+
+async def get_feed_comments(post_id):
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT c.id, c.is_bot, c.body, c.created_at, u.full_name AS author, u.role AS author_role "
+            "FROM feed_comments c LEFT JOIN users u ON u.id=c.author_id "
+            "WHERE c.post_id=:p ORDER BY c.created_at"), {"p": post_id})).mappings().all()
+
+
+async def get_feed_post(post_id):
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT p.id, p.body, p.farm_id, p.field_id, p.submission_id::text AS submission_id, "
+            "       u.full_name AS author, f.name AS field_name, f.crop AS crop, "
+            "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=p.submission_id) AS is_video "
+            "FROM feed_posts p JOIN users u ON u.id=p.author_id LEFT JOIN fields f ON f.id=p.field_id "
+            "WHERE p.id=:p"), {"p": post_id})).mappings().first()
+
+
 async def get_team_progress():
     """Team-wide totals for the collective goal: photos collected toward the model
     (everything not draft/rejected/duplicate) and how many reached training (labeled)."""

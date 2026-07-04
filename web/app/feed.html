@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLAGLEAF — Лента</title>
+<meta name="description" content="Общая лента команды агрономов Flagleaf: наблюдения с полей, ответы ИИ-агронома и обсуждение.">
+<link rel="manifest" href="/app/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<meta name="apple-mobile-web-app-title" content="Flagleaf">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#b9994b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --gold:#b9994b; --ink:#1a1a1a; --bg:#faf8f4; --card:#fff; --muted:#8a8a8a; --line:#e7e2d8; --ok:#3a7d44; --bad:#c0392b; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
+       display:flex;flex-direction:column;min-height:100dvh}
+  header{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;padding-top:env(safe-area-inset-top)}
+  .hrow{display:flex;align-items:center;gap:10px;padding:12px 16px}
+  .navbtns{display:flex;gap:3px;margin-right:2px;flex:none}
+  .navb{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:17px;line-height:1;color:var(--ink);cursor:pointer;padding:0}
+  .logo{font-family:Oswald;font-weight:600;letter-spacing:.14em;font-size:18px}
+  .logo b{color:var(--gold)}
+  .sub{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.2}
+  .sub .who{color:var(--ink);font-weight:500}
+  .logout{color:var(--gold);cursor:pointer;background:none;border:none;font:inherit;padding:0}
+  .tabs{display:flex;border-top:1px solid var(--line);overflow-x:auto}
+  .tab{flex:1;text-align:center;padding:10px 5px;font-size:13px;font-weight:600;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
+  .tab.on{color:var(--ink);border-bottom-color:var(--gold)}
+
+  .fieldbar{display:flex;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:8px 12px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line);background:#fff}
+  .fieldbar select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:#fff;flex:1;outline:none}
+  #geoNote{font-size:12px;color:#6b6b6b;background:#f1f5ee;border-bottom:1px solid #dde6d5;padding:6px 14px;max-width:760px;margin:0 auto;width:100%}
+
+  main{flex:1;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+  .newchip{align-self:center;font:inherit;font-size:13px;color:var(--gold);background:#fff;border:1px solid var(--gold);border-radius:16px;padding:6px 14px;cursor:pointer}
+  .post{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  .phead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px}
+  .pav{width:30px;height:30px;border-radius:50%;background:#efe7d2;color:#6b541f;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:13px;flex:none}
+  .pauth{font-weight:500}
+  .pmeta{margin-left:auto;color:var(--muted);font-size:12px;text-align:right;line-height:1.3}
+  .pbody{font-size:14.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;margin-bottom:8px}
+  .pmedia{width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:#f2eee4;display:block;margin-bottom:8px}
+  .botreply{background:#faf6ec;border:1px solid #eadfbf;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+  .botreply .bl{font-size:11.5px;color:#6b541f;font-weight:500;margin-bottom:4px}
+  .pacts{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .pbtn{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:16px;padding:6px 12px;cursor:pointer;color:var(--ink);display:flex;align-items:center;gap:5px}
+  .pbtn.on.up{border-color:var(--ok);color:var(--ok)}
+  .pbtn.on.down{border-color:var(--bad);color:var(--bad)}
+  .pbtn .n{color:var(--muted);font-size:12px}
+  .thread{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+  .cmt{font-size:13.5px;line-height:1.45}
+  .cmt .ca{font-weight:500}
+  .cmt.bot .ca{color:#6b541f}
+  .cmt .chiefbadge{font-size:10.5px;color:#6b541f;background:#faf6ec;border:1px solid var(--gold);border-radius:10px;padding:1px 6px;margin-left:4px}
+  .cmt .cb{white-space:pre-wrap;word-wrap:break-word}
+  .cmtform{display:flex;gap:6px;align-items:flex-end;margin-top:4px}
+  .cmtform input{flex:1;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;outline:none}
+  .cmtform input:focus{border-color:var(--gold)}
+  .cmtform button{border:1px solid var(--gold);background:var(--gold);color:#fff;border-radius:10px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
+  .empty{text-align:center;color:var(--muted);font-size:14px;padding:24px 12px;line-height:1.5}
+
+  /* composer */
+  .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:6px 12px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);background:#fff}
+  .att img{height:40px;border-radius:8px;border:1px solid var(--line)}
+  .att .x{cursor:pointer;color:#c0392b;font-weight:700;margin-left:auto}
+  form{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:#fff;max-width:760px;width:100%;margin:0 auto}
+  .toprow{display:flex;gap:6px;align-items:flex-end}
+  textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;max-height:120px;outline:none}
+  textarea:focus{border-color:var(--gold)}
+  .btnrow{display:flex;gap:8px}
+  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:12px;height:42px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .btnrow .iconbtn{flex:1}
+  .iconbtn.cam{color:var(--gold);border-color:var(--gold)}
+  .send{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;width:52px;flex:none}
+  .send:disabled{opacity:.5}
+  .iconbtn.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+  .hint{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="navbtns">
+      <button class="navb" id="navBack" title="Назад">‹</button>
+      <button class="navb" id="navRefresh" title="Обновить">⟳</button>
+    </div>
+    <span class="logo">FLAG<b>LEAF</b></span>
+    <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span></span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <a class="tab on" href="/app/feed.html">👥 Лента</a>
+    <a class="tab" href="/app/assistant.html">💬 Личное</a>
+  </nav>
+</header>
+
+<div class="fieldbar">
+  <span>Поле:</span>
+  <select id="field"></select>
+  <select id="crop" class="hidden"></select>
+</div>
+<div id="geoNote" class="hidden"></div>
+
+<main id="feed"><div class="empty">Загружаю ленту…</div></main>
+
+<div class="att" id="att"><img id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
+<form id="form">
+  <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+  <input type="file" id="gal" accept="image/*,video/*" hidden>
+  <div class="toprow">
+    <textarea id="q" rows="1" placeholder="Наблюдение с поля или вопрос команде…"></textarea>
+    <button type="submit" class="iconbtn send" id="send" title="Опубликовать" aria-label="Опубликовать">➤</button>
+  </div>
+  <div class="btnrow">
+    <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото">📷</button>
+    <button type="button" class="iconbtn" id="galBtn" title="Фото или видео">🖼</button>
+    <button type="button" class="iconbtn" id="mic" title="Голосовой ввод">🎤</button>
+  </div>
+</form>
+<div class="hint">Пост виден всей команде. ИИ-агроном ответит; коллеги и старший агроном могут обсудить.</div>
+
+<script>
+const TOK='flagleaf_session', $=id=>document.getElementById(id);
+let session=localStorage.getItem(TOK)||'', ME=null, fieldsAll=[], posts=[], topId=0;
+let pendingFile=null, pendingURL=null, pendingIsVideo=false;
+const MAX_VIDEO=60*1024*1024;
+const CROP_LIST=['Подсолнечник','Соя','Пшеница озимая','Пшеница яровая','Кукуруза','Ячмень','Сахарная свёкла','Горох','Рапс','Гречиха','Овёс','Рожь','Просо','Нут','Лён масличный','Горчица','Кориандр','Многолетние травы'];
+
+async function api(path,opts={}){
+  const headers=opts.headers||{}; if(session) headers['x-session']=session;
+  const r=await fetch(path,{...opts,headers}); let b=null; try{b=await r.json();}catch(e){}
+  if(!r.ok){const err=new Error((b&&b.detail)||('Ошибка '+r.status));err.status=r.status;throw err;} return b;
+}
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function initials(n){ return (n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+function when(iso){ if(!iso) return ''; const d=new Date(iso), n=new Date();
+  const t=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  return d.toDateString()===n.toDateString()?('сегодня '+t):(d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+t); }
+function curField(){const v=$('field').value; return fieldsAll.find(f=>String(f.id)===v)||null;}
+function curCrop(){ const f=curField(); return f?(f.crop||''):($('crop').value||''); }
+function isChief(){ return ME && (ME.role==='chief_agronomist'||ME.role==='admin'); }
+
+// ---------- feed ----------
+async function loadFeed(){
+  let data; try{ data=await api('/api/feed'); }catch(e){ if(e.status===401){ location.replace('/app/'); return; } return; }
+  ME=data.me; posts=data.posts||[];
+  topId = posts.length ? posts[0].id : 0;
+  renderFeed();
+}
+function renderFeed(){
+  const el=$('feed');
+  if(!posts.length){ el.innerHTML='<div class="empty">Пока пусто. Пришлите фото/видео с поля или напишите наблюдение — оно появится здесь для всей команды.</div>'; return; }
+  el.innerHTML='';
+  posts.forEach(p=>el.appendChild(renderPost(p)));
+}
+function renderPost(p){
+  const c=document.createElement('div'); c.className='post'; c.dataset.id=p.id;
+  const media = p.media ? (p.is_video
+      ? `<video src="${esc(p.media)}" controls playsinline preload="metadata" class="pmedia"></video>`
+      : `<img src="${esc(p.media)}" class="pmedia" alt="">`) : '';
+  const react = isChief()
+    ? `<button class="pbtn up${p.my_reaction==='up'?' on up':''}" data-v="up">👍 <span class="n">${p.ups||''}</span></button>`+
+      `<button class="pbtn down${p.my_reaction==='down'?' on down':''}" data-v="down">👎 <span class="n">${p.downs||''}</span></button>`
+    : ((p.ups||p.downs) ? `<span class="pbtn" style="border:none;cursor:default">👍 ${p.ups} 👎 ${p.downs}</span>` : '');
+  const bot = p.bot_reply ? `<div class="botreply"><div class="bl">🤖 ИИ-агроном</div>${esc(p.bot_reply)}</div>` : '';
+  c.innerHTML=
+    `<div class="phead"><span class="pav">${esc(initials(p.author))}</span><span class="pauth">${esc(p.author)}</span>`+
+    `<span class="pmeta">${esc(when(p.created_at))}${p.field?'<br>📍 '+esc(p.field):''}</span></div>`+
+    (p.body?`<div class="pbody">${esc(p.body)}</div>`:'')+media+bot+
+    `<div class="pacts">`+
+      `<button class="pbtn cmts" data-id="${p.id}">💬 ${p.comments||'обсудить'}</button>`+react+
+    `</div><div class="thread hidden" data-id="${p.id}"></div>`;
+  c.querySelector('.cmts').onclick=()=>toggleThread(p.id, c);
+  c.querySelectorAll('.pbtn[data-v]').forEach(b=>b.onclick=()=>react(p.id, b.dataset.v, b));
+  return c;
+}
+async function react(postId, verdict, btn){
+  const on=btn.classList.contains('on');
+  try{ await api(`/api/feed/${postId}/react`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({verdict:on?'none':verdict})}); }catch(e){ return; }
+  loadFeed();
+}
+async function toggleThread(postId, card){
+  const t=card.querySelector('.thread');
+  if(!t.classList.contains('hidden')){ t.classList.add('hidden'); return; }
+  t.classList.remove('hidden'); t.innerHTML='<div class="cmt" style="color:var(--muted)">Загружаю…</div>';
+  let cs=[]; try{ cs=(await api(`/api/feed/${postId}/comments`)).comments||[]; }catch(e){}
+  t.innerHTML = cs.map(c=>
+    `<div class="cmt ${c.is_bot?'bot':''}"><span class="ca">${esc(c.author)}</span>`+
+    `${c.chief?'<span class="chiefbadge">старший</span>':''} <span style="color:var(--muted);font-size:11px">${esc(when(c.created_at))}</span>`+
+    `<div class="cb">${esc(c.body)}</div></div>`).join('') || '<div class="cmt" style="color:var(--muted)">Пока без комментариев — начните обсуждение.</div>';
+  const form=document.createElement('div'); form.className='cmtform';
+  form.innerHTML='<input placeholder="Комментарий… (напишите «бот …», чтобы спросить ИИ)"><button>➤</button>';
+  const inp=form.querySelector('input'), btn=form.querySelector('button');
+  const send=async()=>{ const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
+    try{ await api(`/api/feed/${postId}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})}); }catch(e){}
+    btn.disabled=false; const card2=[...document.querySelectorAll('.post')].find(x=>x.dataset.id==postId);
+    // reload comments inline
+    t.classList.add('hidden'); toggleThread(postId, card); refreshCounts(); };
+  btn.onclick=send; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();send();} });
+  t.appendChild(form); inp.focus();
+}
+async function refreshCounts(){ try{ const d=await api('/api/feed'); posts=d.posts||[];
+  posts.forEach(p=>{ const c=[...document.querySelectorAll('.post')].find(x=>x.dataset.id==p.id);
+    if(c){ const b=c.querySelector('.cmts'); if(b) b.textContent='💬 '+(p.comments||'обсудить'); } }); }catch(e){} }
+
+// ---------- compose / post ----------
+function setFile(f){ pendingFile=f; pendingIsVideo=!!(f&&(f.type||'').startsWith('video'));
+  if(pendingURL){URL.revokeObjectURL(pendingURL);pendingURL=null;}
+  if(f){ pendingURL=URL.createObjectURL(f);
+    if(pendingIsVideo){ $('thumb').style.display='none'; $('attname').textContent='🎬 Видео готово'; }
+    else { $('thumb').style.display=''; $('thumb').src=pendingURL; $('attname').textContent='Фото готово'; }
+    $('att').style.display='flex'; }
+  else { $('att').style.display='none'; $('cam').value=''; $('gal').value=''; pendingIsVideo=false; } }
+$('camBtn').onclick=()=>$('cam').click();
+$('galBtn').onclick=()=>$('gal').click();
+$('cam').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f); e.target.value=''; };
+$('gal').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f); e.target.value=''; };
+$('attx').onclick=()=>setFile(null);
+$('q').addEventListener('input', ()=>{ $('q').style.height='auto'; $('q').style.height=Math.min($('q').scrollHeight,120)+'px'; });
+
+async function createPost(){
+  const text=$('q').value.trim(), file=pendingFile, crop=curCrop(), f=curField();
+  if(!text && !file) return;
+  if(file && pendingIsVideo && file.size>MAX_VIDEO){ alert('Видео до ~60 МБ / 15 сек для ленты. Снимите покороче.'); return; }
+  $('send').disabled=true;
+  const fd=new FormData(); fd.append('body',text); if(f) fd.append('field_id',String(f.id)); if(crop) fd.append('crop',crop);
+  if(file) fd.append(pendingIsVideo?'video':'image', file);
+  $('q').value=''; $('q').style.height='auto'; setFile(null);
+  const el=$('feed'); const wait=document.createElement('div'); wait.className='post'; wait.innerHTML='<div style="color:var(--muted);font-size:14px">Публикую…' + (file?' (ИИ анализирует '+(file.type.startsWith('video')?'видео':'фото')+'…)':'') + '</div>';
+  el.prepend(wait);
+  try{ await api('/api/feed/post',{method:'POST',body:fd}); await loadFeed(); }
+  catch(e){ wait.querySelector('div').textContent = e.status===429?'Слишком много постов — попробуйте позже.':'Не удалось опубликовать. Попробуйте ещё раз.'; }
+  finally{ $('send').disabled=false; }
+}
+$('form').addEventListener('submit', e=>{ e.preventDefault(); createPost(); });
+$('q').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); createPost(); } });
+
+// ---------- voice ----------
+const micBtn=$('mic'); let recording=false, actx=null, mstream=null, mproc=null, mchunks=[];
+micBtn.onclick=async()=>{ if(recording){ stopRec(); return; }
+  try{ mstream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ alert('Нет доступа к микрофону.'); return; }
+  actx=new (window.AudioContext||window.webkitAudioContext)(); const src=actx.createMediaStreamSource(mstream);
+  mproc=actx.createScriptProcessor(4096,1,1); mchunks=[]; mproc.onaudioprocess=e=>mchunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(mproc); mproc.connect(actx.destination); recording=true; micBtn.classList.add('rec'); micBtn.textContent='⏹'; };
+function stopRec(){ recording=false; micBtn.classList.remove('rec'); micBtn.textContent='🎤';
+  try{mproc.disconnect();}catch(e){} if(mstream) mstream.getTracks().forEach(t=>t.stop());
+  const inRate=actx.sampleRate; let len=mchunks.reduce((a,c)=>a+c.length,0); const buf=new Float32Array(len); let off=0;
+  for(const c of mchunks){buf.set(c,off);off+=c.length;} try{actx.close();}catch(e){} if(len<inRate*0.3) return;
+  const ratio=inRate/16000, outLen=Math.floor(buf.length/ratio), out=new Int16Array(outLen);
+  for(let i=0;i<outLen;i++){const s=Math.max(-1,Math.min(1,buf[Math.floor(i*ratio)]||0));out[i]=s<0?s*0x8000:s*0x7FFF;}
+  fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:out.buffer})
+    .then(r=>r.json()).then(j=>{ if(j.text){ const q=$('q'); q.value=(q.value?q.value+' ':'')+j.text; q.dispatchEvent(new Event('input')); q.focus(); } }).catch(()=>{}); }
+
+// ---------- fields + geo ----------
+function selectField(id){ const o=[...$('field').options].find(x=>x.value===String(id)); if(o){ $('field').value=String(id); $('field').dispatchEvent(new Event('change')); } }
+async function geoLocate(){
+  if(!navigator.geolocation) return;
+  const pos=await new Promise(res=>navigator.geolocation.getCurrentPosition(p=>res(p),()=>res(null),{enableHighAccuracy:true,timeout:8000,maximumAge:60000}));
+  if(!pos) return; let f=null;
+  try{ f=(await api('/api/field-at-point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:pos.coords.latitude,lon:pos.coords.longitude})})).field; }catch(_){ return; }
+  if(!f) return;
+  if(!fieldsAll.some(x=>String(x.id)===String(f.id))){ fieldsAll.push({id:f.id,name:f.name,crop:f.crop||''});
+    const o=document.createElement('option'); o.value=String(f.id); o.textContent=f.name; $('field').appendChild(o); }
+  selectField(f.id); const g=$('geoNote'); g.textContent=`📍 Поле «${f.name}» определено по GPS — измените, если не так.`; g.classList.remove('hidden');
+}
+
+// ---------- polling for new posts (non-disruptive) ----------
+async function poll(){
+  try{ const d=await api('/api/feed'); const nt=(d.posts&&d.posts[0]&&d.posts[0].id)||0;
+    if(nt>topId){ let chip=$('newChip'); if(!chip){ chip=document.createElement('button'); chip.id='newChip'; chip.className='newchip';
+      chip.onclick=()=>{ chip.remove(); loadFeed(); window.scrollTo({top:0,behavior:'smooth'}); }; $('feed').prepend(chip); }
+      chip.textContent='· новые посты — обновить'; } }catch(e){}
+}
+
+// ---------- boot ----------
+$('navBack').onclick=()=>window.history.back();
+$('navRefresh').onclick=()=>loadFeed();
+async function boot(){
+  if(!session){ location.replace('/app/'); return; }
+  let me=null; try{ me=await api('/api/me'); }catch(e){}
+  if(!me){ localStorage.removeItem(TOK); location.replace('/app/'); return; }
+  ME=me; $('hdrWho').textContent=me.name||'';
+  $('hdrSub').insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
+  $('lo').onclick=()=>{ localStorage.removeItem(TOK); location.replace('/app/'); };
+  if(me.role==='chief_agronomist'||me.role==='admin'){ const nav=$('tabs');
+    const a=document.createElement('a'); a.className='tab'; a.href='/app/assistant.html?review=1'; a.textContent='✅ Проверка'; nav.appendChild(a); }
+  try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
+    $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')+'<option value="">— другое поле —</option>';
+    const merged=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))], seen=new Set(merged.map(c=>c.toLowerCase()));
+    for(const c of CROP_LIST){ if(!seen.has(c.toLowerCase())){ merged.push(c); seen.add(c.toLowerCase()); } }
+    $('crop').innerHTML='<option value="">— культура —</option>'+merged.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    $('field').value='';
+    const toggleCrop=()=>$('crop').classList.toggle('hidden',$('field').value!=='');
+    toggleCrop();
+    $('field').onchange=()=>{ toggleCrop(); $('geoNote').classList.add('hidden'); };
+  }catch(e){}
+  geoLocate();
+  await loadFeed();
+  setInterval(poll, 15000);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') poll(); });
+}
+boot();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/app/sw.js', { updateViaCache: 'none' }).catch(() => {}); });
+}
+</script>
+</body>
+</html>
