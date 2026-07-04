@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Platform,
+  ActivityIndicator, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform,
   Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,17 @@ const softShadow = {
   shadowColor: '#3c280a', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 3,
 };
 
+function useKeyboardOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, () => setOpen(true));
+    const h = Keyboard.addListener(hideEvt, () => setOpen(false));
+    return () => { s.remove(); h.remove(); };
+  }, []);
+  return open;
+}
 function formData(fields: Record<string, string>) {
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
@@ -145,6 +156,7 @@ function FeedView({ onLogout, headerPad, tabBarH }: { onLogout: () => void; head
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const kbOpen = useKeyboardOpen();
   const load = useCallback(async () => {
     try { const d = await api.get('/api/feed'); setPosts(d.posts || []); }
     catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
@@ -163,7 +175,7 @@ function FeedView({ onLogout, headerPad, tabBarH }: { onLogout: () => void; head
           ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: tabBarH }}>
+        <View style={{ marginBottom: kbOpen ? 0 : tabBarH }}>
           <Composer value={text} onChange={setText} onSend={publish} busy={busy} camera placeholder="Сообщение команде…" />
         </View>
       </KeyboardAvoidingView>
@@ -228,6 +240,7 @@ function DmView({ headerPad, tabBarH }: { headerPad: number; tabBarH: number }) 
   ]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const kbOpen = useKeyboardOpen();
   const send = async () => {
     const q = text.trim(); if (!q || busy) return; setText('');
     const hist = msgs.slice(-6).map((m) => ({ role: m.role, text: m.text }));
@@ -250,7 +263,7 @@ function DmView({ headerPad, tabBarH }: { headerPad: number; tabBarH: number }) 
           </View>
         )} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: tabBarH }}>
+        <View style={{ marginBottom: kbOpen ? 0 : tabBarH }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
         </View>
       </KeyboardAvoidingView>
