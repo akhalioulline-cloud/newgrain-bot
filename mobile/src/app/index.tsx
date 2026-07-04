@@ -3,7 +3,7 @@ import {
   ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Platform,
   Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, getToken, setToken } from '@/lib/api';
 
@@ -25,6 +25,9 @@ function when(iso?: string) {
     ? `сегодня ${t}`
     : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${t}`;
 }
+function Logo() {
+  return <Text style={styles.logo}>EAR</Text>;
+}
 
 // ─────────────────────────── root ───────────────────────────
 export default function App() {
@@ -42,11 +45,9 @@ export default function App() {
     })();
   }, []);
 
-  if (!ready) {
-    return <View style={styles.center}><ActivityIndicator color={GOLD} /></View>;
-  }
+  if (!ready) return <View style={styles.center}><ActivityIndicator color={GOLD} /></View>;
   return loggedIn
-    ? <Feed onLogout={async () => { await setToken(null); setLoggedIn(false); }} />
+    ? <Main onLogout={async () => { await setToken(null); setLoggedIn(false); }} />
     : <Login onDone={() => setLoggedIn(true)} />;
 }
 
@@ -74,7 +75,7 @@ function Login({ onDone }: { onDone: () => void }) {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.loginWrap}>
-        <Text style={styles.logo}>FLAG<Text style={{ color: GOLD }}>LEAF</Text></Text>
+        <Logo />
         <Text style={styles.h1}>Вход для агрономов</Text>
         <Text style={styles.lead}>ИИ-агроном, скаутинг и лента команды — для зарегистрированных агрономов хозяйства.</Text>
 
@@ -98,20 +99,44 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
-// ─────────────────────────── feed ───────────────────────────
-function Feed({ onLogout }: { onLogout: () => void }) {
-  const [posts, setPosts] = useState<any[]>([]);
+// ─────────────────────────── logged-in shell (tabs) ───────────────────────────
+function Main({ onLogout }: { onLogout: () => void }) {
   const [me, setMe] = useState<any>(null);
+  const [tab, setTab] = useState<'feed' | 'dm'>('feed');
+  useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); }, []);
+
+  return (
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <View style={styles.header}>
+        <Logo />
+        <Text style={styles.hdrRight}>{me?.name || ''} · <Text style={{ color: GOLD }} onPress={onLogout}>выйти</Text></Text>
+      </View>
+      <View style={styles.tabbar}>
+        <Pressable style={styles.tab} onPress={() => setTab('feed')}>
+          <Text style={[styles.tabTxt, tab === 'feed' && styles.tabOn]}>👥 Лента</Text>
+        </Pressable>
+        <Pressable style={styles.tab} onPress={() => setTab('dm')}>
+          <Text style={[styles.tabTxt, tab === 'dm' && styles.tabOn]}>💬 Личное</Text>
+        </Pressable>
+      </View>
+      {tab === 'feed' ? <FeedView onLogout={onLogout} /> : <DmView />}
+    </SafeAreaView>
+  );
+}
+
+// ─────────────────────────── feed ───────────────────────────
+function FeedView({ onLogout }: { onLogout: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try { const d = await api.get('/api/feed'); setPosts(d.posts || []); setMe(d.me || null); }
+    try { const d = await api.get('/api/feed'); setPosts(d.posts || []); }
     catch (e: any) { if (e?.status === 401) onLogout(); }
     finally { setLoading(false); }
   }, [onLogout]);
-
   useEffect(() => { load(); }, [load]);
 
   const publish = async () => {
@@ -121,13 +146,7 @@ function Feed({ onLogout }: { onLogout: () => void }) {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>FLAG<Text style={{ color: GOLD }}>LEAF</Text></Text>
-        <Text style={styles.hdrRight}>{me?.name || ''} · <Text style={{ color: GOLD }} onPress={onLogout}>выйти</Text></Text>
-      </View>
-      <View style={styles.tabbar}><Text style={styles.tabOn}>👥 Лента</Text></View>
-
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={GOLD} /></View>
       ) : (
@@ -136,21 +155,19 @@ function Feed({ onLogout }: { onLogout: () => void }) {
           inverted
           keyExtractor={(p) => String(p.id)}
           contentContainerStyle={{ padding: 12, gap: 12 }}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
           ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text>}
         />
       )}
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.composer}>
-          <TextInput style={styles.cinput} value={text} onChangeText={setText}
-            placeholder="Наблюдение с поля или вопрос команде…" placeholderTextColor={MUTED} multiline />
-          <Pressable style={[styles.send, busy && styles.btnOff]} onPress={publish} disabled={busy}>
-            <Text style={styles.sendTxt}>➤</Text>
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <TextInput style={styles.cinput} value={text} onChangeText={setText}
+          placeholder="Наблюдение с поля или вопрос команде…" placeholderTextColor={MUTED} multiline />
+        <Pressable style={[styles.send, busy && styles.btnOff]} onPress={publish} disabled={busy}>
+          <Text style={styles.sendTxt}>➤</Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -176,14 +193,16 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
       {(p.ups > 0 || p.downs > 0) && (
         <Text style={styles.verdict}>{p.ups > 0 ? '✓ подтвердил старший' : '✗ отклонил старший'}</Text>
       )}
-      <View style={styles.thread}>
-        {(p.thread || []).map((cm: any) => (
-          <View key={cm.id} style={[styles.cmt, cm.is_bot && styles.cmtBot]}>
-            <Text style={styles.ca}>{cm.is_bot ? '🤖 ' : ''}{cm.author}{cm.chief ? '  •старший' : ''}</Text>
-            <Text style={styles.cb}>{cm.body}</Text>
-          </View>
-        ))}
-      </View>
+      {(p.thread || []).length > 0 && (
+        <View style={styles.thread}>
+          {p.thread.map((cm: any) => (
+            <View key={cm.id} style={[styles.cmt, cm.is_bot && styles.cmtBot]}>
+              <Text style={styles.ca}>{cm.is_bot ? '🤖 ' : ''}{cm.author}{cm.chief ? '  •старший' : ''}</Text>
+              <Text style={styles.cb}>{cm.body}</Text>
+            </View>
+          ))}
+        </View>
+      )}
       <View style={styles.cmtForm}>
         <TextInput style={styles.cinputSm} value={c} onChangeText={setC}
           placeholder="Ответить… («бот …» — спросить ИИ)" placeholderTextColor={MUTED} />
@@ -195,10 +214,57 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
   );
 }
 
+// ─────────────────────────── direct messaging (private you↔bot) ───────────────────────────
+function DmView() {
+  const insets = useSafeAreaInsets();
+  const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string }[]>([
+    { role: 'bot', text: 'Здравствуйте! Я ИИ-агроном Flagleaf. Здесь мы говорим лично — спросите про препараты, ЭПВ, историю или план поля.' },
+  ]);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const send = async () => {
+    const q = text.trim(); if (!q || busy) return; setText('');
+    const hist = msgs.slice(-6).map((m) => ({ role: m.role, text: m.text }));
+    setMsgs((m) => [...m, { role: 'user', text: q }, { role: 'bot', text: '…' }]);
+    setBusy(true);
+    try {
+      const r = await api.postJson('/api/chat', { question: q, history: hist });
+      setMsgs((m) => { const cc = [...m]; cc[cc.length - 1] = { role: 'bot', text: r?.answer || 'Не понял вопрос — переформулируйте.' }; return cc; });
+    } catch {
+      setMsgs((m) => { const cc = [...m]; cc[cc.length - 1] = { role: 'bot', text: 'Ошибка сети. Попробуйте ещё раз.' }; return cc; });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <FlatList
+        data={[...msgs].reverse()}
+        inverted
+        keyExtractor={(_, i) => String(i)}
+        contentContainerStyle={{ padding: 12, gap: 8 }}
+        keyboardShouldPersistTaps="handled"
+        renderItem={({ item }) => (
+          <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
+            <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
+          </View>
+        )}
+      />
+      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <TextInput style={styles.cinput} value={text} onChangeText={setText}
+          placeholder="Ваш вопрос агроному…" placeholderTextColor={MUTED} multiline />
+        <Pressable style={[styles.send, busy && styles.btnOff]} onPress={send} disabled={busy}>
+          <Text style={styles.sendTxt}>➤</Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
-  logo: { fontWeight: '600', letterSpacing: 2, fontSize: 18, color: INK },
+  logo: { fontWeight: '700', letterSpacing: 3, fontSize: 18, color: INK },
   // login
   loginWrap: { padding: 24, marginTop: 40 },
   h1: { fontSize: 22, fontWeight: '600', marginTop: 16, color: INK },
@@ -211,11 +277,13 @@ const styles = StyleSheet.create({
   btnTxt: { color: '#fff', fontWeight: '600', fontSize: 15 },
   note: { marginTop: 12, fontSize: 13, color: INK },
   help: { marginTop: 16, fontSize: 13, color: MUTED, lineHeight: 19 },
-  // feed chrome
+  // shell
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: LINE },
   hdrRight: { marginLeft: 'auto', fontSize: 12, color: MUTED },
   tabbar: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: LINE },
-  tabOn: { flex: 1, textAlign: 'center', paddingVertical: 10, fontSize: 13, fontWeight: '600', color: INK, borderBottomWidth: 2, borderBottomColor: GOLD },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  tabTxt: { fontSize: 13, fontWeight: '600', color: MUTED, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabOn: { color: INK, borderBottomColor: GOLD },
   empty: { textAlign: 'center', color: MUTED, fontSize: 14, padding: 24, lineHeight: 20 },
   // post
   post: { backgroundColor: '#fff', borderWidth: 1, borderColor: LINE, borderRadius: 14, padding: 12 },
@@ -228,17 +296,23 @@ const styles = StyleSheet.create({
   pmedia: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#f2eee4', marginBottom: 8 },
   videoBox: { height: 120, borderRadius: 10, backgroundColor: '#f2eee4', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   verdict: { fontSize: 12, color: '#3a7d44', fontWeight: '500', marginBottom: 4 },
-  thread: { gap: 8, marginTop: 6 },
+  thread: { gap: 8, marginTop: 8 },
   cmt: { backgroundColor: '#f4f1ea', borderRadius: 10, padding: 8 },
   cmtBot: { backgroundColor: '#faf6ec', borderWidth: 1, borderColor: '#eadfbf' },
   ca: { fontWeight: '600', fontSize: 13, color: INK, marginBottom: 3 },
   cb: { fontSize: 13.5, lineHeight: 19, color: INK },
-  cmtForm: { flexDirection: 'row', gap: 6, marginTop: 10, alignItems: 'flex-end' },
-  cinputSm: { flex: 1, borderWidth: 1, borderColor: LINE, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 15, backgroundColor: '#fff', color: INK },
-  sendSm: { backgroundColor: GOLD, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
+  cmtForm: { flexDirection: 'row', gap: 6, marginTop: 8, alignItems: 'center' },
+  cinputSm: { flex: 1, borderWidth: 1, borderColor: LINE, borderRadius: 10, height: 40, paddingHorizontal: 12, paddingVertical: 0, fontSize: 15, backgroundColor: '#fff', color: INK },
+  sendSm: { backgroundColor: GOLD, borderRadius: 10, height: 40, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  // dm bubbles
+  bubble: { maxWidth: '86%', borderRadius: 14, paddingHorizontal: 13, paddingVertical: 10 },
+  bubbleBot: { alignSelf: 'flex-start', backgroundColor: '#fff', borderWidth: 1, borderColor: LINE },
+  bubbleUser: { alignSelf: 'flex-end', backgroundColor: INK },
+  bubbleBotTxt: { fontSize: 15, lineHeight: 21, color: INK },
+  bubbleUserTxt: { fontSize: 15, lineHeight: 21, color: '#fff' },
   // composer
-  composer: { flexDirection: 'row', gap: 6, padding: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: LINE, alignItems: 'flex-end' },
+  composer: { flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingTop: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: LINE, alignItems: 'flex-end' },
   cinput: { flex: 1, borderWidth: 1, borderColor: LINE, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, maxHeight: 120, backgroundColor: '#fff', color: INK },
-  send: { backgroundColor: GOLD, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  send: { backgroundColor: GOLD, borderRadius: 12, height: 44, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   sendTxt: { color: '#fff', fontWeight: '600', fontSize: 16 },
 });
