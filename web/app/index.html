@@ -411,7 +411,6 @@ async function enterApp(me){
   $('hdrSub').insertAdjacentHTML('beforeend',
     ' · <button class="logout" id="logoutBtn">выйти</button>');
   $('logoutBtn').onclick = logout;
-  addReviewTab(me);                              // «Проверка» tab — chief agronomist only
   buildCats();
   buildSpecies();
   applyScoutMode(true);                          // «Скаутинг» tab = scouting-only (toggle hidden)
@@ -424,14 +423,7 @@ async function enterApp(me){
   loadDemoFields();                              // «контрольные поля» nudge
 }
 
-async function addReviewTab(me){
-  if(me.role!=='chief_agronomist' && me.role!=='admin') return;
-  const nav = $('tabs'); if(!nav || nav.querySelector('.tab-review')) return;
-  const a = document.createElement('a');
-  a.className='tab tab-review'; a.href='/app/review.html'; a.textContent='✅ Проверка';
-  nav.appendChild(a);
-  try{ const {count}=await api('/api/review/count'); if(count>0) a.textContent=`✅ Проверка (${count})`; }catch(e){}
-}
+// Review moved into the Ассистент (in-chat morning digest) — no separate «Проверка» tab.
 
 function logout(){
   session=''; localStorage.removeItem(TOK);

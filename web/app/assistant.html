@@ -143,6 +143,24 @@
   .modalbtn:disabled{opacity:.5;cursor:default}
   .modalnote{font-size:13px;color:var(--muted);text-align:center;margin-top:8px}
   .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
+
+  /* chief review (in-chat) */
+  .rvcard{white-space:normal}
+  .rvbtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .rvb{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:16px;padding:7px 13px;cursor:pointer}
+  .rvb.primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
+  .rvb.ok{border-color:var(--ok);color:var(--ok)}
+  .rvb:disabled{opacity:.5}
+  .rvhead{font-size:11px;color:var(--muted);margin-bottom:6px}
+  .rvmedia{width:100%;max-height:240px;object-fit:contain;border-radius:10px;background:#f2eee4;margin:2px 0;display:block}
+  .rvmeta{font-size:13px;line-height:1.5;margin-top:7px}
+  .rvtag{font-size:13px;font-weight:500}
+  .rvtag.ok{color:var(--ok)} .rvtag.bad{color:var(--bad)} .rvtag.skip{color:var(--muted)}
+  .rvnote{font-size:13px;color:var(--muted)}
+  .rvfix{margin-top:8px;display:flex;flex-direction:column;gap:2px}
+  .rvl{font-size:12px;color:var(--muted);margin-top:6px}
+  .rvin{font:inherit;font-size:16px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;outline:none;background:#fff}
+  .rvin:focus{border-color:var(--gold)}
   .hidden{display:none!important}
 </style>
 </head>
@@ -203,7 +221,7 @@
 
 <script>
 const TOK='flagleaf_session', $=id=>document.getElementById(id);
-let session=localStorage.getItem(TOK)||'', fieldsAll=[];
+let session=localStorage.getItem(TOK)||'', fieldsAll=[], ME=null;
 let pendingFile=null, pendingURL=null, pendingFromCam=false;
 let awaitingCrop=false;                 // bot's last answer asked which crop it is
 let started=false;                      // once true, the empty-state hero is gone
@@ -262,10 +280,15 @@ $('attx').onclick=()=>setFile(null);
 q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,120)+'px'; });
 
 // ---------- send ----------
-function ask(){
+async function ask(){
   const text=q.value.trim(); const file=pendingFile; const crop=curCrop();
   if(!text && !file) return;
   q.value=''; q.style.height='auto';
+  if(!file && isChief() && REVIEW_RE.test(text)){        // chief pulls up the review queue by voice/text
+    addUser(text,null); killHero();
+    const had=await loadReview(); if(!had) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
+    return;
+  }
   const url=file?pendingURL:null; pendingURL=null;   // hand the object URL to the bubble
   setFile(null);
   killHero();
@@ -504,6 +527,109 @@ $('cSend').onclick=async()=>{
   finally{ btn.disabled=false; }
 };
 
+// ---------- chief review — in-chat (replaces the «Проверка» tab) ----------
+let reviewItems=[], rvApproved=0, rvSkipped=0;
+const RUCAT={weed:'сорняк',disease:'болезнь',pest:'вредитель'};
+const isChief=()=>ME && (ME.role==='chief_agronomist'||ME.role==='admin');
+const REVIEW_RE=/на\s*проверк|(покаж|показ|дай|открой|что)\w*\s.*(проверк|материал|очеред)|материал\w*\s+на\s+проверк|очеред\w*\s+проверк/i;
+
+async function reviewApi(id, action, corr){
+  const body={submission_id:id, action, ...(corr||{})};
+  try{ const r=await fetch('/api/review/decide',{method:'POST',
+    headers:{'Content-Type':'application/json','x-session':session}, body:JSON.stringify(body)});
+    return r.ok; }catch(e){ return false; }
+}
+async function loadReview(){
+  if(!isChief()) return false;
+  try{ const r=await api('/api/review/pending'); reviewItems=r.items||[]; }catch(e){ return false; }
+  rvApproved=0; rvSkipped=0;
+  if(!reviewItems.length) return false;
+  reviewDigest(); return true;
+}
+function reviewDigest(){
+  const ph=reviewItems.filter(i=>!i.is_video).length, vd=reviewItems.length-ph;
+  const parts=[]; if(ph) parts.push(`<b>${ph} фото</b>`); if(vd) parts.push(`<b>${vd} видео скаутинга</b>`);
+  const first=ME&&ME.name?', '+esc(ME.name.split(' ')[0]):'';
+  const d=document.createElement('div'); d.className='msg bot rvcard'; d.style.maxWidth='92%';
+  d.innerHTML=`<div style="font-weight:500">🌅 Доброе утро${first}!</div>На проверке: ${parts.join(' и ')}.`+
+    `<div class="rvbtns"><button class="rvb primary rv-all">✅ Подтвердить все</button>`+
+    `<button class="rvb rv-one">Проверить по одной</button></div>`;
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight;
+  d.querySelector('.rv-all').onclick=()=>confirmAllPrompt(d);
+  d.querySelector('.rv-one').onclick=()=>{ d.querySelector('.rvbtns').remove(); reviewCard(0); };
+}
+function confirmAllPrompt(d){
+  const box=d.querySelector('.rvbtns');
+  box.innerHTML=`<span class="rvnote">Подтвердить все ${reviewItems.length}? Отменить нельзя.</span>`+
+    `<button class="rvb primary rv-yes">Да, все</button><button class="rvb rv-no">Отмена</button>`;
+  box.querySelector('.rv-yes').onclick=()=>confirmAll(d);
+  box.querySelector('.rv-no').onclick=()=>{ box.remove();
+    reviewDigest(); d.remove(); };   // redraw a fresh digest below
+}
+async function confirmAll(d){
+  const box=d.querySelector('.rvbtns'); box.innerHTML='<span class="rvnote">Подтверждаю…</span>';
+  const note=box.querySelector('.rvnote'); let ok=0, n=reviewItems.length;
+  for(const it of reviewItems){ if(await reviewApi(it.id,'approve')) ok++; note.textContent=`Подтверждаю… ${ok}/${n}`; }
+  box.innerHTML=`<span class="rvtag ok">✅ Подтверждено ${ok} — материалы уходят в разметку. Спасибо!</span>`;
+  reviewItems=[];
+}
+function reviewCard(i){
+  if(i>=reviewItems.length){ reviewDone(); return; }
+  const it=reviewItems[i];
+  const card=document.createElement('div'); card.className='msg bot rvcard'; card.style.maxWidth='94%';
+  const media = it.media_url ? (it.is_video
+      ? `<video src="${esc(it.media_url)}" controls playsinline preload="metadata" class="rvmedia"></video>`
+      : `<img src="${esc(it.media_url)}" class="rvmedia" alt="">`)
+    : '<div class="rvnote">(медиа недоступно)</div>';
+  const rucat=RUCAT[it.category]||it.category||'';
+  card.innerHTML=
+    `<div class="rvhead">${i+1} из ${reviewItems.length} · ${it.is_video?'видео скаутинга':'фото'}</div>`+media+
+    `<div class="rvmeta"><b>${esc(it.subcategory||'—')}</b>${rucat?' · '+esc(rucat):''}<br>`+
+    `${esc(it.field_name||'поле не указано')}${it.submitter?' · '+esc(it.submitter):''}`+
+    `${it.comment?'<br>💬 '+esc(it.comment):''}${it.transcript?'<br>🎤 '+esc(it.transcript):''}</div>`+
+    `<div class="rvbtns"><button class="rvb ok rv-v">✅ Верно</button>`+
+    `<button class="rvb rv-e">✏️ Исправить</button><button class="rvb rv-s">⏭ Пропустить</button></div>`+
+    `<div class="rvfix hidden"></div>`;
+  chat.appendChild(card); chat.scrollTop=chat.scrollHeight;
+  const btns=card.querySelector('.rvbtns');
+  const tag=(label,cls)=>{ btns.innerHTML=`<span class="rvtag ${cls}">${label}</span>`; };
+  card.querySelector('.rv-v').onclick=async()=>{ btns.querySelectorAll('button').forEach(b=>b.disabled=true);
+    const ok=await reviewApi(it.id,'approve'); if(ok){ rvApproved++; tag('✅ Подтверждено','ok'); reviewCard(i+1); }
+    else tag('Ошибка — попробуйте позже','bad'); };
+  card.querySelector('.rv-s').onclick=()=>{ rvSkipped++; tag('⏭ Пропущено','skip'); reviewCard(i+1); };
+  card.querySelector('.rv-e').onclick=()=>openFix(card, it, i);
+}
+function openFix(card, it, i){
+  const fix=card.querySelector('.rvfix'), btns=card.querySelector('.rvbtns');
+  btns.classList.add('hidden'); fix.classList.remove('hidden');
+  const fieldOpts=fieldsAll.map(f=>`<option value="${f.id}"${String(f.id)===String(it.field_id)?' selected':''}>${esc(f.name)}</option>`).join('')+'<option value="">— не указано —</option>';
+  const cats=[['weed','сорняк'],['disease','болезнь'],['pest','вредитель']].map(([v,l])=>`<option value="${v}"${v===it.category?' selected':''}>${l}</option>`).join('');
+  fix.innerHTML=
+    `<label class="rvl">Поле</label><select class="rvin fx-field">${fieldOpts}</select>`+
+    `<label class="rvl">Тип</label><select class="rvin fx-cat">${cats}</select>`+
+    `<label class="rvl">Что это (вид)</label><input class="rvin fx-spec" value="${esc(it.subcategory||'')}">`+
+    `<label class="rvl">Комментарий</label><input class="rvin fx-com" value="${esc(it.comment||'')}">`+
+    `<div class="rvbtns"><button class="rvb primary fx-save">Сохранить и подтвердить</button><button class="rvb fx-cancel">Отмена</button></div>`;
+  fix.querySelector('.fx-cancel').onclick=()=>{ fix.classList.add('hidden'); fix.innerHTML=''; btns.classList.remove('hidden'); };
+  fix.querySelector('.fx-save').onclick=async()=>{
+    const fv=fix.querySelector('.fx-field').value;
+    const corr={ field_id: fv?parseInt(fv):null, category:fix.querySelector('.fx-cat').value,
+      subcategory:fix.querySelector('.fx-spec').value.trim(), comment:fix.querySelector('.fx-com').value.trim() };
+    fix.querySelector('.fx-save').disabled=true;
+    if(await reviewApi(it.id,'approve',corr)){ rvApproved++;
+      fix.classList.add('hidden'); fix.innerHTML='';
+      btns.classList.remove('hidden'); btns.innerHTML='<span class="rvtag ok">✅ Исправлено и подтверждено</span>';
+      reviewCard(i+1);
+    } else { fix.querySelector('.fx-save').disabled=false; }
+  };
+}
+function reviewDone(){
+  const d=document.createElement('div'); d.className='msg bot';
+  d.innerHTML=`<span class="rvtag ok">✅ Проверка завершена</span> — подтверждено ${rvApproved}`+
+    `${rvSkipped?', пропущено '+rvSkipped+' (остаются на проверке)':''}. Спасибо!`;
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight; reviewItems=[];
+}
+
 $('navBack').onclick=()=>window.history.back();
 $('navFwd').onclick=()=>window.history.forward();
 $('navRefresh').onclick=()=>location.reload();
@@ -512,22 +638,16 @@ $('navRefresh').onclick=()=>location.reload();
 async function boot(){
   const hdr=$('hdrSub'), who=$('hdrWho');
   add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте сорняк, болезнь или вредителя — определю и подскажу, чем обработать это поле. Или спросите текстом/голосом 🎤 — про препараты, ЭПВ, историю и план поля.', 'bot');
-  showHero();
   // header (name · выйти) + fields — public assistant, so guest is fine
   const guest=()=>{ if(hdr) hdr.textContent='ИИ-агроном'; };
   if(session){
     let me=null;
     try{ me=await api('/api/me'); }catch(e){ session=''; localStorage.removeItem(TOK); }
     if(me){
+      ME=me;
       if(who) who.textContent=me.name||'';
       if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
       const lo=$('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem(TOK); location.href='/app/'; };
-      if(me.role==='chief_agronomist'||me.role==='admin'){
-        const nav=$('tabs'); if(nav && !nav.querySelector('.tab-review')){
-          const a=document.createElement('a'); a.className='tab tab-review'; a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
-          try{ const c=await fetch('/api/review/count',{headers:{'x-session':session}}); if(c.ok){ const {count}=await c.json(); if(count>0) a.textContent=`✅ Проверка (${count})`; } }catch(e){}
-        }
-      }
     } else guest();
   } else guest();
   // fields + crops
@@ -543,6 +663,13 @@ async function boot(){
     toggleCrop();
     $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint(); };
   }catch(e){}
+  // chief → the morning review digest comes to him in-chat; everyone else → the camera hero
+  const showedReview = await loadReview();
+  if(!showedReview){
+    if(new URLSearchParams(location.search).get('review') && isChief())
+      add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
+    showHero();
+  }
 }
 boot();
 </script>
