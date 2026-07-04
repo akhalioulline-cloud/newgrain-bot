@@ -212,6 +212,7 @@
   <select id="crop" class="hidden"></select>
 </div>
 <div id="cropHint" class="hidden">↑ Выберите культуру — тогда дам точные препараты и нормы для этого поля.</div>
+<div id="geoNote" class="hidden" style="font-size:12px;color:#6b6b6b;background:#f1f5ee;border-bottom:1px solid #dde6d5;padding:6px 14px;max-width:760px;margin:0 auto;width:100%"></div>
 
 <div id="chat"></div>
 
@@ -905,29 +906,24 @@ async function enablePush(){
   }catch(e){ add('Не удалось включить уведомления.','bot'); }
 }
 
-// ---- on-field prompt: when GPS puts the agronomist on a field, the bot asks for a video ----
-async function geoPrompt(){
-  if(!navigator.geolocation) return false;
+// ---- silent GPS field detection: auto-select the field the agronomist is standing on ----
+// No nudge — just pre-fill the field (he confirms/overrides via the dropdown). Geo off → manual.
+async function geoLocate(){
+  if(!navigator.geolocation) return;
   const pos=await new Promise(res=>navigator.geolocation.getCurrentPosition(
     p=>res(p), ()=>res(null), {enableHighAccuracy:true, timeout:8000, maximumAge:60000}));
-  if(!pos) return false;
+  if(!pos) return;
   let f=null;
   try{ f=(await api('/api/field-at-point',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({lat:pos.coords.latitude, lon:pos.coords.longitude})})).field; }catch(_){ return false; }
-  if(!f) return false;
-  if(!fieldsAll.some(x=>String(x.id)===String(f.id))){          // make it the active field context
+    body:JSON.stringify({lat:pos.coords.latitude, lon:pos.coords.longitude})})).field; }catch(_){ return; }
+  if(!f) return;
+  if(document.getElementById('capCard')) return;               // don't yank the field mid-capture
+  if(!fieldsAll.some(x=>String(x.id)===String(f.id))){
     fieldsAll.push({id:f.id, name:f.name, crop:f.crop||''});
     const o=document.createElement('option'); o.value=String(f.id); o.textContent=f.name; $('field').appendChild(o);
   }
   selectField(f.id);
-  const d=document.createElement('div'); d.className='msg bot rvcard'; d.style.maxWidth='92%';
-  d.innerHTML=`📍 Вы на поле <b>${esc(f.name)}</b>${f.crop?' · '+esc(f.crop):''}. Что здесь происходит? `+
-    `Пришлите короткое видео прохода (можно надиктовать, что видите) или фото — я подскажу и запишу наблюдение.`+
-    `<div class="rvbtns"><button class="rvb primary" id="geoVid">🎥 Снять видео</button><button class="rvb" id="geoPhoto">📷 Фото</button></div>`;
-  chat.appendChild(d); chat.scrollTop=chat.scrollHeight;
-  d.querySelector('#geoVid').onclick=()=>$('camvid').click();
-  d.querySelector('#geoPhoto').onclick=()=>$('cam').click();
-  return true;
+  const g=$('geoNote'); if(g){ g.textContent=`📍 Поле «${f.name}» определено по GPS — измените выбор, если не так.`; g.classList.remove('hidden'); }
 }
 
 // offline flush triggers — the reliable cross-platform paths (incl. iPhone)
@@ -963,15 +959,16 @@ async function boot(){
     $('field').value=(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) ? last : '';   // default: другое поле
     const toggleCrop=()=>cropSel.classList.toggle('hidden',$('field').value!=='');
     toggleCrop();
-    $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint(); };
+    $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint();
+      $('geoNote').classList.add('hidden'); };   // manual pick overrides the GPS hint
   }catch(e){}
+  geoLocate();   // silently pre-select the field the agronomist is standing on (he can override)
   // field-ops: offline queue + push + contribution strip
   refreshPending(); flushQueue();
   maybeShowPushBanner(); ensurePushIfGranted();
   loadContrib();
-  // opening content: chief review digest > on-field GPS prompt > camera hero
+  // opening content: chief review digest > camera hero
   let opened = await loadReview();
-  if(!opened) opened = await geoPrompt();
   if(!opened){
     if(new URLSearchParams(location.search).get('review') && isChief())
       add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
