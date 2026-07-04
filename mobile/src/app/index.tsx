@@ -26,7 +26,7 @@ function when(iso?: string) {
     : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${t}`;
 }
 function Logo() {
-  return <Text style={styles.logo}>EAR</Text>;
+  return <Text style={styles.logo}><Text style={{ color: GOLD }}>E</Text>AR</Text>;
 }
 
 // ─────────────────────────── root ───────────────────────────
