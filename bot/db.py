@@ -1110,6 +1110,41 @@ async def count_pending_reviews(farm_id: int | None) -> int:
         return int((await conn.execute(text(sql), params)).scalar() or 0)
 
 
+# A "scouting" contribution = a photo tagged category='scouting' OR a scouting video (has a
+# video_job). Rejected/duplicate don't count. Used for the smart scout reminder + in-app nudge.
+_SCOUT_FILTER = (
+    "s.status NOT IN ('rejected','duplicate') AND (s.category = 'scouting' "
+    "OR EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id = s.id))"
+)
+
+
+async def user_scout_days_since(user_id: int) -> int | None:
+    """Whole days since this user's last scouting contribution — None if they've never scouted."""
+    sql = ("SELECT EXTRACT(DAY FROM (now() - max(s.created_at)))::int "
+           f"FROM submissions s WHERE s.user_id = :uid AND {_SCOUT_FILTER}")
+    async with engine.connect() as conn:
+        v = (await conn.execute(text(sql), {"uid": user_id})).scalar()
+    return int(v) if v is not None else None
+
+
+async def scouting_idle_users(days: int):
+    """Active agronomists + chiefs whose last scouting is older than `days` (or never) — the
+    smart scout-reminder audience. Returns tg_user_id, full_name, days_since (None = never)."""
+    sql = (
+        "SELECT u.tg_user_id, u.full_name, "
+        "       EXTRACT(DAY FROM (now() - ls.last_scout))::int AS days_since "
+        "FROM users u "
+        "LEFT JOIN (SELECT s.user_id, max(s.created_at) AS last_scout "
+        f"          FROM submissions s WHERE {_SCOUT_FILTER} GROUP BY s.user_id) ls "
+        "  ON ls.user_id = u.id "
+        "WHERE u.is_active AND u.role IN ('agronomist','chief_agronomist') "
+        "  AND u.tg_user_id IS NOT NULL "
+        "  AND (ls.last_scout IS NULL OR ls.last_scout < now() - make_interval(days => :days))"
+    )
+    async with engine.connect() as conn:
+        return (await conn.execute(text(sql), {"days": days})).mappings().all()
+
+
 async def get_team_progress():
     """Team-wide totals for the collective goal: photos collected toward the model
     (everything not draft/rejected/duplicate) and how many reached training (labeled)."""

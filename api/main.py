@@ -51,6 +51,7 @@ from bot.db import (
     get_user_stats,
     get_user_uploads,
     update_submission,
+    user_scout_days_since,
 )
 from bot.diagnose import diagnose as diagnose_photo
 from bot.diagnose import diagnose_video as diagnose_video_frames
@@ -81,6 +82,7 @@ _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
 MAX_Q = 2000                  # chars
 MAX_IMG = 12 * 1024 * 1024    # 12 MB
+SCOUT_IDLE_DAYS = 3           # no scouting in this many days → «pora zaskautit'» nudge
 CHAT_PER_HOUR = 30
 DIAG_PER_HOUR = 8
 
@@ -537,6 +539,14 @@ async def review_decide(body: ReviewDecision, user=Depends(require_user)):
     finally:
         await rbot.session.close()
     return {"ok": True, "status": new_status}
+
+
+@app.get("/api/scout/status")
+async def scout_status(user=Depends(require_user)):
+    """Whether this user is 'scout-idle' (no scouting in SCOUT_IDLE_DAYS days) — drives the
+    in-chat «пора заскаутить поля» nudge shown when the assistant opens."""
+    d = await user_scout_days_since(user["id"])
+    return {"idle": (d is None) or (d >= SCOUT_IDLE_DAYS), "days_since": d}
 
 
 # The web chat has no slash-commands, so field questions must be answered in-chat: detect a

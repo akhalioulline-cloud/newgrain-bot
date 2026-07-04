@@ -94,19 +94,35 @@
   .otherrow .go{flex:none;border:1px solid var(--gold);background:var(--gold);color:#fff;border-radius:10px;
                 padding:9px 12px;font:inherit;font-weight:600;cursor:pointer}
 
-  /* composer */
-  form{display:flex;gap:6px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line);
+  /* composer — text on top, the four buttons on a row below */
+  form{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-top:1px solid var(--line);
        background:#fff;max-width:760px;width:100%;margin:0 auto}
-  textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+  textarea{width:100%;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
            font:inherit;font-size:16px;max-height:120px;outline:none}
   textarea:focus{border-color:var(--gold)}
-  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:12px;width:42px;height:42px;
+  .btnrow{display:flex;gap:6px;align-items:center}
+  .btnspacer{flex:1}
+  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:12px;width:44px;height:42px;
            font-size:18px;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center}
   .iconbtn.cam{color:var(--gold);border-color:var(--gold)}
-  .send{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
+  .send{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;min-width:56px}
   .send:disabled{opacity:.5;cursor:default}
   .iconbtn.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:pulse 1s infinite}
   @keyframes pulse{50%{opacity:.55}}
+
+  /* stacked info bars above the composer (scouting / offline queue / push / contribution) */
+  .barline{max-width:760px;width:100%;margin:0 auto;padding:8px 12px;font-size:13px;line-height:1.4;
+           border-top:1px solid var(--line);background:#fff;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .barline .lnk{font:inherit;font-size:12.5px;color:var(--gold);background:none;border:none;cursor:pointer;
+                padding:0;font-weight:600;white-space:nowrap}
+  .barline .lnk.x{color:var(--muted)}
+  #scoutBar{background:#faf6ec;color:#6b541f}
+  #scoutBar b{color:#6b541f}
+  #contribBar{color:#6b6b6b;background:#f6f1e6}
+  #contribBar b{color:var(--ink)}
+  .cbar{height:6px;background:#e7ddc4;border-radius:4px;margin-top:6px;overflow:hidden;width:100%;flex-basis:100%}
+  .cbar i{display:block;height:100%;background:var(--gold);border-radius:4px}
+  .scoutcta{margin-left:auto}
 
   /* staged-photo preview above composer */
   .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:6px 12px;
@@ -175,10 +191,6 @@
     <span class="logo">FLAG<b>LEAF</b></span>
     <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span></span>
   </div>
-  <nav class="tabs" id="tabs">
-    <a class="tab on" href="/app/assistant.html">💬 Ассистент</a>
-    <a class="tab" href="/app/">🔭 Скаутинг</a>
-  </nav>
 </header>
 
 <div class="fieldbar">
@@ -192,14 +204,22 @@
 
 <div class="att" id="att"><img id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
 
+<div class="barline hidden" id="scoutBar"></div>
+<div class="barline hidden" id="pendBar"></div>
+<div class="barline hidden" id="pushBar"></div>
+<div class="barline hidden" id="contribBar"></div>
+
 <form id="form">
   <input type="file" id="cam" accept="image/*" capture="environment" hidden>
   <input type="file" id="gal" accept="image/*,video/*" hidden>
-  <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото" aria-label="Снять фото">📷</button>
-  <button type="button" class="iconbtn" id="galBtn" title="Фото или видео" aria-label="Фото или видео">🖼</button>
-  <button type="button" class="iconbtn" id="mic" title="Голосовой ввод" aria-label="Голосовой ввод">🎤</button>
   <textarea id="q" rows="1" placeholder="Вопрос или фото…"></textarea>
-  <button type="submit" class="iconbtn send" id="send" title="Отправить" aria-label="Отправить">➤</button>
+  <div class="btnrow">
+    <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото" aria-label="Снять фото">📷</button>
+    <button type="button" class="iconbtn" id="galBtn" title="Фото или видео" aria-label="Фото или видео">🖼</button>
+    <button type="button" class="iconbtn" id="mic" title="Голосовой ввод" aria-label="Голосовой ввод">🎤</button>
+    <span class="btnspacer"></span>
+    <button type="submit" class="iconbtn send" id="send" title="Отправить" aria-label="Отправить">➤</button>
+  </div>
 </form>
 <div class="contactbar"><button type="button" id="contactBtn" class="contactbtn">📞 Связаться с агрономом</button></div>
 <div class="disclaimer">ИИ-помощник. Рекомендации проверяйте перед применением; за окончательным решением — к агроному.</div>
@@ -223,7 +243,8 @@
 const TOK='flagleaf_session', $=id=>document.getElementById(id);
 let session=localStorage.getItem(TOK)||'', fieldsAll=[], ME=null;
 let pendingFile=null, pendingURL=null, pendingFromCam=false, pendingIsVideo=false;
-const MAX_VIDEO=60*1024*1024;   // ~60 MB — keep clips short
+const MAX_VIDEO=60*1024*1024;          // ~60 MB — enquiry clips stay short
+const MAX_SCOUT_VIDEO=400*1024*1024;   // ~400 MB — a full scouting pass can run to ~3 min
 let awaitingCrop=false;                 // bot's last answer asked which crop it is
 let started=false;                      // once true, the empty-state hero is gone
 const chatHist=[];                      // {role:'user'|'bot', text} — follow-up context
@@ -288,10 +309,21 @@ q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min
 async function ask(){
   const text=q.value.trim(); const file=pendingFile; const crop=curCrop(); const isVid=pendingIsVideo;
   if(!text && !file) return;
-  if(!file && isChief() && REVIEW_RE.test(text)){        // chief pulls up the review queue by voice/text
-    q.value=''; q.style.height='auto'; addUser(text,null); killHero();
-    const had=await loadReview(); if(!had) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
-    return;
+  // text-only intents (no attachment)
+  if(!file){
+    if(isChief() && REVIEW_RE.test(text)){                // chief pulls up the review queue
+      q.value=''; q.style.height='auto'; addUser(text,null); killHero();
+      const had=await loadReview(); if(!had) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot'); return;
+    }
+    if(MYUP_RE.test(text)){ q.value=''; q.style.height='auto'; addUser(text,null); killHero(); showMyUploads(); return; }
+    if(SCOUT_RE.test(text)){ q.value=''; q.style.height='auto'; addUser(text,null); startScout(); return; }
+  }
+  // scouting mode: any attachment is filed as обследование; text alone → nudge to capture
+  if(scoutMode){
+    if(!file){ add('Снимите видео 🎥 или фото 📷 поля — я сохраню обследование. Или нажмите «отмена».','bot'); return; }
+    if(isVid && file.size>MAX_SCOUT_VIDEO){ add('Видео обследования — до 3 минут. Снимите покороче.','bot'); return; }
+    q.value=''; q.style.height='auto'; const surl=pendingURL; pendingURL=null; setFile(null);
+    scoutSubmit(file, text, surl); return;
   }
   if(file && isVid && file.size>MAX_VIDEO){
     add('Видео великовато — снимите покороче (5–15 секунд) и пришлите снова.','bot'); return;
@@ -655,6 +687,183 @@ function reviewDone(){
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; reviewItems=[];
 }
 
+// ================= scouting + field ops (merged from the Скаутинг page) =================
+let scoutMode=false, flushing=false, contribOpen=false;
+const uid=()=>Date.now()+'-'+Math.random().toString(36).slice(2,7);
+const MYUP_RE=/мои\s+загрузк|что\s+я\s+(загруз|отправ|снял)|мои\s+(фото|материал|видео)/i;
+const SCOUT_RE=/^(скаут|заскаут|обследов|разведк)/i;
+
+// ---- offline queue (IndexedDB) — capture in the field with no signal, auto-send later ----
+const DBN='flagleaf-q';
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open(DBN,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('q',{keyPath:'id'});
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+async function qAdd(it){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('q','readwrite');
+  t.objectStore('q').put(it); t.oncomplete=res; t.onerror=()=>rej(t.error);});}
+async function qAll(){const db=await idb();return new Promise((res,rej)=>{const rq=db.transaction('q','readonly').objectStore('q').getAll();
+  rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error);});}
+async function qDel(id){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('q','readwrite');
+  t.objectStore('q').delete(id); t.oncomplete=res; t.onerror=()=>rej(t.error);});}
+function buildFd(it){ const fd=new FormData();
+  (it.photos||[]).forEach((f,i)=>fd.append('photos', f, f.name||('photo'+(i+1)+'.jpg')));
+  fd.append('field_id', it.field_id||''); fd.append('category', it.category||'scouting');
+  fd.append('species', it.species||''); fd.append('comment', it.comment||''); return fd; }
+async function uploadVideo(it){ const fd=new FormData();
+  fd.append('video', it.video, (it.video&&it.video.name)||'scout.mp4');
+  fd.append('field_id', it.field_id||''); fd.append('comment', it.comment||'');
+  await api('/api/scout-video',{method:'POST',body:fd}); }
+function requestBgSync(){ if(!('serviceWorker' in navigator)||!('SyncManager' in window)) return;
+  navigator.serviceWorker.ready.then(reg=>reg.sync.register('flagleaf-flush')).catch(()=>{}); }
+async function tryQueue(it){ try{ await qAdd(it); await refreshPending(); requestBgSync(); return true; }catch(e){ return false; } }
+async function refreshPending(){ renderPending(await qAll()); }
+function renderPending(items){
+  try{ if(items.length) navigator.setAppBadge?.(items.length); else navigator.clearAppBadge?.(); }catch(_){}
+  const p=$('pendBar'); if(!items.length){ p.classList.add('hidden'); p.innerHTML=''; return; }
+  p.classList.remove('hidden');
+  p.innerHTML=`📥 Ожидают отправки: <b>${items.length}</b><button class="lnk scoutcta" id="flushNow">отправить сейчас</button>`;
+  $('flushNow').onclick=flushQueue;
+}
+async function flushQueue(){
+  if(flushing || !session || !navigator.onLine) return;
+  const items=await qAll(); if(!items.length){ refreshPending(); return; }
+  flushing=true;
+  for(const it of items){
+    try{ if(it.kind==='video') await uploadVideo(it); else await api('/api/submit',{method:'POST',body:buildFd(it)});
+      await qDel(it.id); await refreshPending();
+    }catch(e){ if(e.status===401||e.status===403) break; if(!e.status||e.status>=500) break;
+      await qDel(it.id); await refreshPending(); }   // 4xx permanent → drop so it can't loop
+  }
+  flushing=false; await refreshPending();
+}
+
+// ---- scouting mode: a real field must be chosen; the next photo/video is filed as обследование ----
+function scoutField(){ const f=curField(); return (f && f.id) ? f : null; }
+function startScout(){
+  killHero();
+  const f=scoutField();
+  if(!f){ add('Чтобы заскаутить — выберите поле сверху (конкретное, не «другое поле»).','bot');
+    $('field').classList.add('needcrop'); $('field').scrollIntoView({behavior:'smooth',block:'center'});
+    setTimeout(()=>$('field').classList.remove('needcrop'),2500); return; }
+  scoutMode=true; renderScoutBar(f); q.placeholder='Комментарий к обследованию (необязательно)…'; q.focus();
+}
+function renderScoutBar(f){
+  $('scoutBar').classList.remove('hidden');
+  $('scoutBar').innerHTML=`🔭 Скаутинг: <b>${esc(f.name)}</b>${f.crop?' · '+esc(f.crop):''} — снимите видео 🎥 или фото 📷 прохода поля`+
+    `<button class="lnk x scoutcta" id="scoutStop">отмена</button>`;
+  $('scoutStop').onclick=stopScout;
+}
+function stopScout(){ scoutMode=false; $('scoutBar').classList.add('hidden'); $('scoutBar').innerHTML=''; q.placeholder='Вопрос или фото…'; }
+async function scoutSubmit(file, comment, url){
+  const f=scoutField(); if(!f){ stopScout(); return; }
+  const isVid=(file.type||'').startsWith('video');
+  addUser(comment||(isVid?'🎥 видео обследования':'📷 фото обследования'), url, isVid);
+  const item = isVid
+    ? {kind:'video', id:uid(), ts:Date.now(), field_id:f.id, fieldLabel:f.name, comment:comment||'', video:file}
+    : {kind:'photo', id:uid(), ts:Date.now(), field_id:f.id, fieldLabel:f.name, category:'scouting', species:'', comment:comment||'', photos:[file]};
+  if(!navigator.onLine){
+    if(await tryQueue(item)) add('Нет сети — обследование сохранено на телефоне, отправлю автоматически, когда появится интернет.','bot');
+    else add('Не хватает места на телефоне для офлайн-сохранения. Подключитесь к сети.','bot');
+    return; }
+  const t=add(isVid?'Отправляю видео обследования…':'Сохраняю обследование…','bot typing'); $('send').disabled=true;
+  try{
+    if(isVid) await uploadVideo(item); else await api('/api/submit',{method:'POST',body:buildFd(item)});
+    t.className='msg bot'; t.textContent = isVid
+      ? `✅ Видео обследования поля ${f.name} отправлено. Расшифрую голосовой комментарий и передам старшему агроному на проверку.`
+      : `✅ Обследование поля ${f.name} сохранено. Спасибо!`;
+    loadContrib();
+  }catch(e){
+    t.className='msg bot';
+    if(e.status===401||e.status===403){ t.textContent='Сессия истекла — войдите заново.'; setTimeout(()=>location.replace('/app/'),1200); }
+    else if(!e.status||e.status>=500){ t.textContent = (await tryQueue(item)) ? 'Сеть пропала — сохранил на телефоне, отправлю позже.' : 'Сеть пропала, и не хватает места для офлайн-сохранения.'; }
+    else { t.textContent=e.message||'Не удалось отправить.'; }
+  }finally{ $('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
+}
+
+// ---- contribution strip (ваш вклад + team goal), collapsible, with a scouting CTA ----
+async function loadContrib(){
+  try{
+    const s=await api('/api/stats');
+    const pct=Math.min(100, Math.round(100*s.team_collected/Math.max(1,s.team_goal)));
+    const head=`📊 Ваш вклад: <b>${s.total}</b> фото`+(s.labeled?` · <b>${s.labeled}</b> обучают ИИ`:'')+
+      ` · команда ${pct}%<button class="lnk" id="contribTog">${contribOpen?'▾':'▸'}</button>`+
+      `<button class="lnk scoutcta" id="scoutCta">🔭 Заскаутить поле</button>`;
+    const body=contribOpen?`<div style="flex-basis:100%">Команда: собрано <b>${s.team_collected}</b> из ${s.team_goal} фото<div class="cbar"><i style="width:${pct}%"></i></div></div>`:'';
+    $('contribBar').innerHTML=head+body; $('contribBar').classList.remove('hidden');
+    $('contribTog').onclick=()=>{ contribOpen=!contribOpen; loadContrib(); };
+    $('scoutCta').onclick=startScout;
+  }catch(_){}
+}
+
+// ---- «мои загрузки» — summoned by texting «мои загрузки» ----
+const CAT_RU={scouting:'обследование',weed:'сорняк',disease:'болезнь',pest:'вредитель',stress:'стресс',control:'контроль',treatment_result:'результат обработки'};
+const UP_STATUS={ ready_for_labeling:['принято, ждёт разметки','ok'], in_labeling:['в разметке','ok'],
+  labeled:['размечено','ok'], pending_review:['на проверке у старшего агронома','ok'], stored:['принято','ok'],
+  awaiting_metadata:['не завершено','warn'], needs_species:['размечено, вид уточняется','ok'],
+  rejected:['отклонено','bad'], duplicate:['дубликат','warn'] };
+function upWhen(iso){ if(!iso) return ''; const d=new Date(iso), n=new Date();
+  const t=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  return d.toDateString()===n.toDateString()?('сегодня '+t):(d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+t); }
+async function showMyUploads(){
+  const t=add('Смотрю ваши загрузки…','bot typing');
+  try{
+    const r=await api('/api/my-uploads'); const ups=r.uploads||[];
+    if(!ups.length){ t.className='msg bot'; t.textContent='Пока нет загрузок. Сделайте фото/видео — и они появятся здесь.'; return; }
+    const lines=ups.map(u=>{ const st=UP_STATUS[u.status]||[u.status,'ok'];
+      const mark=st[1]==='ok'?'✅':(st[1]==='bad'?'🚫':'⚠️');
+      const kind=u.is_video?'🎥 видео':(CAT_RU[u.category]||'фото');
+      const sp=(!u.is_video&&u.species&&u.species!=='—')?' · '+u.species:'';
+      return `${mark} ${u.field||'—'} · ${kind}${sp} — ${st[0]} (${upWhen(u.when)})`; }).join('\n');
+    t.className='msg bot'; t.textContent=`Ваши загрузки (${ups.length}):\n`+lines;
+  }catch(e){ t.className='msg bot'; t.textContent='Не удалось получить список. Попробуйте позже.'; }
+}
+
+// ---- push notifications (reminders о скаутинге + проверке) ----
+function pushSupported(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function urlB64ToU8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(s), a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
+async function subscribePush(key){ const reg=await navigator.serviceWorker.ready;
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlB64ToU8(key)});
+  await api('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)}); }
+function maybeShowPushBanner(){
+  const b=$('pushBar'), show=pushSupported() && Notification.permission==='default';
+  b.classList.toggle('hidden', !show);
+  if(show){ b.innerHTML='🔔 Напоминания о скаутинге и проверке<button class="lnk scoutcta" id="pushEnable">включить</button>'; $('pushEnable').onclick=enablePush; }
+}
+async function ensurePushIfGranted(){ if(!pushSupported()||Notification.permission!=='granted') return;
+  try{ const {key,enabled}=await api('/api/push/key'); if(enabled&&key) await subscribePush(key); }catch(_){}
+}
+async function enablePush(){
+  try{ const perm=await Notification.requestPermission(); if(perm!=='granted'){ maybeShowPushBanner(); return; }
+    const {key,enabled}=await api('/api/push/key'); if(!enabled||!key){ add('Уведомления пока не настроены на сервере.','bot'); return; }
+    await subscribePush(key); $('pushBar').classList.add('hidden');
+    try{ await api('/api/push/test',{method:'POST'}); }catch(_){}
+  }catch(e){ add('Не удалось включить уведомления.','bot'); }
+}
+
+// ---- scout idle nudge (in-chat) ----
+async function scoutNudge(){
+  try{ const s=await api('/api/scout/status');
+    if(s && s.idle){
+      const d=document.createElement('div'); d.className='msg bot rvcard'; d.style.maxWidth='92%';
+      const ago = s.days_since==null?'вы ещё не обследовали поля':`последнее обследование — ${s.days_since} дн. назад`;
+      d.innerHTML=`🔭 <b>Пора заскаутить поля</b> — ${ago}. Обследуйте своё или любое поле: снимите короткое видео прохода (можно с голосовым комментарием) или несколько фото.`+
+        `<div class="rvbtns"><button class="rvb primary" id="nudgeGo">🔭 Заскаутить поле</button></div>`;
+      chat.appendChild(d); chat.scrollTop=chat.scrollHeight;
+      d.querySelector('#nudgeGo').onclick=startScout;
+      return true;
+    }
+  }catch(_){}
+  return false;
+}
+
+// offline flush triggers — the reliable cross-platform paths (incl. iPhone)
+window.addEventListener('online', flushQueue);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') flushQueue(); });
+window.addEventListener('pageshow', flushQueue);
+window.addEventListener('focus', flushQueue);
+if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e=>{ if(e.data&&e.data.type==='flush') flushQueue(); });
+
 $('navBack').onclick=()=>window.history.back();
 $('navFwd').onclick=()=>window.history.forward();
 $('navRefresh').onclick=()=>location.reload();
@@ -662,19 +871,14 @@ $('navRefresh').onclick=()=>location.reload();
 // ---------- boot ----------
 async function boot(){
   const hdr=$('hdrSub'), who=$('hdrWho');
-  add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте или снимите короткое видео (5–15 сек) сорняка, болезни или вредителя — определю и подскажу, чем обработать это поле. Или спросите текстом/голосом 🎤 — про препараты, ЭПВ, историю и план поля.', 'bot');
-  // header (name · выйти) + fields — public assistant, so guest is fine
-  const guest=()=>{ if(hdr) hdr.textContent='ИИ-агроном'; };
-  if(session){
-    let me=null;
-    try{ me=await api('/api/me'); }catch(e){ session=''; localStorage.removeItem(TOK); }
-    if(me){
-      ME=me;
-      if(who) who.textContent=me.name||'';
-      if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
-      const lo=$('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem(TOK); location.href='/app/'; };
-    } else guest();
-  } else guest();
+  if(!session){ location.replace('/app/'); return; }          // login required for everyone now
+  let me=null; try{ me=await api('/api/me'); }catch(e){}
+  if(!me){ localStorage.removeItem(TOK); location.replace('/app/'); return; }
+  ME=me;
+  if(who) who.textContent=me.name||'';
+  if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
+  const lo=$('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem(TOK); location.replace('/app/'); };
+  add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте или снимите короткое видео (5–15 сек) сорняка, болезни или вредителя — определю и подскажу, чем обработать это поле. Спросите текстом/голосом 🎤 (препараты, ЭПВ, история и план поля), а чтобы обследовать поле — нажмите «🔭 Заскаутить».', 'bot');
   // fields + crops
   try{
     const r=await api('/api/fields'); fieldsAll=r.fields||[];
@@ -686,11 +890,17 @@ async function boot(){
     $('field').value=(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) ? last : '';   // default: другое поле
     const toggleCrop=()=>cropSel.classList.toggle('hidden',$('field').value!=='');
     toggleCrop();
-    $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint(); };
+    $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint();
+      if(scoutMode){ const f=scoutField(); if(f) renderScoutBar(f); else stopScout(); } };   // keep the scout banner in sync
   }catch(e){}
-  // chief → the morning review digest comes to him in-chat; everyone else → the camera hero
-  const showedReview = await loadReview();
-  if(!showedReview){
+  // field-ops: offline queue + push + contribution strip
+  refreshPending(); flushQueue();
+  maybeShowPushBanner(); ensurePushIfGranted();
+  loadContrib();
+  // opening content priority: chief review digest > scout idle nudge > camera hero
+  let opened = await loadReview();
+  if(!opened) opened = await scoutNudge();
+  if(!opened){
     if(new URLSearchParams(location.search).get('review') && isChief())
       add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
     showHero();

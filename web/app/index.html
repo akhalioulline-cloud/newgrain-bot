@@ -170,7 +170,7 @@
 <main id="loginScreen">
   <div class="loginwrap">
     <h1>Вход для агрономов</h1>
-    <p class="lead">Загрузка фото полей для разметки. Доступно зарегистрированным агрономам.</p>
+    <p class="lead">ИИ-агроном, скаутинг и загрузка фото — для зарегистрированных агрономов хозяйства.</p>
 
     <div class="section" style="margin-bottom:8px">
       <label class="fld" for="email">Получить код на почту</label>
@@ -406,21 +406,10 @@ function roleRu(role){
 }
 
 async function enterApp(me){
-  const who = me.name || '';                     // name only — role didn't fit the header
-  $('hdrWho').textContent = who;
-  $('hdrSub').insertAdjacentHTML('beforeend',
-    ' · <button class="logout" id="logoutBtn">выйти</button>');
-  $('logoutBtn').onclick = logout;
-  buildCats();
-  buildSpecies();
-  applyScoutMode(true);                          // «Скаутинг» tab = scouting-only (toggle hidden)
-  show('upload');
-  refreshPending(); flushQueue();                // surface + auto-send anything queued offline
-  maybeShowPushBanner(); ensurePushIfGranted();  // offer / refresh push subscription
-  loadContrib();                                 // «ваш вклад» + team goal
-  loadMyUploads();                               // «мои загрузки» — confirm what landed
-  await loadFields();
-  loadDemoFields();                              // «контрольные поля» nudge
+  // The app is now ONE screen — chat, recognition, scouting and chief review all live in the
+  // assistant. This page only authenticates and hands off. (The upload UI below is retired but
+  // kept to avoid churn; it is never shown.)
+  location.replace('/app/assistant.html');
 }
 
 // Review moved into the Ассистент (in-chat morning digest) — no separate «Проверка» tab.
