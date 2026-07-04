@@ -57,6 +57,7 @@ from bot.db import (
     set_feed_reaction,
     get_feed,
     get_feed_comments,
+    get_feed_comments_bulk,
     get_feed_post,
 )
 from bot.diagnose import diagnose as diagnose_photo
@@ -625,11 +626,22 @@ async def feed_list(user=Depends(require_user)):
     """The farm's shared feed (newest first): each post's author, media, field, bot reply count,
     comment count and reaction tallies + the viewer's own reaction."""
     rows = await get_feed(user["farm_id"], user["id"], 60)
+    ids = [r["id"] for r in rows]
+    threads = {}
+    for c in await get_feed_comments_bulk(ids):
+        threads.setdefault(c["post_id"], []).append({
+            "id": c["id"], "is_bot": c["is_bot"],
+            "author": ("Flagleaf" if c["is_bot"] else c["author"]),
+            "chief": (not c["is_bot"]) and c["author_role"] in ("chief_agronomist", "admin"),
+            "body": c["body"],
+            "created_at": c["created_at"].isoformat() if c["created_at"] else None,
+        })
     posts = [{
         "id": r["id"], "author": r["author"], "author_id": r["author_id"],
-        "body": r["body"], "field": r["field_name"], "bot_reply": r["bot_reply"],
+        "body": r["body"], "field": r["field_name"],
         "media": _presign(r["image_url"]), "is_video": bool(r["is_video"]),
-        "comments": r["comments"], "ups": r["ups"], "downs": r["downs"], "my_reaction": r["my_reaction"],
+        "thread": threads.get(r["id"], []),
+        "ups": r["ups"], "downs": r["downs"], "my_reaction": r["my_reaction"],
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
     } for r in rows]
     return {"posts": posts, "me": {"id": user["id"], "role": user["role"], "name": user["full_name"]}}
@@ -686,7 +698,8 @@ async def feed_create(request: Request, user=Depends(require_user),
                     logger.exception("feed: video diagnose failed")
     elif txt:
         try:
-            reply = await agro_answer(_crop_q(txt, crop.strip()))
+            plan, field_ctx = await _field_route(txt)   # «что на поле 121?» → real field data
+            reply = plan if plan else await agro_answer(_crop_q(txt, crop.strip()), context=field_ctx)
         except Exception:
             logger.exception("feed: text answer failed")
     if not (sub_id or txt):
@@ -712,8 +725,10 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
         raise HTTPException(404, "Пост не найден.")
     await add_feed_comment(post_id, user["id"], False, txt)
     if re.match(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]", txt, re.I):   # bot replies only when called
+        q2 = re.sub(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]+", "", txt, flags=re.I).strip() or txt
         try:
-            ans = await agro_answer(_crop_q(txt, post["crop"] or ""))
+            plan, field_ctx = await _field_route(q2)
+            ans = plan if plan else await agro_answer(_crop_q(q2, post["crop"] or ""), context=field_ctx)
             if ans:
                 await add_feed_comment(post_id, None, True, ans)
         except Exception:

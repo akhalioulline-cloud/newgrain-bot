@@ -1166,6 +1166,18 @@ async def get_feed_comments(post_id):
             "WHERE c.post_id=:p ORDER BY c.created_at"), {"p": post_id})).mappings().all()
 
 
+async def get_feed_comments_bulk(post_ids):
+    """All comments for a set of posts, chronological — so the feed shows each thread inline."""
+    if not post_ids:
+        return []
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT c.post_id, c.id, c.is_bot, c.body, c.created_at, u.full_name AS author, u.role AS author_role "
+            "FROM feed_comments c LEFT JOIN users u ON u.id=c.author_id "
+            "WHERE c.post_id = ANY(:ids) ORDER BY c.created_at"),
+            {"ids": list(post_ids)})).mappings().all()
+
+
 async def get_feed_post(post_id):
     async with engine.connect() as conn:
         return (await conn.execute(text(

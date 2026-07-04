@@ -58,13 +58,16 @@
   .vbadge{font-size:12px;padding:5px 10px;border-radius:14px;font-weight:500}
   .vbadge.ok{color:var(--ok);background:#eef5e9;border:1px solid #cfe3c2}
   .vbadge.bad{color:var(--bad);background:#fbeceb;border:1px solid #f0cfcd}
-  .thread{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
-  .cmt{font-size:13.5px;line-height:1.45}
+  .thread{display:flex;flex-direction:column;gap:8px}
+  .thread:not(:empty){margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+  .cmt{font-size:13.5px;line-height:1.45;background:#f4f1ea;border-radius:10px;padding:8px 10px}
+  .cmt.bot{background:#faf6ec;border:1px solid #eadfbf}
   .cmt .ca{font-weight:500}
   .cmt.bot .ca{color:#6b541f}
-  .cmt .chiefbadge{font-size:10.5px;color:#6b541f;background:#faf6ec;border:1px solid var(--gold);border-radius:10px;padding:1px 6px;margin-left:4px}
-  .cmt .cb{white-space:pre-wrap;word-wrap:break-word}
-  .cmtform{display:flex;gap:6px;align-items:flex-end;margin-top:4px}
+  .cmt .ct{color:var(--muted);font-size:11px;margin-left:4px}
+  .cmt .chiefbadge{font-size:10.5px;color:#6b541f;background:#fff;border:1px solid var(--gold);border-radius:10px;padding:1px 6px;margin-left:4px}
+  .cmt .cb{white-space:pre-wrap;word-wrap:break-word;margin-top:3px}
+  .cmtform{display:flex;gap:6px;align-items:flex-end;margin-top:10px}
   .cmtform input{flex:1;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;outline:none}
   .cmtform input:focus{border-color:var(--gold)}
   .cmtform button{border:1px solid var(--gold);background:var(--gold);color:#fff;border-radius:10px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
@@ -177,16 +180,24 @@ function renderPost(p){
     ? `<button class="pbtn up${p.my_reaction==='up'?' on up':''}" data-v="up">👍 <span class="n">${p.ups||''}</span></button>`+
       `<button class="pbtn down${p.my_reaction==='down'?' on down':''}" data-v="down">👎 <span class="n">${p.downs||''}</span></button>`
     : '') + verdict;
-  const bot = p.bot_reply ? `<div class="botreply"><div class="bl">🤖 ИИ-агроном</div>${esc(p.bot_reply)}</div>` : '';
+  // the whole discussion — bot (Flagleaf) and people — shown inline as a chat thread
+  const thread = (p.thread||[]).map(cm=>
+    `<div class="cmt ${cm.is_bot?'bot':''}"><span class="ca">${cm.is_bot?'🤖 ':''}${esc(cm.author)}</span>`+
+    `${cm.chief?'<span class="chiefbadge">старший</span>':''}<span class="ct">${esc(when(cm.created_at))}</span>`+
+    `<div class="cb">${esc(cm.body)}</div></div>`).join('');
   c.innerHTML=
     `<div class="phead"><span class="pav">${esc(initials(p.author))}</span><span class="pauth">${esc(p.author)}</span>`+
     `<span class="pmeta">${esc(when(p.created_at))}${p.field?'<br>📍 '+esc(p.field):''}</span></div>`+
-    (p.body?`<div class="pbody">${esc(p.body)}</div>`:'')+media+bot+
-    `<div class="pacts">`+
-      `<button class="pbtn cmts" data-id="${p.id}">💬 ${p.comments||'обсудить'}</button>`+react+
-    `</div><div class="thread hidden" data-id="${p.id}"></div>`;
-  c.querySelector('.cmts').onclick=()=>toggleThread(p.id, c);
+    (p.body?`<div class="pbody">${esc(p.body)}</div>`:'')+media+
+    (react?`<div class="pacts">${react}</div>`:'')+
+    `<div class="thread">${thread}</div>`+
+    `<div class="cmtform"><input placeholder="Ответить… (напишите «бот …», чтобы спросить ИИ)"><button>➤</button></div>`;
   c.querySelectorAll('.pbtn[data-v]').forEach(b=>b.onclick=()=>react(p.id, b.dataset.v, b));
+  const cf=c.querySelector('.cmtform'), inp=cf.querySelector('input'), btn=cf.querySelector('button');
+  const send=async()=>{ const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
+    try{ await api(`/api/feed/${p.id}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})}); }
+    catch(e){} btn.disabled=false; loadFeed(); };
+  btn.onclick=send; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();send();} });
   return c;
 }
 async function react(postId, verdict, btn){
@@ -195,29 +206,6 @@ async function react(postId, verdict, btn){
     body:JSON.stringify({verdict:on?'none':verdict})}); }catch(e){ return; }
   loadFeed();
 }
-async function toggleThread(postId, card){
-  const t=card.querySelector('.thread');
-  if(!t.classList.contains('hidden')){ t.classList.add('hidden'); return; }
-  t.classList.remove('hidden'); t.innerHTML='<div class="cmt" style="color:var(--muted)">Загружаю…</div>';
-  let cs=[]; try{ cs=(await api(`/api/feed/${postId}/comments`)).comments||[]; }catch(e){}
-  t.innerHTML = cs.map(c=>
-    `<div class="cmt ${c.is_bot?'bot':''}"><span class="ca">${esc(c.author)}</span>`+
-    `${c.chief?'<span class="chiefbadge">старший</span>':''} <span style="color:var(--muted);font-size:11px">${esc(when(c.created_at))}</span>`+
-    `<div class="cb">${esc(c.body)}</div></div>`).join('') || '<div class="cmt" style="color:var(--muted)">Пока без комментариев — начните обсуждение.</div>';
-  const form=document.createElement('div'); form.className='cmtform';
-  form.innerHTML='<input placeholder="Комментарий… (напишите «бот …», чтобы спросить ИИ)"><button>➤</button>';
-  const inp=form.querySelector('input'), btn=form.querySelector('button');
-  const send=async()=>{ const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
-    try{ await api(`/api/feed/${postId}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})}); }catch(e){}
-    btn.disabled=false; const card2=[...document.querySelectorAll('.post')].find(x=>x.dataset.id==postId);
-    // reload comments inline
-    t.classList.add('hidden'); toggleThread(postId, card); refreshCounts(); };
-  btn.onclick=send; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();send();} });
-  t.appendChild(form); inp.focus();
-}
-async function refreshCounts(){ try{ const d=await api('/api/feed'); posts=d.posts||[];
-  posts.forEach(p=>{ const c=[...document.querySelectorAll('.post')].find(x=>x.dataset.id==p.id);
-    if(c){ const b=c.querySelector('.cmts'); if(b) b.textContent='💬 '+(p.comments||'обсудить'); } }); }catch(e){} }
 
 // ---------- compose / post ----------
 function setFile(f){ pendingFile=f; pendingIsVideo=!!(f&&(f.type||'').startsWith('video'));
