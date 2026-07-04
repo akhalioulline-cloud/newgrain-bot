@@ -308,8 +308,8 @@ function killHero(){ started=true; const h=$('hero'); if(h) h.remove(); }
 function showHero(){
   if($('hero')) return;
   const h=document.createElement('div'); h.className='hero'; h.id='hero';
-  h.innerHTML='<div class="big">📷</div><div class="t">Сфотографируйте — что это?</div>'+
-    '<div class="h">Один сорняк, болезнь или вредитель в кадре, при дневном свете. Определю и подскажу, чем обработать это поле.</div>'+
+  h.innerHTML='<div class="big">📷</div><div class="t">Сфотографируйте или снимите видео</div>'+
+    '<div class="h">С вопросом или просто комментарием, что заметили. Я определю, подскажу и запишу наблюдение по полю.</div>'+
     '<div class="gl" id="heroGal">🖼 фото или видео из галереи</div>';
   chat.appendChild(h);
   h.onclick=e=>{ if(e.target.id==='heroGal') return; $('cam').click(); };
@@ -384,22 +384,19 @@ async function runChat(text, crop, imgUrl){
   finally{ $('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
 }
 
-// ---------- photo ----------
+// ---------- photo: ALWAYS a helpful reply AND filed as scouting for learning ----------
+// The bot doesn't ask «вопрос или скаутинг» — it does both. The comment (question or
+// observation) just shapes the reply; the photo is stored either way (see _DIAG_SYS framing).
 async function runPhoto(file, caption, crop, imgUrl){
-  // «другое поле» без культуры → сначала попросим культуру (как в «Что это?»)
-  if(!curField() && !crop){ setFile(file, pendingFromCam);   // вернём фото в компоузер
-    nudgeCrop(); return; }
   addUser(caption, imgUrl);
-  if(caption){ return diagnose(file, caption, crop); }        // есть вопрос → прямой ответ по фото
-  // нет вопроса → распознавание с вариантами (журавль обучения)
-  const t=add('определяю…','bot typing');
-  const fd=new FormData(); fd.append('image',file); if(crop) fd.append('crop',crop);
-  try{
-    const r=await api('/api/recognize',{method:'POST',body:fd});
-    if(r&&r.ok){ t.remove(); guessBubble(r, file, crop); }
-    else { t.textContent='Не удалось распознать. Снимите поближе и почётче, при дневном свете.'; t.className='msg bot'; }
-  }catch(e){ t.textContent=(e.status===429)?'Слишком много фото за час — попробуйте позже.':'Ошибка. Попробуйте ещё раз.'; t.className='msg bot'; }
-  finally{ chat.scrollTop=chat.scrollHeight; }
+  learnPhoto(file, caption);        // store as scouting for learning (best-effort, fire-and-forget)
+  diagnose(file, caption, crop);    // helpful, comment-aware reply — always
+}
+function learnPhoto(file, comment){
+  const f=curField();
+  const fd=new FormData(); fd.append('photos',file); fd.append('category','scouting');
+  fd.append('comment', comment||''); if(f) fd.append('field_id', String(f.id));
+  api('/api/submit',{method:'POST',body:fd}).catch(()=>{});   // corpus + field record; label refined at review/CVAT
 }
 
 // photo + explicit question → one-shot vision answer
@@ -417,11 +414,11 @@ async function diagnose(file, caption, crop){
 
 // short video → sharp frames + narration → grounded comment (server does the heavy lifting)
 async function runVideo(file, caption, crop, url){
-  if(!curField() && !crop){ setFile(file, pendingFromCam); nudgeCrop(); return; }   // need a crop first
   addUser(caption, url, true);
   const t=add('Смотрю видео и разбираю кадры — это занимает чуть дольше…','bot typing'); $('send').disabled=true;
   try{
     const fd=new FormData(); fd.append('video',file); fd.append('question',caption); fd.append('crop',crop);
+    const f=curField(); if(f) fd.append('field_id', String(f.id));   // server also files it as scouting
     const r=await fetch('/api/diagnose-video',{method:'POST',body:fd});
     if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
     if(r.status===413){ t.textContent='Видео слишком большое — снимите короче (5–15 сек).'; t.className='msg bot'; return; }
@@ -979,7 +976,7 @@ async function boot(){
   if(who) who.textContent=me.name||'';
   if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
   const lo=$('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem(TOK); location.replace('/app/'); };
-  add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте или снимите короткое видео (5–15 сек) сорняка, болезни или вредителя — определю и подскажу, чем обработать это поле. Спросите текстом/голосом 🎤 (препараты, ЭПВ, история и план поля), а чтобы обследовать поле — нажмите «🔭 Заскаутить».', 'bot');
+  add('Здравствуйте! Я ИИ-агроном Flagleaf. Пришлите фото или короткое видео с поля — с вопросом («что это?», «чем обработать?») или просто с комментарием, что заметили (голосом 🎤 или текстом). Я и подскажу, и запишу наблюдение по полю — не нужно выбирать «вопрос» или «обследование». Для съёмки прохода всего поля — кнопка 🔭.', 'bot');
   // fields + crops
   try{
     const r=await api('/api/fields'); fieldsAll=r.fields||[];

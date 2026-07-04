@@ -219,6 +219,19 @@ async def require_user(request: Request):
     return user
 
 
+async def _optional_user(request: Request):
+    """Like require_user but returns None instead of raising when there's no valid session —
+    for endpoints that serve everyone yet do extra (store-for-learning) when signed in."""
+    token = request.headers.get("x-session", "")
+    tg = await _redis.get(f"flagleaf:session:{token}") if token else None
+    if not tg:
+        return None
+    try:
+        return await get_active_user(int(tg))
+    except Exception:
+        return None
+
+
 @app.get("/api/me")
 async def me(user=Depends(require_user)):
     return {"name": user["full_name"], "role": user["role"], "farm_id": user["farm_id"]}
@@ -398,30 +411,15 @@ async def submit(user=Depends(require_user),
 MAX_VIDEO = 400 * 1024 * 1024     # ~400 MB ceiling (covers ~3 min even at high quality)
 
 
-@app.post("/api/scout-video")
-async def scout_video(user=Depends(require_user),
-                      video: UploadFile = File(...),
-                      field_id: str = Form(""), comment: str = Form("")):
-    """A scouting video (Pilot v2): stored as a field-state record; its voice narration is
-    transcribed in the background (video_jobs → collector) into the field's observations.
-    A junior's video waits for the chief agronomist's verification (Almas's request) —
-    the collector sends him the review card once the narration is transcribed; a chief/admin
-    upload is finalized straight away."""
-    data = await video.read()
-    if not data:
-        raise HTTPException(400, "Пустой файл.")
-    if len(data) > MAX_VIDEO:
-        raise HTTPException(413, "Видео слишком большое — снимите покороче (до ~3 минут).")
-    fid = int(field_id) if field_id.strip().isdigit() else None
+async def _store_scout_video(user, data: bytes, ctype: str, field_id, comment: str) -> str | None:
+    """Persist a video as a scouting field-state record (S3 + submission + transcription job).
+    Junior → pending_review (chief verifies); chief/admin → stored. Returns the submission id."""
+    fid = int(field_id) if str(field_id).strip().isdigit() else None
     sid = str(uuid4())
-    ctype = video.content_type or "video/mp4"
+    ctype = ctype or "video/mp4"
     ext = "mov" if "quicktime" in ctype else ("webm" if "webm" in ctype else "mp4")
     key = f"raw/{user['farm_id']}/{fid or 'other'}/{date.today():%Y-%m-%d}/scout-{sid}.{ext}"
-    try:
-        url = await upload_bytes(key, data, ctype)
-    except Exception:
-        logger.exception("scout-video: S3 upload failed")
-        raise HTTPException(502, "Не удалось сохранить видео. Попробуйте ещё раз.")
+    url = await upload_bytes(key, data, ctype)
     h = hashlib.sha256(data).hexdigest()
     review = user["role"] == "agronomist"   # juniors' videos wait for chief verification
     await create_submission(sid, user["id"], fid, url, None, None, h)
@@ -429,6 +427,27 @@ async def scout_video(user=Depends(require_user),
                             status="pending_review" if review else "stored",
                             comment_text=(comment.strip() or None))
     await create_video_job(sid, key)
+    return sid
+
+
+@app.post("/api/scout-video")
+async def scout_video(user=Depends(require_user),
+                      video: UploadFile = File(...),
+                      field_id: str = Form(""), comment: str = Form("")):
+    """A scouting video (Pilot v2): stored as a field-state record; its voice narration is
+    transcribed in the background (video_jobs → collector) into the field's observations.
+    A junior's video waits for the chief agronomist's verification (Almas's request)."""
+    data = await video.read()
+    if not data:
+        raise HTTPException(400, "Пустой файл.")
+    if len(data) > MAX_VIDEO:
+        raise HTTPException(413, "Видео слишком большое — снимите покороче (до ~3 минут).")
+    try:
+        sid = await _store_scout_video(user, data, video.content_type or "video/mp4",
+                                       field_id, comment)
+    except Exception:
+        logger.exception("scout-video: store failed")
+        raise HTTPException(502, "Не удалось сохранить видео. Попробуйте ещё раз.")
     return {"ok": True, "submission_id": sid}
 
 
@@ -663,10 +682,12 @@ MAX_VIDEO_COMMENT = 60 * 1024 * 1024      # ~60 MB — a short clip; long videos
 
 @app.post("/api/diagnose-video")
 async def diagnose_video_ep(request: Request, video: UploadFile,
-                            question: str = Form(""), crop: str = Form("")):
-    """Comment on a short field video: pull the sharpest frames (ffmpeg) + transcribe the voice
-    narration, then let the in-RU vision model reason across the frames. It reads stills, not
-    motion — a video is treated as a burst of photos plus what the agronomist said."""
+                            question: str = Form(""), crop: str = Form(""),
+                            field_id: str = Form("")):
+    """Comment on a short field video AND file it as a scouting record for learning (one upload
+    does both). Pulls the sharpest frames (ffmpeg) + transcribes narration → the in-RU vision
+    model reasons across the frames (it reads stills, not motion). When signed in, the clip is
+    also stored as a scouting field-state record (→ chief review / plan)."""
     data = await video.read()
     if not data:
         raise HTTPException(400, "empty video")
@@ -674,10 +695,18 @@ async def diagnose_video_ep(request: Request, video: UploadFile,
         raise HTTPException(413, "Видео слишком большое — снимите короче (5–15 сек).")
     if not await _rate_ok(_client_ip(request), "diag", DIAG_PER_HOUR):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
+    # Store-for-learning first (best-effort) so the observation is captured even if vision fails.
+    user = await _optional_user(request)
+    if user:
+        try:
+            await _store_scout_video(user, data, video.content_type or "video/mp4",
+                                     field_id, question)
+        except Exception:
+            logger.exception("diagnose-video: store-for-learning failed")
     frames = await asyncio.to_thread(extract_frames, data)
     if not frames:
-        return {"answer": "Не удалось прочитать видео. Пришлите короткий ролик (5–15 сек) "
-                          "или отдельное фото крупным планом."}
+        return {"answer": "Записал видео. Определить по кадрам не удалось — пришлите короткий "
+                          "ролик почётче (5–15 сек) или фото крупным планом."}
     narration = ""
     try:
         narration = await asyncio.to_thread(transcribe_video, data)
@@ -686,7 +715,7 @@ async def diagnose_video_ep(request: Request, video: UploadFile,
     ans = await diagnose_video_frames(frames, question.strip() or None,
                                       crop.strip() or None, None, narration or None)
     return {"answer": ans or (
-        "Не удалось разобрать видео автоматически. Опишите проблему словами "
+        "Записал видео. Разобрать автоматически не удалось — опишите проблему словами "
         "или пришлите чёткое фото крупным планом.")}
 
 
