@@ -971,13 +971,11 @@ async function boot(){
   refreshPending(); flushQueue();
   maybeShowPushBanner(); ensurePushIfGranted();
   loadContrib();
-  // opening content: chief review digest > camera hero
-  let opened = await loadReview();
-  if(!opened){
-    if(new URLSearchParams(location.search).get('review') && isChief())
-      add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
-    showHero();
-  }
+  // «Личное» stays private — the review digest shows ONLY when opened via the ✅ Проверка tab (?review=1)
+  const wantReview = new URLSearchParams(location.search).get('review') && isChief();
+  const opened = wantReview ? await loadReview() : false;
+  if(wantReview && !opened) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
+  if(!opened) showHero();
 }
 boot();
 </script>
