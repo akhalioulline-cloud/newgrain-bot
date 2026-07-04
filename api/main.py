@@ -51,7 +51,7 @@ from bot.db import (
     get_user_stats,
     get_user_uploads,
     update_submission,
-    user_scout_days_since,
+    field_at_point,
 )
 from bot.diagnose import diagnose as diagnose_photo
 from bot.diagnose import diagnose_video as diagnose_video_frames
@@ -82,7 +82,6 @@ _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
 MAX_Q = 2000                  # chars
 MAX_IMG = 12 * 1024 * 1024    # 12 MB
-SCOUT_IDLE_DAYS = 3           # no scouting in this many days → «pora zaskautit'» nudge
 CHAT_PER_HOUR = 30
 DIAG_PER_HOUR = 8
 
@@ -560,12 +559,17 @@ async def review_decide(body: ReviewDecision, user=Depends(require_user)):
     return {"ok": True, "status": new_status}
 
 
-@app.get("/api/scout/status")
-async def scout_status(user=Depends(require_user)):
-    """Whether this user is 'scout-idle' (no scouting in SCOUT_IDLE_DAYS days) — drives the
-    in-chat «пора заскаутить поля» nudge shown when the assistant opens."""
-    d = await user_scout_days_since(user["id"])
-    return {"idle": (d is None) or (d >= SCOUT_IDLE_DAYS), "days_since": d}
+class Geo(BaseModel):
+    lat: float
+    lon: float
+
+
+@app.post("/api/field-at-point")
+async def field_at_point_ep(body: Geo, user=Depends(require_user)):
+    """Which field the agronomist is standing in (GPS → PostGIS). Powers the on-field prompt:
+    when they're on ANY field, the assistant asks «что здесь происходит? пришлите видео»."""
+    f = await field_at_point(body.lat, body.lon, user["farm_id"])
+    return {"field": {"id": f["id"], "name": f["name"], "crop": f["crop"]} if f else None}
 
 
 # The web chat has no slash-commands, so field questions must be answered in-chat: detect a

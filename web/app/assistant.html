@@ -124,12 +124,6 @@
   .capcount{font-size:12.5px;color:var(--muted)}
   .caphint{font-size:12px;color:#6b541f;background:#faf6ec;border-left:3px solid var(--gold);
            border-radius:8px;padding:7px 9px;margin:4px 0;line-height:1.45}
-  /* control fields («контрольные поля») */
-  .ctlrow{width:100%;display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line);
-          border-radius:10px;padding:9px 11px;margin-top:6px;cursor:pointer;font:inherit;font-size:13px;text-align:left}
-  .ctldot{width:9px;height:9px;border-radius:50%;flex:none}
-  .ctlname{font-weight:500}
-  .ctlwhen{margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap}
 
   /* stacked info bars above the composer (scouting / offline queue / push / contribution) */
   .barline{max-width:760px;width:100%;margin:0 auto;padding:8px 12px;font-size:13px;line-height:1.4;
@@ -229,6 +223,7 @@
 
 <form id="form">
   <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+  <input type="file" id="camvid" accept="video/*" capture="environment" hidden>
   <input type="file" id="gal" accept="image/*,video/*" hidden>
   <div class="toprow">
     <textarea id="q" rows="1" placeholder="Вопрос или фото…"></textarea>
@@ -238,7 +233,6 @@
     <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото" aria-label="Снять фото">📷</button>
     <button type="button" class="iconbtn" id="galBtn" title="Фото или видео" aria-label="Фото или видео">🖼</button>
     <button type="button" class="iconbtn" id="mic" title="Голосовой ввод" aria-label="Голосовой ввод">🎤</button>
-    <button type="button" class="iconbtn" id="scoutBtn" title="Обследовать поле" aria-label="Обследовать поле">🔭</button>
   </div>
 </form>
 <div class="contactbar"><button type="button" id="contactBtn" class="contactbtn">📞 Связаться с агрономом</button></div>
@@ -329,6 +323,7 @@ function setFile(f, fromCam){
 $('camBtn').onclick=()=>$('cam').click();
 $('galBtn').onclick=()=>$('gal').click();
 $('cam').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f,true); e.target.value=''; };
+$('camvid').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f,true); e.target.value=''; };   // record video (geo-prompt)
 $('gal').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f,false); e.target.value=''; };
 $('attx').onclick=()=>setFile(null);
 
@@ -345,7 +340,6 @@ async function ask(){
       const had=await loadReview(); if(!had) add('Сейчас на проверке ничего нет — всё разобрано 👍','bot'); return;
     }
     if(MYUP_RE.test(text)){ q.value=''; q.style.height='auto'; addUser(text,null); killHero(); showMyUploads(); return; }
-    if(CTRL_RE.test(text)){ q.value=''; q.style.height='auto'; addUser(text,null); killHero(); loadControlFields(true); return; }
     if(SCOUT_RE.test(text)){ q.value=''; q.style.height='auto'; addUser(text,null); startScout(); return; }
   }
   if(file && isVid && file.size>MAX_VIDEO){
@@ -712,7 +706,6 @@ let flushing=false, contribOpen=false;
 const uid=()=>Date.now()+'-'+Math.random().toString(36).slice(2,7);
 const MYUP_RE=/мои\s+загрузк|что\s+я\s+(загруз|отправ|снял)|мои\s+(фото|материал|видео)/i;
 const SCOUT_RE=/^(скаут|заскаут|обследов|разведк|загруз)/i;
-const CTRL_RE=/контрольн\w*\s*пол|целев\w*\s*пол/i;
 
 // ---- offline queue (IndexedDB) — capture in the field with no signal, auto-send later ----
 const DBN='flagleaf-q';
@@ -852,33 +845,6 @@ async function capSendVideo(st, file, card){
   finally{ chat.scrollTop=chat.scrollHeight; }
 }
 
-// ---- «контрольные поля» — scout these weekly; a tappable card ----
-async function loadControlFields(force){
-  try{ const r=await api('/api/demo-fields'); const fs=r.fields||[];
-    if(!fs.length){ if(force) add('Контрольные поля пока не заданы.','bot'); return false; }
-    const due=fs.filter(f=>f.last_days==null || f.last_days>7);
-    if(!force && !due.length) return false;
-    const list=force?fs:due;
-    const rows=list.map(f=>{ const d=f.last_days;
-      const col=d==null?'#c0392b':d<=7?'#3a7d44':d<=10?'#c8902b':'#c0392b';
-      const when=d==null?'ещё не обследовано':d<=0?'сегодня':d+' дн. назад';
-      return `<button class="ctlrow" data-id="${f.id}"><span class="ctldot" style="background:${col}"></span><span class="ctlname">${esc(f.name)}</span><span class="ctlwhen">${when}</span></button>`; }).join('');
-    const card=document.createElement('div'); card.className='msg bot rvcard'; card.style.maxWidth='92%';
-    card.innerHTML=`<div class="rvhead">🎯 Контрольные поля — обследуйте раз в неделю</div>${rows}`;
-    chat.appendChild(card); chat.scrollTop=chat.scrollHeight;
-    card.querySelectorAll('.ctlrow').forEach(b=>b.onclick=()=>{
-      const ff=list.find(x=>String(x.id)===b.dataset.id); if(ff) pickControlField(ff); });
-    return true;
-  }catch(_){ return false; }
-}
-function pickControlField(f){                      // a control field may be outside the pilot list → make it selectable
-  if(!fieldsAll.some(x=>String(x.id)===String(f.id))){
-    fieldsAll.push({id:f.id, name:f.name, crop:f.crop||''});
-    const o=document.createElement('option'); o.value=String(f.id); o.textContent=f.name; $('field').appendChild(o);
-  }
-  selectField(f.id); startScout();
-}
-
 // ---- contribution strip (ваш вклад + team goal), collapsible, with a scouting CTA ----
 async function loadContrib(){
   try{
@@ -926,7 +892,7 @@ async function subscribePush(key){ const reg=await navigator.serviceWorker.ready
 function maybeShowPushBanner(){
   const b=$('pushBar'), show=pushSupported() && Notification.permission==='default';
   b.classList.toggle('hidden', !show);
-  if(show){ b.innerHTML='🔔 Напоминания о скаутинге и проверке<button class="lnk scoutcta" id="pushEnable">включить</button>'; $('pushEnable').onclick=enablePush; }
+  if(show){ b.innerHTML='🔔 Уведомления о проверке фото<button class="lnk scoutcta" id="pushEnable">включить</button>'; $('pushEnable').onclick=enablePush; }
 }
 async function ensurePushIfGranted(){ if(!pushSupported()||Notification.permission!=='granted') return;
   try{ const {key,enabled}=await api('/api/push/key'); if(enabled&&key) await subscribePush(key); }catch(_){}
@@ -939,20 +905,29 @@ async function enablePush(){
   }catch(e){ add('Не удалось включить уведомления.','bot'); }
 }
 
-// ---- scout idle nudge (in-chat) ----
-async function scoutNudge(){
-  try{ const s=await api('/api/scout/status');
-    if(s && s.idle){
-      const d=document.createElement('div'); d.className='msg bot rvcard'; d.style.maxWidth='92%';
-      const ago = s.days_since==null?'вы ещё не обследовали поля':`последнее обследование — ${s.days_since} дн. назад`;
-      d.innerHTML=`🔭 <b>Пора заскаутить поля</b> — ${ago}. Обследуйте своё или любое поле: снимите короткое видео прохода (можно с голосовым комментарием) или несколько фото.`+
-        `<div class="rvbtns"><button class="rvb primary" id="nudgeGo">🔭 Заскаутить поле</button></div>`;
-      chat.appendChild(d); chat.scrollTop=chat.scrollHeight;
-      d.querySelector('#nudgeGo').onclick=startScout;
-      return true;
-    }
-  }catch(_){}
-  return false;
+// ---- on-field prompt: when GPS puts the agronomist on a field, the bot asks for a video ----
+async function geoPrompt(){
+  if(!navigator.geolocation) return false;
+  const pos=await new Promise(res=>navigator.geolocation.getCurrentPosition(
+    p=>res(p), ()=>res(null), {enableHighAccuracy:true, timeout:8000, maximumAge:60000}));
+  if(!pos) return false;
+  let f=null;
+  try{ f=(await api('/api/field-at-point',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({lat:pos.coords.latitude, lon:pos.coords.longitude})})).field; }catch(_){ return false; }
+  if(!f) return false;
+  if(!fieldsAll.some(x=>String(x.id)===String(f.id))){          // make it the active field context
+    fieldsAll.push({id:f.id, name:f.name, crop:f.crop||''});
+    const o=document.createElement('option'); o.value=String(f.id); o.textContent=f.name; $('field').appendChild(o);
+  }
+  selectField(f.id);
+  const d=document.createElement('div'); d.className='msg bot rvcard'; d.style.maxWidth='92%';
+  d.innerHTML=`📍 Вы на поле <b>${esc(f.name)}</b>${f.crop?' · '+esc(f.crop):''}. Что здесь происходит? `+
+    `Пришлите короткое видео прохода (можно надиктовать, что видите) или фото — я подскажу и запишу наблюдение.`+
+    `<div class="rvbtns"><button class="rvb primary" id="geoVid">🎥 Снять видео</button><button class="rvb" id="geoPhoto">📷 Фото</button></div>`;
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight;
+  d.querySelector('#geoVid').onclick=()=>$('camvid').click();
+  d.querySelector('#geoPhoto').onclick=()=>$('cam').click();
+  return true;
 }
 
 // offline flush triggers — the reliable cross-platform paths (incl. iPhone)
@@ -990,16 +965,14 @@ async function boot(){
     toggleCrop();
     $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint(); };
   }catch(e){}
-  $('scoutBtn').onclick=startScout;
   // field-ops: offline queue + push + contribution strip
   refreshPending(); flushQueue();
   maybeShowPushBanner(); ensurePushIfGranted();
   loadContrib();
-  // opening content: chief review digest > scout idle nudge > camera hero; + control-fields if due
+  // opening content: chief review digest > on-field GPS prompt > camera hero
   let opened = await loadReview();
-  if(!opened) opened = await scoutNudge();
-  const ctl = await loadControlFields(false);
-  if(!opened && !ctl){
+  if(!opened) opened = await geoPrompt();
+  if(!opened){
     if(new URLSearchParams(location.search).get('review') && isChief())
       add('Сейчас на проверке ничего нет — всё разобрано 👍','bot');
     showHero();
