@@ -15,6 +15,7 @@ docs/web-phase1-spec.md.
 import asyncio
 import hashlib
 import logging
+import re
 import secrets
 from datetime import date
 from io import BytesIO
@@ -37,6 +38,7 @@ from bot.db import (
     create_submission,
     create_video_job,
     engine,
+    field_card_text,
     find_duplicate_submission,
     get_active_user,
     get_chief_agronomists,
@@ -534,6 +536,37 @@ async def review_decide(body: ReviewDecision, user=Depends(require_user)):
     return {"ok": True, "status": new_status}
 
 
+# The web chat has no slash-commands, so field questions must be answered in-chat: detect a
+# field reference (any phrasing — «что было на поле 39», «история поля 39», «поле 39») and a plan
+# intent, then pull the same field card / plan generator the Telegram bot uses.
+_FIELD_REF_RE = re.compile(r"пол[еяю]\s*№?\s*(\d+[а-я]?(?:\s*/\s*\d+)?)", re.I)
+_PLAN_RE = re.compile(r"\bплан|работ\w*\s+по\s+пол", re.I)
+
+
+def _field_ref(q: str):
+    m = _FIELD_REF_RE.search((q or "").replace("ё", "е"))
+    return re.sub(r"\s+", "", m.group(1)) if m else None
+
+
+async def _field_route(q: str):
+    """Returns (plan_or_none, field_context_or_none) for a field question. plan_or_none is a
+    ready answer to return verbatim; field_context is the field card to ground the LLM answer."""
+    ref = _field_ref(q)
+    if not ref:
+        return None, None
+    if _PLAN_RE.search(q):
+        try:
+            return await generate_field_plan(ref, None), None
+        except Exception:
+            logger.exception("web field plan failed")
+            return None, None
+    try:
+        return None, await field_card_text(ref, None)
+    except Exception:
+        logger.exception("web field card failed")
+        return None, None
+
+
 @app.post("/api/chat")
 async def chat(body: ChatIn, request: Request):
     q = (body.question or "").strip()
@@ -545,7 +578,10 @@ async def chat(body: ChatIn, request: Request):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
     crop = (body.crop or "").strip()
     full_q = f"Культура: {crop}. {q}" if crop else q   # give the grounding the crop context
-    ans = await agro_answer(full_q, history=_format_history(body.history))
+    plan, field_ctx = await _field_route(q)           # field questions answered in-chat (no commands on web)
+    if plan:
+        return {"answer": plan}
+    ans = await agro_answer(full_q, context=field_ctx, history=_format_history(body.history))
     return {"answer": ans or "Не понял вопрос — переформулируйте, пожалуйста."}
 
 
@@ -563,8 +599,14 @@ async def chat_stream(body: ChatIn, request: Request):
         raise HTTPException(429, "Слишком много запросов. Попробуйте позже.")
     crop = (body.crop or "").strip()
     full_q = f"Культура: {crop}. {q}" if crop else q
-    assembled = await assemble_prompt(full_q, history=_format_history(body.history),
-                                      structured=body.structured)
+    field_ctx = None
+    if not body.structured:                          # assistant only — the scan sets structured=True
+        plan, field_ctx = await _field_route(q)
+        if plan:                                     # «план по полю 39» → return the generated plan
+            return StreamingResponse((c for c in [plan]), media_type="text/plain; charset=utf-8",
+                                     headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+    assembled = await assemble_prompt(full_q, context=field_ctx,
+                                      history=_format_history(body.history), structured=body.structured)
     if not assembled:
         raise HTTPException(503, "Ассистент временно недоступен.")
     sys_text, user_text, max_toks = assembled
