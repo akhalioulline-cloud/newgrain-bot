@@ -1,0 +1,27 @@
+---
+name: newgrain-flagleaf-ear-native
+description: "Strategic direction (4 Jul 2026): Flagleaf/Ear separation + go native via Expo/React Native; own-client rationale"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 3441be93-9176-4fd2-9061-613379401bfe
+---
+
+**Strategic decisions from the 4 Jul 2026 architecture discussion (founder-led):**
+
+**Two separable entities — «Flagleaf» (the bot) and «Ear» (the chat).**
+- **Flagleaf** = the platform-agnostic AI agronomist. ONE entry point `bot/flagleaf.py::respond(Context)` (Context = text/image/video/crop/field_hint/history) that owns ALL orchestration: field routing, photo/video recognition, grounding, thread field-resolution. Plus `addressed()`/`strip_address()` («бот …»). `_field_route`/`_crop_q`/`_field_ref` moved here from api. Flagleaf touches NO chat storage/transport → runs in Telegram without Ear.
+- **Ear** = a chat platform TAILORED to agronomists (scouting, offline, GPS field-tag, 👍/👎 = into/out-of training) and deliberately WITHOUT generic-messenger fluff (decorative emoji, stickers, noise reactions — reactions exist only because they *mean* something). Ear stores messages and calls `flagleaf.respond()` via a participant hook → runs without Flagleaf too.
+- **DONE (behaviour-preserving, verified on prod):** the web feed `feed_create`/`feed_comment` now just store + call `flagleaf.respond()`. **STILL coupled (follow-ups):** Telegram `bot/handlers.py`, `/api/diagnose`, `/api/diagnose-video`, `/api/chat`+`/api/chat/stream` still call the brain directly / duplicate orchestration — migrate them to `flagleaf.respond` too.
+
+**Decision: GO NATIVE via Expo (React Native).** Reasoning chain the founder accepted:
+- Hybrid (Telegram for chat + our app for capture) is **dead** — two surfaces = zero engagement for time-poor field users. Must be ONE surface.
+- No third-party chat (Slack/Teams/Discord/Telegram) can be that surface — embedding forfeits the **device** (silent GPS field-tag, offline field capture, camera pipeline) and the **fun**, which are exactly a field tool's requirements. «You can rent the conversation, but not the device.»
+- The moat is NOT raw weed-vision (frontier AI will likely beat us there) — it's **grounded in-context help + workflow + delight**, which live in the client+backend.
+- Current PWA jank (rough transitions, «forgets history») is **architecture (3 separate HTML pages + full-page navigation), NOT the native ceiling** — but since native is the destination, don't do the Tier-1 SPA refactor (throwaway); RN gives single-app + transitions + state free.
+- **Backend is 100% reused** by native — going native is a FRONT-END rewrite (~5 screens), not from scratch. Low regret + low current usage = low switching cost.
+- **Expo** specifically: Expo Go device testing, EAS cloud builds (no local Xcode), **OTA updates** (ship JS without store review — restores fast iteration + sidesteps RU store friction). One codebase; on-device ML + AR via modules.
+- **No architecture prep needed before Expo** (no page-merging): RN is a fresh front-end. Backend additive tweaks only: native push (Expo push tokens, parallel to web-push), auth via SecureStore + same `x-session` header (CORS is a non-issue for native), a transcribe endpoint variant that takes an audio file. Offline queue/GPS/camera get re-implemented as RN modules. New `mobile/` Expo project alongside `api/`,`bot/`,`web/`; web app stays running until replaced.
+- **Offline recognition (native):** on-device = OUR fine-tuned model (Core ML/TFLite), NOT qwen/Gemini (those are cloud, need signal). Online → qwen (in-RU, no VPN). Gemini stays OUT for real farm data (152-ФЗ data-residency; a VPN bypasses the geo-block but not the law). Pattern: instant on-device guess offline → auto-upgrade with qwen when signal returns. On-device ML works at Capacitor tier too; full native only needed for real-time AR.
+
+**Planned sequence:** (1) Flagleaf/Ear backend separation [feed DONE, rest follow-up] → (2) scaffold Expo `mobile/` against the clean contracts → Milestone 1 core (feed+chat+capture+qwen+offline+**push**) on phones fast → M2 on-device offline recognition → M3 AR (last). AR + fun are the engagement bet; notifications are the single biggest lever. Ties to [[newgrain-app-v2-vision]] + [[newgrain-pwa]].
