@@ -246,8 +246,13 @@ def _pick_field(cands, q):
     for c in cands:                                   # 2. exact number part ('47' == '47')
         if _field_number(c["name"]).lower() == qnum:
             return c
-    if re.fullmatch(r"\d+", qnum):                    # numeric query: no substring fallback
-        return None
+    if re.fullmatch(r"\d+", qnum):                    # numeric query
+        # a bare number may be one half of a combined field number ('121' → 'Поле 121/140') —
+        # match only if EXACTLY ONE field has it as a slash-separated part (exact parts, so
+        # '47' still never matches '147'); otherwise stay ambiguous → None
+        parts = [c for c in cands
+                 if qnum in _field_number(c["name"]).lower().replace(" ", "").split("/")]
+        return parts[0] if len(parts) == 1 else None
     for c in cands:                                   # 3. loose substring (group names etc.)
         if qnum and qnum in c["name"].lower():
             return c
