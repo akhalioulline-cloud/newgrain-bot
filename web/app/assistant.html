@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FLAGLEAF — ИИ-агроном</title>
-<meta name="description" content="ИИ-агроном Flagleaf: определит сорняк, болезнь или вредителя по фото и подскажет, чем обработать — с учётом зарегистрированных препаратов.">
+<meta name="description" content="ИИ-агроном Flagleaf: снимите сорняк, болезнь или вредителя — определю и подскажу, чем и когда обработать это поле. Можно спросить и текстом.">
 <link rel="manifest" href="/app/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
@@ -18,7 +18,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{ --gold:#b9994b; --ink:#1a1a1a; --bg:#faf8f4; --bot:#fff; --usr:#1a1a1a;
-         --muted:#8a8a8a; --line:#e7e2d8; }
+         --muted:#8a8a8a; --line:#e7e2d8; --ok:#3a7d44; --bad:#c0392b; }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   body{font-family:Roboto,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);
@@ -40,6 +40,17 @@
   .sub a{color:var(--gold);text-decoration:none}
   .sub .who{color:var(--ink);font-weight:500}
   .logout{color:var(--gold);cursor:pointer;background:none;border:none;font:inherit;padding:0}
+
+  /* field + crop bar (from «Что это?») */
+  .fieldbar{display:flex;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;
+            padding:8px 12px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line);background:#fff}
+  .fieldbar select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:10px;
+                   padding:7px 10px;background:#fff;flex:1;outline:none}
+  .fieldbar select:focus{border-color:var(--gold)}
+  select.needcrop{border-color:var(--gold)!important;box-shadow:0 0 0 3px rgba(185,153,75,.28)}
+  #cropHint{font-size:12.5px;color:#8a6a16;background:#fff7e8;border-bottom:1px solid #f0d79b;
+            padding:8px 14px;max-width:760px;margin:0 auto;width:100%}
+
   #chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
         max-width:760px;width:100%;margin:0 auto}
   .msg{max-width:88%;padding:12px 14px;border-radius:14px;font-size:15px;line-height:1.5;
@@ -48,49 +59,77 @@
   .user{align-self:flex-end;background:var(--usr);color:#fff;border-bottom-right-radius:4px}
   .user img{max-width:200px;border-radius:8px;display:block;margin-bottom:6px}
   .typing{color:var(--muted);font-style:italic}
-  form{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line);
+
+  /* big camera hero (empty state) */
+  .hero{align-self:stretch;border:2px dashed var(--line);border-radius:18px;background:#fff;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:pointer;
+        color:var(--muted);text-align:center;padding:30px 24px;margin:4px 0}
+  .hero:active{background:#fffdf6;border-color:var(--gold)}
+  .hero .big{width:74px;height:74px;border-radius:50%;background:var(--gold);color:#fff;
+             display:flex;align-items:center;justify-content:center;font-size:33px}
+  .hero .t{font-weight:500;color:var(--ink);font-size:16px}
+  .hero .h{font-size:13px;max-width:250px;line-height:1.5}
+  .hero .gl{font-size:13.5px;color:var(--gold);font-weight:500;text-decoration:underline}
+
+  /* guess chips inside a bot bubble */
+  .guesswrap{align-self:flex-start;max-width:92%;background:var(--bot);border:1px solid var(--line);
+             border-radius:14px;border-bottom-left-radius:4px;padding:12px 12px 10px}
+  .glabel{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+  .guess{width:100%;text-align:left;display:flex;align-items:center;gap:10px;border-radius:12px;
+         padding:11px 13px;margin-bottom:7px;background:#fff;border:1px solid var(--line);cursor:pointer;font:inherit}
+  .guess.top{background:#faf6ec;border-color:var(--gold)}
+  .guess .nm{flex:1;font-weight:500}
+  .guess.top .nm{color:#6b541f;font-size:15.5px}
+  .guess .cf{font-size:12px;color:var(--muted)}
+  .guess .why{font-size:11.5px;color:var(--muted);display:block;font-weight:400}
+  .guess:disabled{opacity:.5}
+  .guess.picked{border-color:var(--gold);background:#faf6ec}
+  .other{width:100%;padding:10px 13px;border:1px dashed var(--line);border-radius:12px;background:transparent;
+         color:var(--muted);font-size:13.5px;display:flex;align-items:center;gap:8px;cursor:pointer;font:inherit}
+  .typepill{display:inline-block;font-size:11px;color:#6b541f;background:#faf6ec;border:1px solid var(--gold);
+            border-radius:14px;padding:2px 9px}
+  .otherrow{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .otherrow input{flex:1;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;outline:none}
+  .otherrow input:focus{border-color:var(--gold)}
+  .otherrow .go{flex:none;border:1px solid var(--gold);background:var(--gold);color:#fff;border-radius:10px;
+                padding:9px 12px;font:inherit;font-weight:600;cursor:pointer}
+
+  /* composer */
+  form{display:flex;gap:6px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line);
        background:#fff;max-width:760px;width:100%;margin:0 auto}
   textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
-           font:inherit;max-height:120px;outline:none}
+           font:inherit;font-size:16px;max-height:120px;outline:none}
   textarea:focus{border-color:var(--gold)}
-  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:12px;width:44px;height:44px;
-           font-size:18px;cursor:pointer;flex:none}
+  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:12px;width:42px;height:42px;
+           font-size:18px;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center}
+  .iconbtn.cam{color:var(--gold);border-color:var(--gold)}
   .send{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
   .send:disabled{opacity:.5;cursor:default}
-  .thumb{height:40px;border-radius:8px;border:1px solid var(--line)}
-  .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:4px 12px;
-       font-size:13px;color:var(--muted)}
-  .att .x{cursor:pointer;color:#c0392b;font-weight:700}
-  .cropbar{display:flex;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;
-           padding:4px 12px;font-size:13px;color:var(--muted)}
-  .cropbar select{font:inherit;font-size:13px;color:var(--ink);border:1px solid var(--line);
-                  border-radius:10px;padding:6px 10px;background:#fff;outline:none}
-  .cropbar select:focus{border-color:var(--gold)}
-  .crophint{font-size:12px;color:var(--gold)}
-  .planbtn{margin-left:auto;font:inherit;font-size:13px;color:var(--gold);background:#fff;
-           border:1px solid var(--gold);border-radius:14px;padding:5px 12px;cursor:pointer;white-space:nowrap}
-  .planbtn:active{background:#faf6ec}
+  .iconbtn.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+
+  /* staged-photo preview above composer */
+  .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:6px 12px;
+       font-size:13px;color:var(--muted);border-top:1px solid var(--line);background:#fff}
+  .att img{height:40px;border-radius:8px;border:1px solid var(--line)}
+  .att .x{cursor:pointer;color:#c0392b;font-weight:700;margin-left:auto}
+
+  .learn{font-size:12.5px;color:var(--ok);display:flex;align-items:center;gap:7px;margin-top:8px}
   .actions{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
   .actgrp{display:flex;gap:4px;align-items:center}
-  .act{border:none;background:transparent;cursor:pointer;font-size:15px;opacity:.5;
-       padding:3px 6px;border-radius:7px;line-height:1}
+  .act{border:none;background:transparent;cursor:pointer;font-size:15px;opacity:.5;padding:3px 6px;border-radius:7px;line-height:1}
   .act:hover{opacity:1;background:#f0ece2}
   .act.on{opacity:1}
   .actnote{font-size:12px;color:var(--muted);align-self:center;margin-left:4px}
-  .iconbtn.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:pulse 1s infinite}
-  @keyframes pulse{50%{opacity:.55}}
   .fbnote{display:flex;gap:6px;margin-top:6px}
-  .fbnote input{flex:1;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;
-                padding:6px 8px;outline:none}
+  .fbnote input{flex:1;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;outline:none}
   .fbnote input:focus{border-color:var(--gold)}
-  .fbnote button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;
-                 cursor:pointer;font-size:13px}
+  .fbnote button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px}
   .contactbar{text-align:center;padding:2px 16px}
   .contactbtn{font:inherit;font-size:13px;color:var(--gold);background:#fff;border:1px solid var(--gold);
               border-radius:18px;padding:7px 16px;cursor:pointer}
   .contactbtn:hover{background:var(--gold);color:#fff}
-  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;
-         align-items:center;justify-content:center;padding:16px}
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;align-items:center;justify-content:center;padding:16px}
   .modal.open{display:flex}
   .modalbox{background:#fff;border-radius:14px;padding:18px;width:100%;max-width:380px}
   .modaltitle{font-family:Oswald;font-weight:600;font-size:18px;margin-bottom:4px}
@@ -99,12 +138,12 @@
          border-radius:10px;padding:10px;margin-bottom:8px;outline:none;resize:none}
   .modalbox input:focus,.modalbox textarea:focus{border-color:var(--gold)}
   .modalrow{display:flex;gap:8px;margin-top:4px}
-  .modalbtn{flex:1;font:inherit;border:1px solid var(--line);background:#fff;border-radius:10px;
-            padding:10px;cursor:pointer}
+  .modalbtn{flex:1;font:inherit;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px;cursor:pointer}
   .modalbtn.primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
   .modalbtn:disabled{opacity:.5;cursor:default}
   .modalnote{font-size:13px;color:var(--muted);text-align:center;margin-top:8px}
   .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 16px}
+  .hidden{display:none!important}
 </style>
 </head>
 <body>
@@ -118,40 +157,31 @@
     <span class="logo">FLAG<b>LEAF</b></span>
     <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span></span>
   </div>
-  <nav class="tabs">
-    <a class="tab" href="/app/scan.html">🔍 Что это?</a>
-    <a class="tab" href="/app/">🔭 Скаутинг</a>
+  <nav class="tabs" id="tabs">
     <a class="tab on" href="/app/assistant.html">💬 Ассистент</a>
+    <a class="tab" href="/app/">🔭 Скаутинг</a>
   </nav>
 </header>
 
+<div class="fieldbar">
+  <span>Поле:</span>
+  <select id="field"></select>
+  <select id="crop" class="hidden"></select>
+</div>
+<div id="cropHint" class="hidden">↑ Выберите культуру — тогда дам точные препараты и нормы для этого поля.</div>
+
 <div id="chat"></div>
 
-<div class="att" id="att"><img class="thumb" id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
-
-<div class="cropbar">
-  <label for="crop">🌱 Культура:</label>
-  <select id="crop">
-    <option value="">— не указана —</option>
-    <option>Подсолнечник</option>
-    <option>Соя</option>
-    <option>Пшеница озимая</option>
-    <option>Пшеница яровая</option>
-    <option>Ячмень</option>
-    <option>Кукуруза</option>
-    <option>Рапс</option>
-    <option>Сахарная свёкла</option>
-    <option>Горох</option>
-  </select>
-  <span class="crophint" id="cropHint"></span>
-</div>
+<div class="att" id="att"><img id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
 
 <form id="form">
-  <input type="file" id="file" accept="image/*" hidden>
-  <button type="button" class="iconbtn" id="attach" title="Прикрепить фото">📎</button>
-  <button type="button" class="iconbtn" id="mic" title="Голосовой ввод">🎤</button>
-  <textarea id="q" rows="1" placeholder="Ваш вопрос агроному…"></textarea>
-  <button type="submit" class="iconbtn send" id="send" title="Отправить">➤</button>
+  <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+  <input type="file" id="gal" accept="image/*" hidden>
+  <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото" aria-label="Снять фото">📷</button>
+  <button type="button" class="iconbtn" id="galBtn" title="Из галереи / файл" aria-label="Из галереи">🖼</button>
+  <button type="button" class="iconbtn" id="mic" title="Голосовой ввод" aria-label="Голосовой ввод">🎤</button>
+  <textarea id="q" rows="1" placeholder="Вопрос агроному или фото…"></textarea>
+  <button type="submit" class="iconbtn send" id="send" title="Отправить" aria-label="Отправить">➤</button>
 </form>
 <div class="contactbar"><button type="button" id="contactBtn" class="contactbtn">📞 Связаться с агрономом</button></div>
 <div class="disclaimer">ИИ-помощник. Рекомендации проверяйте перед применением; за окончательным решением — к агроному.</div>
@@ -172,67 +202,228 @@
 </div>
 
 <script>
-const chat = document.getElementById('chat');
-const q = document.getElementById('q');
-const form = document.getElementById('form');
-const fileInput = document.getElementById('file');
-const att = document.getElementById('att'), thumb = document.getElementById('thumb'), attname = document.getElementById('attname');
-const cropSel = document.getElementById('crop');
-const cropHint = document.getElementById('cropHint');
-let pendingFile = null;
-let awaitingCrop = false;   // true when the bot's last answer asked which crop it is
-const history = [];   // {role:'user'|'bot', text} — sent for follow-up context
+const TOK='flagleaf_session', $=id=>document.getElementById(id);
+let session=localStorage.getItem(TOK)||'', fieldsAll=[];
+let pendingFile=null, pendingURL=null, pendingFromCam=false;
+let awaitingCrop=false;                 // bot's last answer asked which crop it is
+let started=false;                      // once true, the empty-state hero is gone
+const chatHist=[];                      // {role:'user'|'bot', text} — follow-up context
+const chat=$('chat'), q=$('q'), form=$('form'), cropSel=$('crop');
+const att=$('att'), thumb=$('thumb'), attname=$('attname');
+const CATMAP={'сорняк':'weed','болезнь':'disease','вредитель':'pest'};
+const CROP_LIST=['Подсолнечник','Соя','Пшеница озимая','Пшеница яровая','Кукуруза','Ячмень',
+  'Сахарная свёкла','Горох','Рапс','Гречиха','Овёс','Рожь','Просо','Нут','Лён масличный',
+  'Горчица','Кориандр','Многолетние травы'];
 
+async function api(path,opts={}){
+  const headers=opts.headers||{}; if(session) headers['x-session']=session;
+  const r=await fetch(path,{...opts,headers}); let b=null; try{b=await r.json();}catch(e){}
+  if(!r.ok){const err=new Error((b&&b.detail)||('Ошибка '+r.status));err.status=r.status;throw err;} return b;
+}
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function curField(){const v=$('field').value; return fieldsAll.find(f=>String(f.id)===v)||null;}
+function curCrop(){const f=curField(); if(f) return f.crop||''; return cropSel.value||'';}
+
+// ---------- chat bubbles ----------
 function add(text, who){ const d=document.createElement('div'); d.className='msg '+who; d.textContent=text;
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d; }
 function addUser(text, imgUrl){ const d=document.createElement('div'); d.className='msg user';
   if(imgUrl){ const im=document.createElement('img'); im.src=imgUrl; d.appendChild(im); }
   if(text){ d.appendChild(document.createTextNode(text)); }
   chat.appendChild(d); chat.scrollTop=chat.scrollHeight; }
+function killHero(){ started=true; const h=$('hero'); if(h) h.remove(); }
 
-add('Здравствуйте! Я ИИ-агроном Flagleaf. Пришлите фото сорняка/болезни с вопросом — определю и подскажу, чем обработать. Можно спросить текстом или голосом 🎤.', 'bot');
+// ---------- empty-state hero ----------
+function showHero(){
+  if($('hero')) return;
+  const h=document.createElement('div'); h.className='hero'; h.id='hero';
+  h.innerHTML='<div class="big">📷</div><div class="t">Сфотографируйте — что это?</div>'+
+    '<div class="h">Один сорняк, болезнь или вредитель в кадре, при дневном свете. Определю и подскажу, чем обработать это поле.</div>'+
+    '<div class="gl" id="heroGal">🖼 или выбрать из галереи</div>';
+  chat.appendChild(h);
+  h.onclick=e=>{ if(e.target.id==='heroGal') return; $('cam').click(); };
+  $('heroGal').onclick=e=>{ e.stopPropagation(); $('gal').click(); };
+}
 
-function setFile(f){ pendingFile=f; if(f){ thumb.src=URL.createObjectURL(f); attname.textContent=f.name; att.style.display='flex'; }
-  else { att.style.display='none'; fileInput.value=''; } }
-document.getElementById('attach').onclick=()=>fileInput.click();
-fileInput.onchange=e=>{ if(e.target.files[0]) setFile(e.target.files[0]); };
-document.getElementById('attx').onclick=()=>setFile(null);
+// ---------- staged photo ----------
+function setFile(f, fromCam){
+  pendingFile=f; pendingFromCam=!!fromCam;
+  if(pendingURL){ URL.revokeObjectURL(pendingURL); pendingURL=null; }
+  if(f){ pendingURL=URL.createObjectURL(f); thumb.src=pendingURL; attname.textContent='Фото готово — отправьте или добавьте вопрос';
+    att.style.display='flex'; q.placeholder='Добавьте вопрос — или просто отправьте'; q.focus(); }
+  else { att.style.display='none'; $('cam').value=''; $('gal').value=''; q.placeholder='Вопрос агроному или фото…'; }
+}
+$('camBtn').onclick=()=>$('cam').click();
+$('galBtn').onclick=()=>$('gal').click();
+$('cam').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f,true); e.target.value=''; };
+$('gal').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f,false); e.target.value=''; };
+$('attx').onclick=()=>setFile(null);
 
 q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,120)+'px'; });
 
-function sendFeedback(vote, note, question, answer, crop){
+// ---------- send ----------
+function ask(){
+  const text=q.value.trim(); const file=pendingFile; const crop=curCrop();
+  if(!text && !file) return;
+  q.value=''; q.style.height='auto';
+  const url=file?pendingURL:null; pendingURL=null;   // hand the object URL to the bubble
+  setFile(null);
+  killHero();
+  if(file) runPhoto(file, text, crop, url);
+  else runChat(text, crop, null);
+}
+form.addEventListener('submit', e=>{ e.preventDefault(); ask(); });
+q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+
+// ---------- text / field questions (server handles field routing) ----------
+async function runChat(text, crop, imgUrl){
+  if(!text) return;
+  addUser(text, imgUrl);
+  const hist=chatHist.slice(-6);
+  const t=add('анализирую…','bot typing');
+  $('send').disabled=true;
+  try{
+    const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:text,crop:crop,history:hist})});
+    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
+    if(!r.ok || !r.body){ t.textContent='Ошибка. Попробуйте ещё раз.'; t.className='msg bot'; return; }
+    t.textContent=''; t.className='msg bot';
+    const reader=r.body.getReader(), dec=new TextDecoder(); let ans='';
+    for(;;){ const {value,done}=await reader.read(); if(done) break;
+      ans+=dec.decode(value,{stream:true}); t.textContent=ans; chat.scrollTop=chat.scrollHeight; }
+    ans=ans.trim();
+    if(ans) finishAnswer(t, ans, text, crop); else { t.textContent='Что-то пошло не так, попробуйте ещё раз.'; }
+  }catch(err){ t.textContent='Ошибка сети. Проверьте соединение и попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ $('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
+}
+
+// ---------- photo ----------
+async function runPhoto(file, caption, crop, imgUrl){
+  // «другое поле» без культуры → сначала попросим культуру (как в «Что это?»)
+  if(!curField() && !crop){ setFile(file, pendingFromCam);   // вернём фото в компоузер
+    nudgeCrop(); return; }
+  addUser(caption, imgUrl);
+  if(caption){ return diagnose(file, caption, crop); }        // есть вопрос → прямой ответ по фото
+  // нет вопроса → распознавание с вариантами (журавль обучения)
+  const t=add('определяю…','bot typing');
+  const fd=new FormData(); fd.append('image',file); if(crop) fd.append('crop',crop);
+  try{
+    const r=await api('/api/recognize',{method:'POST',body:fd});
+    if(r&&r.ok){ t.remove(); guessBubble(r, file, crop); }
+    else { t.textContent='Не удалось распознать. Снимите поближе и почётче, при дневном свете.'; t.className='msg bot'; }
+  }catch(e){ t.textContent=(e.status===429)?'Слишком много фото за час — попробуйте позже.':'Ошибка. Попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ chat.scrollTop=chat.scrollHeight; }
+}
+
+// photo + explicit question → one-shot vision answer
+async function diagnose(file, caption, crop){
+  const t=add('анализирую…','bot typing'); $('send').disabled=true;
+  try{
+    const fd=new FormData(); fd.append('image',file); fd.append('question',caption); fd.append('crop',crop);
+    const r=await fetch('/api/diagnose',{method:'POST',body:fd});
+    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
+    const j=await r.json(); const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
+    if(j.answer) finishAnswer(t, ans, caption, crop); else { t.textContent=ans; t.className='msg bot'; }
+  }catch(e){ t.textContent='Ошибка сети. Попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ $('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
+}
+
+// recognition guesses as a bot bubble with tappable chips
+function guessBubble(r, file, crop){
+  const top=r.top||{}, alts=(r.alternatives||[]).slice(0,2);
+  const conf=Number(top.confidence)||0, sure=conf>=60 && top.ru;
+  const cls=top.class? `<span class="typepill">${top.class==='злаковый'?'злаковый':'двудольный'}</span>`:'';
+  const box=document.createElement('div'); box.className='guesswrap';
+  let h=`<div class="glabel">${sure?'Скорее всего это '+cls:'Не уверен — помогите определить '+cls}</div>`;
+  if(top.ru){ h+=`<button class="guess top" data-w="${esc(top.ru)}" data-c="${esc(top.category||'сорняк')}">`+
+      `<span class="nm">${esc(top.ru)}</span><span class="cf">${conf?conf+'%':''}</span></button>`; }
+  for(const a of alts){ const nm=a.name||a; if(!nm) continue;
+    h+=`<button class="guess" data-w="${esc(nm)}" data-c="сорняк"><span class="nm">${esc(nm)}`+
+       (a.why?`<span class="why">${esc(a.why)}</span>`:'')+`</span></button>`; }
+  h+=`<button class="other" id="otherBtn">❓ Другое — подскажите, что это</button>`+
+     `<div id="otherArea" class="hidden"><div class="otherrow">`+
+     `<input type="text" id="otherIn" placeholder="скажите или впишите, что это"><button class="go" id="otherGo">Готово</button></div></div>`;
+  box.innerHTML=h; chat.appendChild(box);
+  const pick=(w,c,btn)=>{ box.querySelectorAll('.guess,.other').forEach(b=>b.disabled=true);
+    if(btn){ btn.classList.add('picked'); } decideInChat(w, c, file, crop); };
+  box.querySelectorAll('.guess').forEach(b=>b.onclick=()=>pick(b.dataset.w,b.dataset.c,b));
+  $('otherBtn').onclick=()=>{ $('otherArea').classList.remove('hidden'); $('otherBtn').classList.add('hidden');
+    $('otherIn').focus();
+    const go=()=>{ const v=$('otherIn').value.trim(); if(v){ box.querySelectorAll('.guess,.other,#otherGo').forEach(b=>b.disabled=true); decideInChat(v,'',file,crop); } };
+    $('otherGo').onclick=go; $('otherIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();go();} }); };
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function buildQuestion(obj, ruCat, crop){
+  const c=crop||'культуру';
+  if(ruCat==='болезнь')   return `«${obj}» на ${c}: чем защитить и лечить — зарегистрированный препарат, норма, сроки. Только конкретные решения.`;
+  if(ruCat==='вредитель') return `«${obj}» на ${c}: чем защитить — зарегистрированный препарат, норма, сроки по ЭПВ. Только конкретные решения.`;
+  if(ruCat==='сорняк')    return `Чем обработать ${c} от «${obj}»? Пора ли по ЭПВ, норма, сколько обработок? Только зарегистрированные препараты, по делу.`;
+  return `Агроном определил на поле (культура: ${c}): «${obj}». Дай практический ответ по сути: если это сорняк — чем обработать (зарегистрированный препарат, норма, сроки по ЭПВ); если болезнь или вредитель — чем защитить; если это повреждение или состояние самой культуры (например, гербицидный ожог) — конкретные меры, чтобы помочь растению (антистресс/стимулятор с нормой, подкормка, агроприёмы). Только решения.`;
+}
+async function decideInChat(weed, ruCat, file, crop){
+  logToFlywheel(file, weed, CATMAP[ruCat]||'weed');           // correction = the label
+  const t=add('подбираю решение…','bot typing');
+  const qtext=buildQuestion(weed, ruCat, crop);
+  try{
+    const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:qtext,crop:crop,structured:true})});
+    if(!r.ok||!r.body){ t.textContent='Не удалось получить ответ. Попробуйте ещё раз.'; t.className='msg bot'; return; }
+    t.textContent=''; t.className='msg bot';
+    const rd=r.body.getReader(), dec=new TextDecoder(); let txt='';
+    for(;;){ const {value,done}=await rd.read(); if(done)break; txt+=dec.decode(value,{stream:true}); t.textContent=txt; chat.scrollTop=chat.scrollHeight; }
+    txt=txt.trim();
+    if(txt){ const learn=document.createElement('div'); learn.className='learn'; learn.innerHTML='<span>✓</span> +1 наблюдение обучает ИИ Flagleaf'; t.appendChild(learn);
+      finishAnswer(t, txt, weed, crop, true); }
+    else t.textContent='Что-то пошло не так, попробуйте ещё раз.';
+  }catch(e){ t.textContent='Ошибка сети. Попробуйте ещё раз.'; t.className='msg bot'; }
+  finally{ chat.scrollTop=chat.scrollHeight; }
+}
+function logToFlywheel(file, species, cat){
+  if(!file) return;
+  const fd=new FormData(); fd.append('photos',file); fd.append('category',cat); fd.append('species',species);
+  const f=curField(); if(f) fd.append('field_id',String(f.id));
+  api('/api/submit',{method:'POST',body:fd}).catch(()=>{});   // best-effort flywheel
+}
+
+// ---------- shared answer tail: history + crop-follow-up flag + action row ----------
+function finishAnswer(el, ans, question, crop, keepText){
+  if(!keepText) el.textContent=ans;
+  addActions(el, ans, question, crop);
+  chatHist.push({role:'user',text:question||'[фото поля]'}); chatHist.push({role:'bot',text:ans});
+  awaitingCrop = /культур/i.test(ans) && /(уточн|укаж|какая|какую|подтверд)/i.test(ans);
+}
+
+// ---------- crop nudge ----------
+function nudgeCrop(){
+  $('cropHint').classList.remove('hidden'); cropSel.classList.remove('hidden'); cropSel.classList.add('needcrop');
+  cropSel.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function clearHint(){ $('cropHint').classList.add('hidden'); cropSel.classList.remove('needcrop'); }
+
+// ---------- feedback / actions ----------
+function sendFeedback(vote,note,question,answer,crop){
   fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({vote,note,question,answer,crop})}).catch(()=>{});
 }
 function mkAct(label,title){ const b=document.createElement('button'); b.className='act'; b.title=title; b.textContent=label; return b; }
-
-// per-answer row: 📋 copy · 👍 · 👎(+optional note) · 🧮 calc (only when there are products)
 function addActions(el, answerText, question, crop){
   const bar=document.createElement('div'); bar.className='actions';
-  const note=document.createElement('span'); note.className='actnote';
-  let voted=false;
+  const note=document.createElement('span'); note.className='actnote'; let voted=false;
   const copy=mkAct('📋','Скопировать');
-  copy.onclick=()=>{ navigator.clipboard.writeText(answerText).then(()=>{
-    copy.textContent='✓'; setTimeout(()=>copy.textContent='📋',1200); }).catch(()=>{}); };
+  copy.onclick=()=>{ navigator.clipboard.writeText(answerText).then(()=>{ copy.textContent='✓'; setTimeout(()=>copy.textContent='📋',1200); }).catch(()=>{}); };
   const share=mkAct('📤','Поделиться');
-  share.onclick=async()=>{
-    const txt=answerText+'\n\n— ИИ-агроном Flagleaf · ai.flagleaf.ru';
+  share.onclick=async()=>{ const txt=answerText+'\n\n— ИИ-агроном Flagleaf · ai.flagleaf.ru';
     if(navigator.share){ try{ await navigator.share({title:'Flagleaf — ИИ-агроном', text:txt}); }catch(e){} }
-    else { navigator.clipboard.writeText(txt).then(()=>{ share.textContent='✓';
-      setTimeout(()=>share.textContent='📤',1200); }).catch(()=>{}); }
-  };
+    else { navigator.clipboard.writeText(txt).then(()=>{ share.textContent='✓'; setTimeout(()=>share.textContent='📤',1200); }).catch(()=>{}); } };
   const up=mkAct('👍','Хороший ответ');
-  up.onclick=()=>{ if(voted)return; voted=true; up.classList.add('on'); note.textContent='Спасибо за отзыв!';
-    sendFeedback('up',null,question,answerText,crop); };
+  up.onclick=()=>{ if(voted)return; voted=true; up.classList.add('on'); note.textContent='Спасибо за отзыв!'; sendFeedback('up',null,question,answerText,crop); };
   const down=mkAct('👎','Плохой ответ');
-  down.onclick=()=>{ if(voted)return; voted=true; down.classList.add('on');
-    sendFeedback('down',null,question,answerText,crop);          // capture the vote right away
+  down.onclick=()=>{ if(voted)return; voted=true; down.classList.add('on'); sendFeedback('down',null,question,answerText,crop);
     const box=document.createElement('div'); box.className='fbnote';
     const inp=document.createElement('input'); inp.placeholder='Что не так? (необязательно)';
-    const snd=document.createElement('button'); snd.textContent='Отправить';
-    let sent=false;
-    const post=()=>{ if(sent)return; sent=true; const v=inp.value.trim();
-      if(v) sendFeedback('down',v,question,answerText,crop);     // richer correction
+    const snd=document.createElement('button'); snd.textContent='Отправить'; let sent=false;
+    const post=()=>{ if(sent)return; sent=true; const v=inp.value.trim(); if(v) sendFeedback('down',v,question,answerText,crop);
       box.remove(); note.textContent='Спасибо за отзыв!'; };
     snd.onclick=post; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); post(); } });
     box.append(inp,snd); el.appendChild(box); inp.focus(); };
@@ -242,76 +433,21 @@ function addActions(el, answerText, question, crop){
   if(/л\/га|кг\/га|мл\/га|г\/га|норма|препарат/i.test(answerText)){
     const calc=mkAct('🧮','Рассчитать на площадь');
     calc.onclick=()=>{ const ha=(prompt('На какую площадь рассчитать препараты, га?')||'').replace(',','.');
-      if(parseFloat(ha)>0) runChat('Рассчитай, сколько нужно каждого препарата из предыдущего ответа на '+ha
-        +' га: общий объём препарата и рабочего раствора, по нормам расхода из предыдущего ответа.', cropSel.value, null); };
+      if(parseFloat(ha)>0){ killHero(); runChat('Рассчитай, сколько нужно каждого препарата из предыдущего ответа на '+ha
+        +' га: общий объём препарата и рабочего раствора, по нормам расхода из предыдущего ответа.', crop, null); } };
     left.append(calc);
   }
-  right.append(note,up,down);
-  bar.append(left,right); el.appendChild(bar);
+  right.append(note,up,down); bar.append(left,right); el.appendChild(bar);
 }
 
-async function runChat(text, crop, file){
-  if(!text && !file) return;
-  addUser(text, file?URL.createObjectURL(file):null);
-  const hist = history.slice(-6);
-  const t=add('анализирую…','bot typing');
-  document.getElementById('send').disabled=true;
-  const finishAnswer=(ans)=>{                    // shared tail: actions + history + crop-follow-up flag
-    t.textContent=ans; t.className='msg bot';
-    addActions(t, ans, text, crop);
-    history.push({role:'user',text:text||'[фото поля]'}); history.push({role:'bot',text:ans});
-    awaitingCrop = /культур/i.test(ans) && /(уточн|укаж|какая|какую|подтверд)/i.test(ans);
-  };
-  try{
-    if(file){                                    // photo diagnosis — one-shot JSON (vision call)
-      const fd=new FormData(); fd.append('image',file); fd.append('question',text); fd.append('crop',crop);
-      const r=await fetch('/api/diagnose',{method:'POST',body:fd});
-      if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
-      const j=await r.json(); const ans=j.answer||'Что-то пошло не так, попробуйте ещё раз.';
-      if(j.answer) finishAnswer(ans); else { t.textContent=ans; t.className='msg bot'; }
-      return;
-    }
-    // text question — stream the answer word-by-word for responsiveness
-    const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:text,crop:crop,history:hist})});
-    if(r.status===429){ t.textContent='Слишком много запросов за час — попробуйте позже.'; t.className='msg bot'; return; }
-    if(!r.ok || !r.body){ t.textContent='Ошибка. Попробуйте ещё раз.'; t.className='msg bot'; return; }
-    t.textContent=''; t.className='msg bot';
-    const reader=r.body.getReader(), dec=new TextDecoder(); let ans='';
-    for(;;){
-      const {value,done}=await reader.read(); if(done) break;
-      ans += dec.decode(value,{stream:true});
-      t.textContent=ans; chat.scrollTop=chat.scrollHeight;
-    }
-    ans=ans.trim();
-    if(ans) finishAnswer(ans); else { t.textContent='Что-то пошло не так, попробуйте ещё раз.'; t.className='msg bot'; }
-  }catch(err){ t.textContent='Ошибка сети. Проверьте соединение и попробуйте ещё раз.'; t.className='msg bot'; }
-  finally{ document.getElementById('send').disabled=false; chat.scrollTop=chat.scrollHeight; }
-}
-
-function ask(){
-  const text=q.value.trim(); const file=pendingFile; const crop=cropSel.value;
-  if(!text && !file) return;
-  q.value=''; q.style.height='auto'; setFile(null);
-  runChat(text, crop, file);
-}
-form.addEventListener('submit', e=>{ e.preventDefault(); ask(); });
-q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
-
-// Plans are answered right in the chat now — «план по полю 39» → the field-plan generator
-// (see /api/chat/stream field routing). No separate button/mode needed.
-
-// crop menu is active at any point: if the bot asked which crop, picking it answers now;
-// otherwise it just sets the crop for the next question (with a brief confirmation).
+// ---------- crop menu ----------
 cropSel.addEventListener('change', ()=>{
-  const c=cropSel.value; if(!c) return;
-  if(awaitingCrop){ awaitingCrop=false; cropHint.textContent=''; runChat(c, c, null); }
-  else { cropHint.textContent='✓ учту в следующем вопросе';
-    setTimeout(()=>{ if(cropHint.textContent.startsWith('✓')) cropHint.textContent=''; }, 2500); }
+  clearHint(); const c=cropSel.value; if(!c) return;
+  if(awaitingCrop){ awaitingCrop=false; killHero(); runChat(c, c, null); }
 });
 
-// ---- voice: Web Audio capture → 16 kHz mono LPCM → /api/transcribe (SpeechKit) ----
-const micBtn=document.getElementById('mic');
+// ---------- voice ----------
+const micBtn=$('mic');
 let recording=false, audioCtx=null, micStream=null, micProc=null, micChunks=[];
 micBtn.onclick=async()=>{
   if(recording){ stopRec(); return; }
@@ -325,14 +461,14 @@ micBtn.onclick=async()=>{
   recording=true; micBtn.classList.add('rec'); micBtn.textContent='⏹'; q.placeholder='Говорите… нажмите ⏹';
 };
 function stopRec(){
-  recording=false; micBtn.classList.remove('rec'); micBtn.textContent='🎤'; q.placeholder='Ваш вопрос агроному…';
+  recording=false; micBtn.classList.remove('rec'); micBtn.textContent='🎤'; q.placeholder='Вопрос агроному или фото…';
   try{ micProc.disconnect(); }catch(e){}
   if(micStream) micStream.getTracks().forEach(t=>t.stop());
   const inRate=audioCtx.sampleRate;
   let len=micChunks.reduce((a,c)=>a+c.length,0); const buf=new Float32Array(len); let off=0;
   for(const c of micChunks){ buf.set(c,off); off+=c.length; }
   try{ audioCtx.close(); }catch(e){}
-  if(len<inRate*0.3){ return; }                       // <0.3 s — ignore stray taps
+  if(len<inRate*0.3){ return; }
   sendAudio(to16kInt16(buf,inRate));
 }
 function to16kInt16(buf,inRate){
@@ -345,61 +481,70 @@ async function sendAudio(pcm){
   try{
     const r=await fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:pcm});
     const j=await r.json();
-    if(j.text){ q.value=(q.value?q.value+' ':'')+j.text; q.dispatchEvent(new Event('input')); q.focus(); q.placeholder='Ваш вопрос агроному…'; }
-    else { q.placeholder='Не расслышал — повторите'; setTimeout(()=>q.placeholder='Ваш вопрос агроному…',2500); }
-  }catch(e){ q.placeholder='Ошибка распознавания'; setTimeout(()=>q.placeholder='Ваш вопрос агроному…',2500); }
+    if(j.text){ q.value=(q.value?q.value+' ':'')+j.text; q.dispatchEvent(new Event('input')); q.focus(); q.placeholder='Вопрос агроному или фото…'; }
+    else { q.placeholder='Не расслышал — повторите'; setTimeout(()=>q.placeholder='Вопрос агроному или фото…',2500); }
+  }catch(e){ q.placeholder='Ошибка распознавания'; setTimeout(()=>q.placeholder='Вопрос агроному или фото…',2500); }
 }
 
-// ---- «Связаться с агрономом» lead form → /api/contact ----
-const cModal=document.getElementById('contactModal');
-const cName=document.getElementById('cName'), cPhone=document.getElementById('cPhone'),
-      cMsg=document.getElementById('cMsg'), cNote=document.getElementById('cNote');
-document.getElementById('contactBtn').onclick=()=>{ cNote.textContent=''; cModal.classList.add('open'); cName.focus(); };
-document.getElementById('cCancel').onclick=()=>cModal.classList.remove('open');
+// ---------- «Связаться с агрономом» ----------
+const cModal=$('contactModal'), cName=$('cName'), cPhone=$('cPhone'), cMsg=$('cMsg'), cNote=$('cNote');
+$('contactBtn').onclick=()=>{ cNote.textContent=''; cModal.classList.add('open'); cName.focus(); };
+$('cCancel').onclick=()=>cModal.classList.remove('open');
 cModal.addEventListener('click', e=>{ if(e.target===cModal) cModal.classList.remove('open'); });
-document.getElementById('cSend').onclick=async()=>{
+$('cSend').onclick=async()=>{
   const name=cName.value.trim(), phone=cPhone.value.trim(), message=cMsg.value.trim();
   if(phone.replace(/\D/g,'').length<5){ cNote.textContent='Укажите телефон для связи.'; cPhone.focus(); return; }
-  const btn=document.getElementById('cSend'); btn.disabled=true; cNote.textContent='Отправляю…';
+  const btn=$('cSend'); btn.disabled=true; cNote.textContent='Отправляю…';
   try{
-    const r=await fetch('/api/contact',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,phone,message})});
-    if(r.ok){ cNote.textContent='Спасибо! Агроном свяжется с вами.';
-      cName.value=''; cPhone.value=''; cMsg.value='';
+    const r=await fetch('/api/contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,message})});
+    if(r.ok){ cNote.textContent='Спасибо! Агроном свяжется с вами.'; cName.value=''; cPhone.value=''; cMsg.value='';
       setTimeout(()=>{ cModal.classList.remove('open'); cNote.textContent=''; }, 1600); }
     else { cNote.textContent='Не удалось отправить — проверьте телефон и попробуйте ещё раз.'; }
   }catch(e){ cNote.textContent='Ошибка сети. Попробуйте ещё раз.'; }
   finally{ btn.disabled=false; }
 };
-document.getElementById('navBack').onclick = () => history.back();
-document.getElementById('navFwd').onclick = () => history.forward();
-document.getElementById('navRefresh').onclick = () => location.reload();
 
-// Header (name · выйти) + the «Проверка» tab for a chief — keeps the top block identical to
-// the other sections. This page itself needs no login (public assistant) → guest fallback.
-(async ()=>{
-  const hdr=document.getElementById('hdrSub'), who=document.getElementById('hdrWho');
+$('navBack').onclick=()=>window.history.back();
+$('navFwd').onclick=()=>window.history.forward();
+$('navRefresh').onclick=()=>location.reload();
+
+// ---------- boot ----------
+async function boot(){
+  const hdr=$('hdrSub'), who=$('hdrWho');
+  add('Здравствуйте! Я ИИ-агроном Flagleaf. Сфотографируйте сорняк, болезнь или вредителя — определю и подскажу, чем обработать это поле. Или спросите текстом/голосом 🎤 — про препараты, ЭПВ, историю и план поля.', 'bot');
+  showHero();
+  // header (name · выйти) + fields — public assistant, so guest is fine
   const guest=()=>{ if(hdr) hdr.textContent='ИИ-агроном'; };
-  const s = localStorage.getItem('flagleaf_session') || '';
-  if(!s){ guest(); return; }
-  let me;
+  if(session){
+    let me=null;
+    try{ me=await api('/api/me'); }catch(e){ session=''; localStorage.removeItem(TOK); }
+    if(me){
+      if(who) who.textContent=me.name||'';
+      if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
+      const lo=$('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem(TOK); location.href='/app/'; };
+      if(me.role==='chief_agronomist'||me.role==='admin'){
+        const nav=$('tabs'); if(nav && !nav.querySelector('.tab-review')){
+          const a=document.createElement('a'); a.className='tab tab-review'; a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
+          try{ const c=await fetch('/api/review/count',{headers:{'x-session':session}}); if(c.ok){ const {count}=await c.json(); if(count>0) a.textContent=`✅ Проверка (${count})`; } }catch(e){}
+        }
+      }
+    } else guest();
+  } else guest();
+  // fields + crops
   try{
-    const r = await fetch('/api/me',{headers:{'x-session':s}});
-    if(!r.ok){ guest(); return; }
-    me = await r.json();
-  }catch(e){ guest(); return; }
-  if(who) who.textContent=me.name||'';
-  if(hdr) hdr.insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
-  const lo=document.getElementById('lo'); if(lo) lo.onclick=()=>{ localStorage.removeItem('flagleaf_session'); location.href='/app/'; };
-  if(me.role==='chief_agronomist' || me.role==='admin'){
-    const nav = document.querySelector('nav.tabs');
-    if(nav && !nav.querySelector('.tab-review')){
-      const a=document.createElement('a'); a.className='tab tab-review';
-      a.href='/app/review.html'; a.textContent='✅ Проверка'; nav.appendChild(a);
-      try{ const c = await fetch('/api/review/count',{headers:{'x-session':s}}); if(c.ok){ const {count}=await c.json(); if(count>0) a.textContent=`✅ Проверка (${count})`; } }catch(e){}
-    }
-  }
-})();
+    const r=await api('/api/fields'); fieldsAll=r.fields||[];
+    $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')+'<option value="">— другое поле —</option>';
+    const merged=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))], seen=new Set(merged.map(c=>c.toLowerCase()));
+    for(const c of CROP_LIST){ if(!seen.has(c.toLowerCase())){ merged.push(c); seen.add(c.toLowerCase()); } }
+    cropSel.innerHTML='<option value="">— культура —</option>'+merged.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    const last=localStorage.getItem('scanField');
+    $('field').value=(last!==null && (last===''||fieldsAll.some(f=>String(f.id)===last))) ? last : '';   // default: другое поле
+    const toggleCrop=()=>cropSel.classList.toggle('hidden',$('field').value!=='');
+    toggleCrop();
+    $('field').onchange=()=>{ localStorage.setItem('scanField',$('field').value); toggleCrop(); clearHint(); };
+  }catch(e){}
+}
+boot();
 </script>
 <script>
 if ('serviceWorker' in navigator) {
