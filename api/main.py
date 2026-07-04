@@ -727,10 +727,24 @@ class FeedReact(BaseModel):
 
 @app.post("/api/feed/{post_id}/react")
 async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
-    """The chief's 👍/👎 — the ground-truth signal that a post + the bot's reply is right/wrong."""
+    """The chief's 👍/👎 — the ground-truth signal, and it drives the labeling gate: 👍 approves
+    the post's submission (pending/rejected → into training), 👎 rejects it (out of training).
+    Purely in-feed — no Telegram ping; the author sees the verdict in the feed."""
     _require_chief(user)
     v = body.verdict if body.verdict in ("up", "down", "none") else "none"
     await set_feed_reaction(post_id, user["id"], v)
+    if v in ("up", "down"):
+        post = await get_feed_post(post_id)
+        if post and post["submission_id"]:
+            try:
+                sub = await get_submission_review(post["submission_id"])
+                if sub:
+                    if v == "down" and sub["status"] != "rejected":
+                        await update_submission(post["submission_id"], status="rejected")
+                    elif v == "up" and sub["status"] in ("pending_review", "rejected"):
+                        await update_submission(post["submission_id"], status=approved_status(sub))
+            except Exception:
+                logger.exception("feed react: submission status update failed")
     return {"ok": True}
 
 

@@ -55,6 +55,9 @@
   .pbtn.on.up{border-color:var(--ok);color:var(--ok)}
   .pbtn.on.down{border-color:var(--bad);color:var(--bad)}
   .pbtn .n{color:var(--muted);font-size:12px}
+  .vbadge{font-size:12px;padding:5px 10px;border-radius:14px;font-weight:500}
+  .vbadge.ok{color:var(--ok);background:#eef5e9;border:1px solid #cfe3c2}
+  .vbadge.bad{color:var(--bad);background:#fbeceb;border:1px solid #f0cfcd}
   .thread{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
   .cmt{font-size:13.5px;line-height:1.45}
   .cmt .ca{font-weight:500}
@@ -167,10 +170,13 @@ function renderPost(p){
   const media = p.media ? (p.is_video
       ? `<video src="${esc(p.media)}" controls playsinline preload="metadata" class="pmedia"></video>`
       : `<img src="${esc(p.media)}" class="pmedia" alt="">`) : '';
-  const react = isChief()
+  // only the chief can react, so any reaction on a post IS his verdict
+  const verdict = p.ups ? '<span class="vbadge ok">✓ подтвердил старший</span>'
+                : p.downs ? '<span class="vbadge bad">✗ отклонил старший</span>' : '';
+  const react = (isChief()
     ? `<button class="pbtn up${p.my_reaction==='up'?' on up':''}" data-v="up">👍 <span class="n">${p.ups||''}</span></button>`+
       `<button class="pbtn down${p.my_reaction==='down'?' on down':''}" data-v="down">👎 <span class="n">${p.downs||''}</span></button>`
-    : ((p.ups||p.downs) ? `<span class="pbtn" style="border:none;cursor:default">👍 ${p.ups} 👎 ${p.downs}</span>` : '');
+    : '') + verdict;
   const bot = p.bot_reply ? `<div class="botreply"><div class="bl">🤖 ИИ-агроном</div>${esc(p.bot_reply)}</div>` : '';
   c.innerHTML=
     `<div class="phead"><span class="pav">${esc(initials(p.author))}</span><span class="pauth">${esc(p.author)}</span>`+
