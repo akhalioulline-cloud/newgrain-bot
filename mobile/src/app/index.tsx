@@ -5,11 +5,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 import { api, getToken, setToken } from '@/lib/api';
 
 const GOLD = '#b9994b', INK = '#1a1a1a', BG = '#faf7f1', LINE = '#e7e2d8', MUTED = '#9a8f7a';
+// dense rounded brand face; system-bundled on iOS, Roboto Black on Android — no font assets needed
+const BRAND_FONT = Platform.select({ ios: 'Avenir Next', android: 'sans-serif-black', default: undefined });
 const softShadow = {
   shadowColor: '#3c280a', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 3,
 };
@@ -41,7 +43,7 @@ function when(iso?: string) {
     ? `сегодня ${t}`
     : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${t}`;
 }
-function Logo({ size = 18 }: { size?: number }) {
+function Logo({ size = 20 }: { size?: number }) {
   return <Text style={[styles.logo, { fontSize: size }]}><Text style={{ color: GOLD }}>E</Text>AR</Text>;
 }
 
@@ -150,7 +152,7 @@ function Main({ onLogout }: { onLogout: () => void }) {
                 <Text style={styles.backTxt}>Чаты</Text>
               </Pressable>
               <View style={[styles.rowAv, open === 'feed' ? styles.avGroup : styles.avBot]}>
-                {open === 'feed' ? <Ionicons name="people" size={17} color="#fff" /> : <MaterialCommunityIcons name="robot-outline" size={17} color="#fff" />}
+                {open === 'feed' ? <Ionicons name="people" size={17} color="#fff" /> : <Ionicons name="leaf" size={17} color={GOLD} />}
               </View>
               <Text style={styles.chatHdrTitle} numberOfLines={1}>{open === 'feed' ? 'Лента команды' : 'Flagleaf · ИИ-агроном'}</Text>
             </View>
@@ -177,7 +179,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
           icon={<Ionicons name="people" size={24} color="#fff" />}
           title="Лента команды" pinned time={when(last?.created_at)} preview={feedPreview} />
         <ChatRow onPress={() => onOpen('dm')} avStyle={styles.avBot}
-          icon={<MaterialCommunityIcons name="robot-outline" size={23} color="#fff" />}
+          icon={<Ionicons name="leaf" size={24} color={GOLD} />}
           title="Flagleaf · ИИ-агроном" preview="Личный чат: препараты, ЭПВ, история и план поля" />
       </ScrollView>
 
@@ -278,7 +280,7 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
         : <Image source={{ uri: p.media }} style={styles.pmedia} resizeMode="cover" />)}
       {(p.thread || []).filter((cm: any) => cm.is_bot).slice(0, 1).map((cm: any) => (
         <View key={cm.id} style={styles.botPanel}>
-          <View style={styles.botLabel}><MaterialCommunityIcons name="robot-outline" size={15} color="#9a7b1e" /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
+          <View style={styles.botLabel}><Ionicons name="leaf" size={14} color="#9a7b1e" /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
           <Text style={styles.botTxt}>{cm.body}</Text>
         </View>
       ))}
@@ -345,7 +347,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
-  logo: { fontWeight: '700', letterSpacing: 4, color: INK },
+  logo: { fontFamily: BRAND_FONT, fontWeight: '900', letterSpacing: 0.8, color: INK },
   off: { opacity: 0.5 },
   // login
   h1: { fontSize: 22, fontWeight: '600', marginTop: 18, color: INK },
@@ -368,7 +370,7 @@ const styles = StyleSheet.create({
   avGroup: { backgroundColor: GOLD },
   avBot: { backgroundColor: INK },
   rowTop: { flexDirection: 'row', alignItems: 'center' },
-  rowTitle: { fontSize: 16.5, fontWeight: '700', color: INK, flexShrink: 1 },
+  rowTitle: { fontSize: 16.5, fontFamily: BRAND_FONT, fontWeight: '800', color: INK, flexShrink: 1 },
   rowTime: { fontSize: 12, color: MUTED },
   rowPreview: { fontSize: 14, color: MUTED, marginTop: 3 },
   // chat header (inside an open conversation)
@@ -376,7 +378,7 @@ const styles = StyleSheet.create({
   chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4, paddingRight: 16, paddingVertical: 9, gap: 8 },
   backBtn: { paddingVertical: 6, paddingRight: 6, flexDirection: 'row', alignItems: 'center' },
   backTxt: { fontSize: 17, color: GOLD, marginLeft: -3 },
-  chatHdrTitle: { fontSize: 16, fontWeight: '700', color: INK, flexShrink: 1 },
+  chatHdrTitle: { fontSize: 16, fontFamily: BRAND_FONT, fontWeight: '800', color: INK, flexShrink: 1 },
   edgeStrip: { position: 'absolute', left: 0, bottom: 0, width: 30 },
   empty: { textAlign: 'center', color: MUTED, fontSize: 14, padding: 24, lineHeight: 20 },
   // post card
@@ -391,7 +393,7 @@ const styles = StyleSheet.create({
   videoBox: { height: 140, borderRadius: 16, backgroundColor: '#dfe6d3', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
   botPanel: { backgroundColor: '#faf4e6', borderRadius: 18, padding: 12, marginTop: 11 },
   botLabel: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  botLabelTxt: { color: '#9a7b1e', fontSize: 12, fontWeight: '600' },
+  botLabelTxt: { color: '#9a7b1e', fontSize: 12.5, fontFamily: BRAND_FONT, fontWeight: '800', letterSpacing: 0.3 },
   botTxt: { fontSize: 13.5, lineHeight: 20, color: '#2a2418' },
   actRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 11 },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20 },
