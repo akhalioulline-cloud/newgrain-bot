@@ -196,13 +196,14 @@ async function pickMedia(): Promise<ImagePicker.ImagePickerAsset | null> {
         const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images', 'videos'], quality: 0.7, videoMaxDuration: 60 };
         const res = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
         if (res.canceled) { resolve(null); return; }
-        if (camera) {
-          try {   // camera shots also land in the phone's gallery (best-effort, never blocks the upload)
-            const perm = await MediaLibrary.requestPermissionsAsync(true);
-            if (perm.granted) await MediaLibrary.saveToLibraryAsync(res.assets[0].uri);
-          } catch {}
+        resolve(res.assets[0]);   // upload starts immediately — gallery save must never block it
+        if (camera) {             // fire-and-forget: camera shots also land in the phone's gallery
+          setTimeout(() => {
+            MediaLibrary.requestPermissionsAsync(true)
+              .then((perm) => { if (perm.granted) return MediaLibrary.saveToLibraryAsync(res.assets[0].uri); })
+              .catch(() => {});
+          }, 600);
         }
-        resolve(res.assets[0]);
       } catch { resolve(null); }
     };
     Alert.alert('Фото или видео', 'Снимок уйдёт в ленту — Flagleaf распознает и сохранит для обучения.', [
