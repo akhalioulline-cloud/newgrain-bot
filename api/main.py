@@ -59,6 +59,10 @@ from bot.db import (
     get_feed_comments,
     get_feed_comments_bulk,
     get_feed_post,
+    get_dm_peers,
+    get_dm_messages,
+    send_dm,
+    get_farm_user,
 )
 from bot import flagleaf
 from bot.flagleaf import _field_route      # Flagleaf owns field-routing now (also used by /api/chat)
@@ -751,6 +755,48 @@ async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
             except Exception:
                 logger.exception("feed react: submission status update failed")
     return {"ok": True}
+
+
+# ── Person-to-person DMs (agronomist ↔ agronomist, human-only) ───────────────────
+class DmSend(BaseModel):
+    body: str
+
+
+@app.get("/api/dm/threads")
+async def dm_threads(user=Depends(require_user)):
+    """Teammates as chat rows: last message + unread count (whole farm — team is small)."""
+    rows = await get_dm_peers(user["farm_id"], user["id"])
+    return {"peers": [
+        {"id": r["id"], "name": r["name"], "role": r["role"],
+         "last_body": r["last_body"], "last_at": r["last_at"].isoformat() if r["last_at"] else None,
+         "last_mine": r["last_sender"] == user["id"] if r["last_sender"] is not None else False,
+         "unread": r["unread"]}
+        for r in rows]}
+
+
+@app.get("/api/dm/with/{peer_id}")
+async def dm_thread(peer_id: int, user=Depends(require_user)):
+    peer = await get_farm_user(user["farm_id"], peer_id)
+    if not peer:
+        raise HTTPException(404, "Нет такого участника.")
+    msgs = await get_dm_messages(user["id"], peer_id)
+    return {"peer": {"id": peer["id"], "name": peer["full_name"], "role": peer["role"]},
+            "messages": [{"id": m["id"], "mine": m["sender_id"] == user["id"], "body": m["body"],
+                          "created_at": m["created_at"].isoformat()} for m in msgs]}
+
+
+@app.post("/api/dm/with/{peer_id}")
+async def dm_send(peer_id: int, body: DmSend, user=Depends(require_user)):
+    txt = (body.body or "").strip()
+    if not txt:
+        raise HTTPException(400, "Пустое сообщение.")
+    if len(txt) > 4000:
+        raise HTTPException(413, "Слишком длинное сообщение.")
+    peer = await get_farm_user(user["farm_id"], peer_id)
+    if not peer:
+        raise HTTPException(404, "Нет такого участника.")
+    row = await send_dm(user["farm_id"], user["id"], peer_id, txt)
+    return {"ok": True, "id": row["id"], "created_at": row["created_at"].isoformat()}
 
 
 @app.post("/api/chat")

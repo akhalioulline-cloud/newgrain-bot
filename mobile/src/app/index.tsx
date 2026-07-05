@@ -103,15 +103,17 @@ function Login({ onDone }: { onDone: () => void }) {
 }
 
 // ─────────────────────────── logged-in shell ───────────────────────────
+type Chat = { kind: 'feed' } | { kind: 'bot' } | { kind: 'person'; id: number; name: string };
+
 function Main({ onLogout }: { onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [me, setMe] = useState<any>(null);
-  const [open, setOpen] = useState<null | 'feed' | 'dm'>(null);
+  const [open, setOpen] = useState<null | Chat>(null);
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); }, []);
   const headerPad = insets.top + 52;
-  const openChat = (t: 'feed' | 'dm') => {
+  const openChat = (t: Chat) => {
     setOpen(t);
     Animated.timing(slide, { toValue: 1, duration: 240, useNativeDriver: true }).start();
   };
@@ -142,19 +144,23 @@ function Main({ onLogout }: { onLogout: () => void }) {
 
       {open && (
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: BG, zIndex: 20, elevation: 20, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}>
-          {open === 'feed'
-            ? <FeedView onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />
-            : <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
+          {open.kind === 'feed' && <FeedView onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />}
+          {open.kind === 'bot' && <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
+          {open.kind === 'person' && <PersonView peer={open} headerPad={headerPad} bottomInset={insets.bottom} />}
           <View style={[styles.headerGlass, styles.chatHdrBg, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
             <View style={styles.chatHdrRow}>
               <Pressable onPress={back} hitSlop={14} style={styles.backBtn}>
                 <Ionicons name="chevron-back" size={28} color={GOLD} />
                 <Text style={styles.backTxt}>Чаты</Text>
               </Pressable>
-              <View style={[styles.rowAv, open === 'feed' ? styles.avGroup : styles.avBot]}>
-                {open === 'feed' ? <Ionicons name="people" size={17} color="#fff" /> : <Ionicons name="leaf" size={17} color={GOLD} />}
+              <View style={[styles.rowAv, open.kind === 'bot' ? styles.avBot : styles.avGroup]}>
+                {open.kind === 'feed' ? <Ionicons name="people" size={17} color="#fff" />
+                  : open.kind === 'bot' ? <Ionicons name="leaf" size={17} color={GOLD} />
+                  : <Text style={styles.avInitialsSm}>{initials(open.name)}</Text>}
               </View>
-              <Text style={styles.chatHdrTitle} numberOfLines={1}>{open === 'feed' ? 'Лента команды' : 'Flagleaf · ИИ-агроном'}</Text>
+              <Text style={styles.chatHdrTitle} numberOfLines={1}>
+                {open.kind === 'feed' ? 'Лента команды' : open.kind === 'bot' ? 'Flagleaf · ИИ-агроном' : open.name}
+              </Text>
             </View>
           </View>
           <View {...swipe.panHandlers} style={[styles.edgeStrip, { top: headerPad }]} />
@@ -166,21 +172,37 @@ function Main({ onLogout }: { onLogout: () => void }) {
 
 // ─────────────────────── chat list (home) ───────────────────────
 function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
-  { me: any; onLogout: () => void; onOpen: (t: 'feed' | 'dm') => void; headerPad: number; insetsTop: number; bottomInset: number }) {
+  { me: any; onLogout: () => void; onOpen: (t: Chat) => void; headerPad: number; insetsTop: number; bottomInset: number }) {
   const [last, setLast] = useState<any>(null);
-  useEffect(() => { api.get('/api/feed').then((d) => setLast((d.posts || [])[0] || null)).catch(() => {}); }, []);
+  const [peers, setPeers] = useState<any[]>([]);
+  const load = useCallback(() => {
+    api.get('/api/feed').then((d) => setLast((d.posts || [])[0] || null)).catch(() => {});
+    api.get('/api/dm/threads').then((d) => setPeers(d.peers || [])).catch(() => {});
+  }, []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 20000);   // keep previews + unread badges fresh
+    return () => clearInterval(t);
+  }, [load]);
   const feedPreview = last
     ? `${last.author || ''}: ${last.body || (last.is_video ? '🎥 видео' : last.media ? '📷 фото' : '…')}`.trim()
     : 'Наблюдения команды, ответы ИИ, проверка старшим';
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingTop: headerPad + 6, paddingBottom: bottomInset + 16 }}>
-        <ChatRow onPress={() => onOpen('feed')} avStyle={styles.avGroup}
+        <ChatRow onPress={() => onOpen({ kind: 'feed' })} avStyle={styles.avGroup}
           icon={<Ionicons name="people" size={24} color="#fff" />}
           title="Лента команды" pinned time={when(last?.created_at)} preview={feedPreview} />
-        <ChatRow onPress={() => onOpen('dm')} avStyle={styles.avBot}
+        <ChatRow onPress={() => onOpen({ kind: 'bot' })} avStyle={styles.avBot}
           icon={<Ionicons name="leaf" size={24} color={GOLD} />}
           title="Flagleaf · ИИ-агроном" preview="Личный чат: препараты, ЭПВ, история и план поля" />
+        {peers.map((p) => (
+          <ChatRow key={p.id} onPress={() => onOpen({ kind: 'person', id: p.id, name: p.name })}
+            avStyle={styles.avPerson} icon={<Text style={styles.avInitials}>{initials(p.name)}</Text>}
+            title={p.name} time={p.last_at ? when(p.last_at) : undefined}
+            preview={p.last_body ? `${p.last_mine ? 'Вы: ' : ''}${p.last_body}` : (p.role === 'admin' ? 'руководитель' : 'агроном')}
+            unread={p.unread} />
+        ))}
       </ScrollView>
 
       <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insetsTop, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
@@ -192,8 +214,8 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
     </View>
   );
 }
-function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned }:
-  { onPress: () => void; icon: any; avStyle: any; title: string; preview: string; time?: string; pinned?: boolean }) {
+function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned, unread }:
+  { onPress: () => void; icon: any; avStyle: any; title: string; preview: string; time?: string; pinned?: boolean; unread?: number }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.chatRow, pressed && { backgroundColor: 'rgba(120,90,30,0.05)' }]}>
       <View style={[styles.rowAvLg, avStyle]}>{icon}</View>
@@ -204,7 +226,10 @@ function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned }:
           <View style={{ flex: 1 }} />
           {!!time && <Text style={styles.rowTime}>{time}</Text>}
         </View>
-        <Text style={styles.rowPreview} numberOfLines={1}>{preview}</Text>
+        <View style={styles.rowTop}>
+          <Text style={[styles.rowPreview, { flex: 1 }]} numberOfLines={1}>{preview}</Text>
+          {!!unread && <View style={styles.unreadBadge}><Text style={styles.unreadTxt}>{unread}</Text></View>}
+        </View>
       </View>
     </Pressable>
   );
@@ -245,7 +270,7 @@ function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; 
         <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)} style={StyleSheet.absoluteFill}
           contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
-          ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text>} />
+          ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text></View>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
         <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
@@ -344,6 +369,50 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   );
 }
 
+// ─────────────────── person DM (agronomist ↔ agronomist) ───────────────────
+function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name: string }; headerPad: number; bottomInset: number }) {
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const kbOpen = useKeyboardOpen();
+  const load = useCallback(async () => {
+    try { const d = await api.get(`/api/dm/with/${peer.id}`); setMsgs(d.messages || []); }
+    catch {} finally { setLoading(false); }
+  }, [peer.id]);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 6000);    // near-live: poll the thread while it's open
+    return () => clearInterval(t);
+  }, [load]);
+  const send = async () => {
+    const b = text.trim(); if (!b || busy) return; setText(''); setBusy(true);
+    setMsgs((m) => [...m, { id: `tmp-${m.length}`, mine: true, body: b }]);
+    try { await api.postJson(`/api/dm/with/${peer.id}`, { body: b }); await load(); }
+    catch {} finally { setBusy(false); }
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      {loading ? <View style={styles.center}><ActivityIndicator color={GOLD} /></View> : (
+        <FlatList data={[...msgs].reverse()} inverted keyExtractor={(m) => String(m.id)} style={StyleSheet.absoluteFill}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <View style={[styles.bubble, item.mine ? styles.bubbleUser : styles.bubbleBot]}>
+              <Text style={item.mine ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.body}</Text>
+              {!!item.created_at && <Text style={[styles.bubbleTime, item.mine && { color: 'rgba(255,255,255,0.55)' }]}>{when(item.created_at)}</Text>}
+            </View>
+          )}
+          ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text></View>} />
+      )}
+      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
+        <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
+          <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Сообщение…" />
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
@@ -369,6 +438,13 @@ const styles = StyleSheet.create({
   rowAv: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   avGroup: { backgroundColor: GOLD },
   avBot: { backgroundColor: INK },
+  avPerson: { backgroundColor: '#e8dfc8' },
+  avInitials: { color: '#6b541f', fontFamily: BRAND_FONT, fontWeight: '800', fontSize: 17 },
+  avInitialsSm: { color: '#fff', fontFamily: BRAND_FONT, fontWeight: '800', fontSize: 13 },
+  unreadBadge: { minWidth: 21, height: 21, borderRadius: 11, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginLeft: 8, marginTop: 3 },
+  unreadTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  flip: { transform: [{ scaleY: -1 }] },
+  bubbleTime: { fontSize: 10.5, color: MUTED, marginTop: 3, alignSelf: 'flex-end' },
   rowTop: { flexDirection: 'row', alignItems: 'center' },
   rowTitle: { fontSize: 16.5, fontFamily: BRAND_FONT, fontWeight: '800', color: INK, flexShrink: 1 },
   rowTime: { fontSize: 12, color: MUTED },

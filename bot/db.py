@@ -1193,6 +1193,54 @@ async def get_feed_post(post_id):
             "WHERE p.id=:p"), {"p": post_id})).mappings().first()
 
 
+async def get_dm_peers(farm_id, me_id):
+    """Teammates on the farm (active, not me) with last-message preview + unread count —
+    the person-to-person rows on the chat-list home. Team is pilot-small, so everyone
+    is listed whether or not a conversation exists yet."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT u.id, u.full_name AS name, u.role, "
+            "       lm.body AS last_body, lm.created_at AS last_at, lm.sender_id AS last_sender, "
+            "       (SELECT count(*) FROM dm_messages m WHERE m.sender_id=u.id AND m.recipient_id=:me AND m.read_at IS NULL) AS unread "
+            "FROM users u "
+            "LEFT JOIN LATERAL (SELECT body, created_at, sender_id FROM dm_messages m "
+            "                   WHERE (m.sender_id=u.id AND m.recipient_id=:me) OR (m.sender_id=:me AND m.recipient_id=u.id) "
+            "                   ORDER BY m.created_at DESC LIMIT 1) lm ON true "
+            "WHERE u.farm_id=:farm AND u.is_active AND u.id<>:me "
+            "ORDER BY lm.created_at DESC NULLS LAST, u.full_name"),
+            {"farm": farm_id, "me": me_id})).mappings().all()
+
+
+async def get_dm_messages(me_id, peer_id, limit=200):
+    """Thread between me and a teammate (chronological) — and mark their messages read."""
+    async with engine.begin() as conn:
+        rows = (await conn.execute(text(
+            "SELECT id, sender_id, body, created_at FROM dm_messages "
+            "WHERE (sender_id=:me AND recipient_id=:peer) OR (sender_id=:peer AND recipient_id=:me) "
+            "ORDER BY created_at DESC LIMIT :lim"),
+            {"me": me_id, "peer": peer_id, "lim": limit})).mappings().all()
+        await conn.execute(text(
+            "UPDATE dm_messages SET read_at=now() WHERE sender_id=:peer AND recipient_id=:me AND read_at IS NULL"),
+            {"me": me_id, "peer": peer_id})
+    return list(reversed(rows))
+
+
+async def send_dm(farm_id, me_id, peer_id, body):
+    async with engine.begin() as conn:
+        return (await conn.execute(text(
+            "INSERT INTO dm_messages (farm_id, sender_id, recipient_id, body) "
+            "VALUES (:farm, :me, :peer, :body) RETURNING id, created_at"),
+            {"farm": farm_id, "me": me_id, "peer": peer_id, "body": body})).mappings().first()
+
+
+async def get_farm_user(farm_id, user_id):
+    """A teammate by users.id, farm-scoped (so you can only DM within your farm)."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT id, full_name, role FROM users WHERE id=:u AND farm_id=:farm AND is_active"),
+            {"u": user_id, "farm": farm_id})).mappings().first()
+
+
 async def get_team_progress():
     """Team-wide totals for the collective goal: photos collected toward the model
     (everything not draft/rejected/duplicate) and how many reached training (labeled)."""
