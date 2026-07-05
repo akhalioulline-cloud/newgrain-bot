@@ -541,6 +541,33 @@ function WallMsg({ m, mine, chief, onReply, onReact, onZoom }:
   );
 }
 
+// swipe a message left to reply (drag follows the finger, springs back; long-press still works)
+function SwipeReply({ onReply, children }: { onReply: () => void; children: any }) {
+  const { t } = useTheme();
+  const tx = useRef(new Animated.Value(0)).current;
+  const fired = useRef(false);
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => g.dx < -12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
+    onPanResponderGrant: () => { fired.current = false; },
+    onPanResponderMove: (_e, g) => {
+      const d = Math.max(g.dx, -82);
+      tx.setValue(d);
+      if (!fired.current && d <= -56) { fired.current = true; onReply(); }   // fire once at threshold
+    },
+    onPanResponderRelease: () => Animated.spring(tx, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start(),
+    onPanResponderTerminate: () => Animated.spring(tx, { toValue: 0, useNativeDriver: true }).start(),
+  }), [onReply, tx]);
+  const iconOpacity = tx.interpolate({ inputRange: [-56, -20, 0], outputRange: [1, 0.25, 0] });
+  return (
+    <View>
+      <Animated.View style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center', opacity: iconOpacity }}>
+        <Ionicons name="arrow-undo" size={20} color={t.gold} />
+      </Animated.View>
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...pan.panHandlers}>{children}</Animated.View>
+    </View>
+  );
+}
+
 function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout: () => void; headerPad: number; bottomInset: number }) {
   const { t, styles } = useTheme();
   const [msgs, setMsgs] = useState<any[]>([]);
@@ -626,7 +653,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
             ? <View style={styles.botWrap}><View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View><Text style={styles.botTxt}>смотрит и отвечает…</Text></View>
             : item.sep
               ? <Text style={styles.daySep}>{item.sep}</Text>
-              : <WallMsg m={item} mine={item.author_id === me?.id} chief={chief} onReply={startReply} onReact={react} onZoom={setZoom} />}
+              : <SwipeReply onReply={() => startReply(item)}><WallMsg m={item} mine={item.author_id === me?.id} chief={chief} onReply={startReply} onReact={react} onZoom={setZoom} /></SwipeReply>}
           ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Сфотографируйте растение или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</Text></View>} />
       )}
       <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
