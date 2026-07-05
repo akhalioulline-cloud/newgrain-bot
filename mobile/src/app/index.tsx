@@ -139,7 +139,7 @@ function Main({ onLogout }: { onLogout: () => void }) {
       <ChatList me={me} onLogout={onLogout} onOpen={openChat} headerPad={headerPad} insetsTop={insets.top} bottomInset={insets.bottom} />
 
       {open && (
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: BG, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: BG, zIndex: 20, elevation: 20, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}>
           {open === 'feed'
             ? <FeedView onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />
             : <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
