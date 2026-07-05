@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform,
-  Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
+  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, PanResponder,
+  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -117,6 +117,23 @@ function Main({ onLogout }: { onLogout: () => void }) {
     Keyboard.dismiss();
     Animated.timing(slide, { toValue: 0, duration: 210, useNativeDriver: true }).start(({ finished }) => { if (finished) setOpen(null); });
   };
+  // swipe from the left edge to go back (drag follows the finger, Telegram-style)
+  const swipe = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) =>
+      g.dx > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5 && g.moveX - g.dx < 32,
+    onPanResponderMove: (_e, g) => slide.setValue(1 - Math.min(Math.max(g.dx / width, 0), 1)),
+    onPanResponderRelease: (_e, g) => {
+      if (g.dx > width / 3 || g.vx > 0.6) {
+        Keyboard.dismiss();
+        Animated.timing(slide, { toValue: 0, duration: 160, useNativeDriver: true }).start(({ finished }) => { if (finished) setOpen(null); });
+      } else {
+        Animated.timing(slide, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+      }
+    },
+    onPanResponderTerminate: () => {
+      Animated.timing(slide, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+    },
+  }), [width, slide]);
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
       <ChatList me={me} onLogout={onLogout} onOpen={openChat} headerPad={headerPad} insetsTop={insets.top} bottomInset={insets.bottom} />
@@ -126,10 +143,10 @@ function Main({ onLogout }: { onLogout: () => void }) {
           {open === 'feed'
             ? <FeedView onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />
             : <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
-          <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
+          <View style={[styles.headerGlass, styles.chatHdrBg, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
             <View style={styles.chatHdrRow}>
               <Pressable onPress={back} hitSlop={14} style={styles.backBtn}>
-                <Ionicons name="chevron-back" size={27} color={GOLD} />
+                <Ionicons name="chevron-back" size={28} color={GOLD} />
                 <Text style={styles.backTxt}>Чаты</Text>
               </Pressable>
               <View style={[styles.rowAv, open === 'feed' ? styles.avGroup : styles.avBot]}>
@@ -137,7 +154,8 @@ function Main({ onLogout }: { onLogout: () => void }) {
               </View>
               <Text style={styles.chatHdrTitle} numberOfLines={1}>{open === 'feed' ? 'Лента команды' : 'Flagleaf · ИИ-агроном'}</Text>
             </View>
-          </BlurView>
+          </View>
+          <View {...swipe.panHandlers} style={[styles.edgeStrip, { top: headerPad }]} />
         </Animated.View>
       )}
     </View>
@@ -354,10 +372,12 @@ const styles = StyleSheet.create({
   rowTime: { fontSize: 12, color: MUTED },
   rowPreview: { fontSize: 14, color: MUTED, marginTop: 3 },
   // chat header (inside an open conversation)
-  chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 6, paddingRight: 16, paddingVertical: 9, gap: 9 },
-  backBtn: { padding: 2, flexDirection: 'row', alignItems: 'center' },
-  backTxt: { fontSize: 16, color: GOLD, marginLeft: -2 },
+  chatHdrBg: { backgroundColor: 'rgba(250,247,241,0.96)' },
+  chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4, paddingRight: 16, paddingVertical: 9, gap: 8 },
+  backBtn: { paddingVertical: 6, paddingRight: 6, flexDirection: 'row', alignItems: 'center' },
+  backTxt: { fontSize: 17, color: GOLD, marginLeft: -3 },
   chatHdrTitle: { fontSize: 16, fontWeight: '700', color: INK, flexShrink: 1 },
+  edgeStrip: { position: 'absolute', left: 0, bottom: 0, width: 30 },
   empty: { textAlign: 'center', color: MUTED, fontSize: 14, padding: 24, lineHeight: 20 },
   // post card
   post: { backgroundColor: '#fff', borderRadius: 22, padding: 14, ...softShadow },
