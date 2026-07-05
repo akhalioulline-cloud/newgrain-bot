@@ -22,7 +22,7 @@ from io import BytesIO
 import requests
 from PIL import Image, ImageOps
 
-from bot.agro_chat import _complete, _literature_grounding, _registry_grounding
+from bot.agro_chat import _complete, _extract_ct, _literature_grounding, _registry_grounding
 from bot.config import settings
 
 logger = logging.getLogger("bot.diagnose")
@@ -220,7 +220,7 @@ async def _compose(vd: dict, question: str | None, crop: str | None,
                    else f"чем бороться с {cls} сорняками")
     else:
         synth_q = (f"чем обработать {crop} от {target}" if crop else f"чем бороться с {target}")
-    grounding = await _registry_grounding(synth_q)
+    grounding = await _registry_grounding(synth_q, await _extract_ct(synth_q))
     literature = await _literature_grounding(f"{target} {crop or ''}")
 
     ctx = [f"КОММЕНТАРИЙ АГРОНОМА (вопрос или наблюдение): {question or 'что это и как с этим бороться?'}",

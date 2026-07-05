@@ -68,6 +68,7 @@ from bot.db import (
     save_push_token,
     get_push_tokens,
     delete_push_token,
+    get_submission_image_url,
 )
 from bot import flagleaf
 from bot.flagleaf import _field_route      # Flagleaf owns field-routing now (also used by /api/chat)
@@ -80,7 +81,7 @@ from bot.email_send import email_enabled, send_login_code
 from bot.field_plan import generate_field_plan
 from bot.push import push_enabled, send_push
 from bot.review_actions import approved_status, notify_submitter_decision
-from bot.storage import presigned_get, upload_bytes
+from bot.storage import download_bytes, presigned_get, upload_bytes
 from bot.transcribe import transcribe_lpcm
 from labeling import alert
 
@@ -729,8 +730,16 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
             b = (c["body"] or "").strip()
             if b:
                 hist.append(f"{who}: {b[:1200]}")
+        img = None
+        if post["submission_id"] and not post["is_video"]:
+            try:                                      # re-look at the post's photo, don't answer blind
+                u = await get_submission_image_url(post["submission_id"])
+                if u:
+                    img = await download_bytes(u)
+            except Exception:
+                logger.exception("feed comment: photo re-fetch failed")
         reply = await flagleaf.respond(flagleaf.Context(
-            text=flagleaf.strip_address(txt), crop=(post["crop"] or None),
+            image=img, text=flagleaf.strip_address(txt), crop=(post["crop"] or None),
             field_hint=(post["field_name"] or None), history="\n".join(hist)[-4000:] or None))
         if reply:
             await add_feed_comment(post_id, None, True, reply)

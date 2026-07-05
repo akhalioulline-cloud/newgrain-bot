@@ -485,9 +485,10 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
   const { t, styles } = useTheme();
   const [c, setC] = useState('');
   const [sending, setSending] = useState(false);
+  const [lastSent, setLastSent] = useState('');
   const [zoomed, setZoomed] = useState(false);
   const addComment = async () => {
-    const b = c.trim(); if (!b) return; setC(''); setSending(true);
+    const b = c.trim(); if (!b) return; setC(''); setLastSent(b); setSending(true);
     try { await api.postJson(`/api/feed/${p.id}/comment`, { body: b }); onChanged(); } catch {} finally { setSending(false); }
   };
   return (
@@ -540,9 +541,17 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
           <Text style={styles.cb}><Text style={styles.ca}>{cm.author}{cm.chief ? ' • старший' : ''}</Text>  {cm.body}</Text>
         </View>
       ))}
+      {sending && /^\s*(бот|bot|флаглиф|flagleaf)\b/i.test(lastSent) && (
+        <View style={styles.botPanel}>
+          <View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
+          <Text style={styles.botTxt}>смотрит и отвечает…</Text>
+        </View>
+      )}
       <View style={styles.cmtForm}>
         <TextInput style={styles.cinputSm} value={c} onChangeText={setC} placeholder="Ответить… («бот …» — спросить ИИ)" placeholderTextColor={t.muted} />
-        <Pressable style={[styles.sendSm, sending && styles.off]} onPress={addComment} disabled={sending}><Ionicons name="arrow-up" size={18} color="#fff" /></Pressable>
+        <Pressable style={[styles.sendSm, sending && styles.off]} onPress={addComment} disabled={sending}>
+          {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={18} color="#fff" />}
+        </Pressable>
       </View>
     </View>
   );
