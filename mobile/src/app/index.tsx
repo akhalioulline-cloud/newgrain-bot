@@ -7,6 +7,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 
 import { api, getToken, setToken } from '@/lib/api';
@@ -194,7 +195,14 @@ async function pickMedia(): Promise<ImagePicker.ImagePickerAsset | null> {
         if (!perm.granted) { resolve(null); return; }
         const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images', 'videos'], quality: 0.7, videoMaxDuration: 60 };
         const res = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
-        resolve(res.canceled ? null : res.assets[0]);
+        if (res.canceled) { resolve(null); return; }
+        if (camera) {
+          try {   // camera shots also land in the phone's gallery (best-effort, never blocks the upload)
+            const perm = await MediaLibrary.requestPermissionsAsync(true);
+            if (perm.granted) await MediaLibrary.saveToLibraryAsync(res.assets[0].uri);
+          } catch {}
+        }
+        resolve(res.assets[0]);
       } catch { resolve(null); }
     };
     Alert.alert('Фото или видео', 'Снимок уйдёт в ленту — Flagleaf распознает и сохранит для обучения.', [

@@ -11,6 +11,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Камера нужна, чтобы фотографировать растения для распознавания и ленты команды.",
         "NSPhotoLibraryUsageDescription": "Доступ к галерее нужен, чтобы отправлять фото растений в ленту команды.",
+        "NSPhotoLibraryAddUsageDescription": "Снимки из камеры EAR сохраняются в вашу галерею.",
         "NSMicrophoneUsageDescription": "Микрофон нужен для записи видео с голосовым комментарием."
       }
     },
