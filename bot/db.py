@@ -1166,7 +1166,7 @@ async def get_feed(farm_id, viewer_id, limit=60):
 async def get_feed_comments(post_id):
     async with engine.connect() as conn:
         return (await conn.execute(text(
-            "SELECT c.id, c.is_bot, c.body, c.created_at, u.full_name AS author, u.role AS author_role "
+            "SELECT c.id, c.is_bot, c.author_id, c.body, c.created_at, u.full_name AS author, u.role AS author_role "
             "FROM feed_comments c LEFT JOIN users u ON u.id=c.author_id "
             "WHERE c.post_id=:p ORDER BY c.created_at"), {"p": post_id})).mappings().all()
 
@@ -1177,7 +1177,7 @@ async def get_feed_comments_bulk(post_ids):
         return []
     async with engine.connect() as conn:
         return (await conn.execute(text(
-            "SELECT c.post_id, c.id, c.is_bot, c.body, c.created_at, u.full_name AS author, u.role AS author_role "
+            "SELECT c.post_id, c.id, c.is_bot, c.author_id, c.body, c.created_at, u.full_name AS author, u.role AS author_role "
             "FROM feed_comments c LEFT JOIN users u ON u.id=c.author_id "
             "WHERE c.post_id = ANY(:ids) ORDER BY c.created_at"),
             {"ids": list(post_ids)})).mappings().all()

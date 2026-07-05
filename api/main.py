@@ -639,7 +639,9 @@ async def feed_list(user=Depends(require_user)):
     rows = await get_feed(user["farm_id"], user["id"], 60)
     ids = [r["id"] for r in rows]
     threads = {}
+    raw_thread = {}
     for c in await get_feed_comments_bulk(ids):
+        raw_thread.setdefault(c["post_id"], []).append(c)
         threads.setdefault(c["post_id"], []).append({
             "id": c["id"], "is_bot": c["is_bot"],
             "author": ("Flagleaf" if c["is_bot"] else c["author"]),
@@ -647,11 +649,22 @@ async def feed_list(user=Depends(require_user)):
             "body": c["body"],
             "created_at": c["created_at"].isoformat() if c["created_at"] else None,
         })
+
+    def _bot_follows(post_id, post_author_id):
+        # would an un-prefixed reply by THIS viewer get a bot answer? (mirrors feed_comment's rule)
+        thr = raw_thread.get(post_id, [])
+        if not any(c["is_bot"] for c in thr):
+            return False
+        humans = {c["author_id"] for c in thr if not c["is_bot"] and c["author_id"] is not None}
+        humans.add(user["id"])
+        return humans <= {post_author_id}
+
     posts = [{
         "id": r["id"], "author": r["author"], "author_id": r["author_id"],
         "body": r["body"], "field": r["field_name"],
         "media": _presign(r["image_url"]), "is_video": bool(r["is_video"]),
         "thread": threads.get(r["id"], []),
+        "bot_follows": _bot_follows(r["id"], r["author_id"]),
         "ups": r["ups"], "downs": r["downs"], "my_reaction": r["my_reaction"],
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
     } for r in rows]
@@ -732,11 +745,15 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
     await add_feed_comment(post_id, user["id"], False, txt)
     if post["author_id"] != user["id"]:
         _push_bg([post["author_id"]], f"{user['full_name']} — в ленте", txt)
-    # The bot answers when called («бот …») — or when it spoke LAST in the thread, because a
-    # reply right after the bot's answer is a follow-up to the bot. Once humans talk among
-    # themselves (last message is human), it stays silent again unless called.
-    follow_up = bool(prior) and bool(prior[-1]["is_bot"])
-    if flagleaf.addressed(txt) or follow_up:
+    # The bot answers when called («бот …») — or as a natural follow-up while the thread is still
+    # a private Q&A between the post's author and the bot. As soon as another teammate joins the
+    # thread it becomes a human discussion and the bot goes quiet unless explicitly called. This
+    # is robust to an unanswered human message in between (no "poisoned thread").
+    bot_spoke = any(c["is_bot"] for c in prior)
+    humans = {c["author_id"] for c in prior if not c["is_bot"] and c["author_id"] is not None}
+    humans.add(user["id"])
+    solo_with_bot = bot_spoke and humans <= {post["author_id"]}
+    if flagleaf.addressed(txt) or solo_with_bot:
         # Ear owns the conversation: build the thread transcript + the thread's field, hand to Flagleaf
         hist = []
         if post["body"]:

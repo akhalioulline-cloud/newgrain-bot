@@ -550,14 +550,14 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
           <Text style={styles.cb}><Text style={styles.ca}>{cm.author}{cm.chief ? ' • старший' : ''}</Text>  {cm.body}</Text>
         </View>
       ))}
-      {sending && (/^\s*(бот|bot|флаглиф|flagleaf)\b/i.test(lastSent) || !!(p.thread || []).slice(-1)[0]?.is_bot) && (
+      {sending && (/^\s*(бот|bot|флаглиф|flagleaf)\b/i.test(lastSent) || p.bot_follows) && (
         <View style={styles.botPanel}>
           <View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
           <Text style={styles.botTxt}>смотрит и отвечает…</Text>
         </View>
       )}
       <View style={styles.cmtForm}>
-        <TextInput style={styles.cinputSm} value={c} onChangeText={setC} placeholder="Ответить… («бот …» — спросить ИИ)" placeholderTextColor={t.muted} />
+        <TextInput style={styles.cinputSm} value={c} onChangeText={setC} placeholder={p.bot_follows ? 'Спросите Flagleaf или команду…' : 'Ответить… («бот …» — спросить ИИ)'} placeholderTextColor={t.muted} />
         <Pressable style={[styles.sendSm, sending && styles.off]} onPress={addComment} disabled={sending}>
           {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={18} color="#fff" />}
         </Pressable>
