@@ -3,12 +3,12 @@
 Deferred work + ideas, parked here on purpose so we don't lose them and don't build them
 prematurely. Ask "show me the backlog" anytime. Newest asks near the top of each section.
 
-_Last updated: 2026-07-04._
+_Last updated: 2026-07-05._
 
 ## Product / EAR (the chat)
-- **Private human-to-human chats** — agronomist ↔ agronomist direct messages (not just you↔bot).
-  Bigger build: new backend for person-to-person threads (conversations, membership, unread),
-  new UI. «Личное» today is you↔bot only. _(Parked 4 Jul 2026 at founder's request.)_
+- ~~Private human-to-human chats~~ — **DONE 5 Jul 2026** (migration 0039 `dm_messages`,
+  `/api/dm/*`, native chat-list rows + thread view with unread badges). Remaining niceties:
+  web-app parity, push on new DM (pairs with M1 push), media in DMs.
 - Chief-review reactions (👍/👎) in the **native** feed (web has them; native shows the verdict
   badge but no react buttons yet).
 - «Ваш вклад» / team-goal + «мои загрузки» in native (web-only for now).
