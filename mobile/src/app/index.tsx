@@ -477,7 +477,7 @@ function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; 
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
         <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)} style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
           ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text></View>} />
       )}
@@ -595,7 +595,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   return (
     <View style={{ flex: 1 }}>
       <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any, i) => m.sep ? m.id : String(i)} style={StyleSheet.absoluteFill}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
         renderItem={({ item }: any) => item.sep
           ? <Text style={styles.daySep}>{item.sep}</Text>
           : (
@@ -639,7 +639,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
         <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any) => String(m.id)} style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
           renderItem={({ item }: any) => item.sep
             ? <Text style={styles.daySep}>{item.sep}</Text>
             : (
