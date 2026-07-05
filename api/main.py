@@ -431,10 +431,13 @@ MAX_VIDEO = 400 * 1024 * 1024     # ~400 MB ceiling (covers ~3 min even at high 
 
 async def _store_photo_submission(user, img: bytes, ctype: str, field_id, comment: str) -> str | None:
     """Persist one photo as a scouting learning record (S3 + submission, category=scouting →
-    'stored'). Dedup by hash. Returns the submission id, or None if duplicate/failed."""
+    'stored'). Dedup by hash: a byte-identical re-upload reuses the EXISTING submission (so the
+    feed post still shows the photo + gets a fresh reply) without creating a duplicate training
+    row. Returns the submission id, or None only on a real storage failure."""
     h = hashlib.sha256(img).hexdigest()
-    if await find_duplicate_submission(user["id"], h):
-        return None
+    dup = await find_duplicate_submission(user["id"], h)
+    if dup:
+        return str(dup["id"])
     fid = int(field_id) if str(field_id).strip().isdigit() else None
     w = ht = lat = lon = None
     try:
@@ -681,20 +684,28 @@ async def feed_create(request: Request, user=Depends(require_user),
     sub_id, ctx = None, None
     if image is not None:
         img = await image.read()
-        if img and len(img) <= MAX_IMG:
-            sub_id = await _store_photo_submission(user, img, image.content_type or "image/jpeg", field_id, txt)
-            ctx = flagleaf.Context(image=img, text=txt or None, crop=cr)
+        if not img:
+            raise HTTPException(400, "Фото не загрузилось. Попробуйте ещё раз.")
+        if len(img) > MAX_IMG:
+            raise HTTPException(413, "Фото слишком большое (макс. 12 МБ).")
+        sub_id = await _store_photo_submission(user, img, image.content_type or "image/jpeg", field_id, txt)
+        if sub_id is None:
+            raise HTTPException(502, "Не удалось сохранить фото. Попробуйте ещё раз.")
+        ctx = flagleaf.Context(image=img, text=txt or None, crop=cr)
     elif video is not None:
         data = await video.read()
-        if data and len(data) <= MAX_VIDEO_COMMENT:
-            try:
-                sub_id = await _store_scout_video(user, data, video.content_type or "video/mp4", field_id, txt)
-            except Exception:
-                logger.exception("feed: video store failed")
-            ctx = flagleaf.Context(video=data, text=txt or None, crop=cr)
+        if not data:
+            raise HTTPException(400, "Видео не загрузилось. Попробуйте ещё раз.")
+        if len(data) > MAX_VIDEO_COMMENT:
+            raise HTTPException(413, "Видео слишком большое (макс. 60 МБ). Снимите короче.")
+        try:
+            sub_id = await _store_scout_video(user, data, video.content_type or "video/mp4", field_id, txt)
+        except Exception:
+            logger.exception("feed: video store failed")
+        ctx = flagleaf.Context(video=data, text=txt or None, crop=cr)
     elif txt:
         ctx = flagleaf.Context(text=txt, crop=cr)
-    if not (sub_id or txt):
+    if not (sub_id or ctx or txt):
         raise HTTPException(400, "Пустой пост.")
     post_id = await create_feed_post(user["farm_id"], user["id"], sub_id, fid, txt or None)
     if ctx is not None:                              # Ear asks its Flagleaf participant
