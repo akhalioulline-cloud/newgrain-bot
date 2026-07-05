@@ -65,6 +65,9 @@ from bot.db import (
     recent_wall,
     set_wall_reaction,
     get_farm_members,
+    log_shadow,
+    get_shadow,
+    shadow_stats,
     get_dm_peers,
     get_dm_messages,
     send_dm,
@@ -1033,7 +1036,8 @@ async def wall_post(request: Request, user=Depends(require_user),
     # of its messages — quoting the bot continues the conversation. Generated in the BACKGROUND so
     # the POST returns instantly (recognition is 20-40s); the reply lands via the client's poll.
     replying_to_bot = bool(reply_msg and reply_msg["is_bot"])
-    if has_media or flagleaf.mentions_bot(txt) or replying_to_bot:
+    triggered = has_media or flagleaf.mentions_bot(txt) or replying_to_bot
+    if triggered:
         if ctx is None:                                # text trigger (@flagleaf or quoting the bot)
             ctx = flagleaf.Context(
                 image=await _reply_photo_bytes(reply_msg), text=flagleaf.strip_address(txt),
@@ -1042,7 +1046,23 @@ async def wall_post(request: Request, user=Depends(require_user),
                 history=_wall_history(await recent_wall(user["farm_id"])))
         _t = asyncio.create_task(_wall_bot_reply(user["farm_id"], user["id"], msg_id, ctx))
         _wall_tasks.add(_t)
+    elif txt and settings.flagleaf_proactive in ("shadow", "live"):
+        _t = asyncio.create_task(_wall_shadow(user["farm_id"], msg_id, txt))
+        _wall_tasks.add(_t)
     return {"ok": True, "id": msg_id}
+
+
+async def _wall_shadow(farm_id, msg_id, txt):
+    """SHADOW MODE: judge whether Flagleaf would usefully chime in unsummoned, and LOG the
+    would-be line. Posts nothing (until we've read the log and decided it's worth it)."""
+    try:
+        res = await flagleaf.evaluate_proactive(txt, _wall_history(await recent_wall(farm_id)))
+        if res:
+            await log_shadow(farm_id, msg_id, txt, res["confidence"], res["line"])
+    except Exception:
+        logger.exception("wall shadow eval failed")
+    finally:
+        _wall_tasks.discard(asyncio.current_task())
 
 
 _wall_tasks: set = set()   # keep strong refs so background replies aren't GC'd mid-flight
@@ -1058,6 +1078,25 @@ async def _wall_bot_reply(farm_id, asker_id, reply_to_id, ctx):
         logger.exception("wall bot reply failed")
     finally:
         _wall_tasks.discard(asyncio.current_task())
+
+
+@app.get("/api/shadow")
+async def shadow_log(user=Depends(require_user)):
+    """Admin/chief view of Flagleaf's proactive SHADOW log — what it WOULD have said unsummoned,
+    plus a 7-day hit-rate denominator. For deciding whether to let the bot self-initiate."""
+    if user["role"] not in ("admin", "chief_agronomist"):
+        raise HTTPException(403, "Только для руководителя.")
+    rows = await get_shadow(user["farm_id"], 100)
+    st = await shadow_stats(user["farm_id"], 7)
+    return {
+        "mode": settings.flagleaf_proactive,
+        "stats_7d": {"human_texts": st["human_texts"], "flagged": st["flagged"]},
+        "candidates": [{
+            "message_id": r["message_id"], "trigger": r["trigger_text"],
+            "confidence": round(r["confidence"] or 0, 2), "line": r["line"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        } for r in rows],
+    }
 
 
 @app.post("/api/wall/{message_id}/react")

@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 
 from bot.agro_chat import answer as _agro_answer
+from bot.agro_chat import _complete as _yc_complete
+from bot.agro_chat import _clean_json
 from bot.diagnose import diagnose as _diagnose_photo
 from bot.diagnose import diagnose_video as _diagnose_video
 from bot.field_plan import generate_field_plan
@@ -52,6 +54,47 @@ def strip_address(text: str) -> str:
     t = re.sub(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]+", "", text or "", flags=re.I)
     t = _MENTION_RE.sub(" ", t).strip()
     return t or (text or "")
+
+
+# ── proactive (unsummoned) evaluation — SHADOW MODE: judges but does not post ──────
+_SHADOW_SYSTEM = (
+    "Ты — Флаглиф, ИИ-агроном в рабочем чате команды хозяйства, молчаливый наблюдатель. "
+    "Тебя НЕ звали. Вставить короткую реплику стоит ТОЛЬКО если ты можешь добавить одну "
+    "конкретную, проверяемую агрономическую пользу: поправить фактическую ошибку про препарат, "
+    "дозу, норму расхода, регламент, действующее вещество, порог ЭПВ, культуру или "
+    "севооборотное ограничение; либо назвать точный такой факт, которого в разговоре не хватает. "
+    "НЕ реагируй на болтовню, приветствия, мнения, организационные вопросы, общие рассуждения "
+    "и на то, что и так сказано верно. Банальность хуже молчания. Сомневаешься — молчи. "
+    "Ответь СТРОГО в JSON без пояснений: "
+    '{"speak": true|false, "confidence": 0.0-1.0, "line": "одна фраза ≤160 символов, по делу"}. '
+    'Если speak=false — line оставь пустым.'
+)
+
+
+async def evaluate_proactive(text: str, history: str | None):
+    """Would Flagleaf usefully chime in on this unsummoned message? Returns {confidence, line}
+    if yes, else None. SHADOW MODE only calls this to LOG the would-be reply — nothing is posted."""
+    msg = (text or "").strip()
+    if len(msg) < 15:                      # skip trivial chatter ("ок", "спасибо")
+        return None
+    user = (f"Недавняя переписка:\n{history}\n\n" if history else "") + \
+        f"Новое сообщение команды: «{msg}»\n\nСтоит ли вставить реплику?"
+    try:
+        raw = await asyncio.to_thread(_yc_complete, _SHADOW_SYSTEM, user, 220, 0.2)
+        data = _clean_json(raw)
+    except Exception:
+        logger.exception("shadow proactive eval failed")
+        return None
+    if not isinstance(data, dict) or not data.get("speak"):
+        return None
+    line = (data.get("line") or "").strip()
+    if not line:
+        return None
+    try:
+        conf = float(data.get("confidence") or 0)
+    except (TypeError, ValueError):
+        conf = 0.0
+    return {"confidence": conf, "line": line[:400]}
 
 
 # ── field routing (moved here from the api layer; owned by Flagleaf now) ──────────

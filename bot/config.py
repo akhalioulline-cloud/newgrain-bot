@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # fallback stays on the capable (pro) model: correctness > ~0.5 s here.
     yc_extract_model: str = "yandexgpt"
 
+    # Flagleaf proactive participation. "shadow" = evaluate unsummoned messages + LOG the would-be
+    # reply, post NOTHING (data-gathering to decide if it should speak). "off" = don't evaluate.
+    # "live" = actually post (NOT enabled until shadow data justifies it).
+    flagleaf_proactive: str = "shadow"
+
     # EPPO Global Database API — neutral pest/disease/weed reference (RU/Latin names,
     # hosts, quarantine status). Token from data.eppo.int. NB: the legacy API was retired
     # (May 2026); the current one is base `https://api.eppo.int/gd/v2` with auth via the

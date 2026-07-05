@@ -1220,6 +1220,36 @@ async def get_farm_members(farm_id):
             {"farm": farm_id})).mappings().all()
 
 
+async def log_shadow(farm_id, message_id, trigger_text, confidence, line):
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO flagleaf_shadow (farm_id, message_id, trigger_text, confidence, line) "
+            "VALUES (:f,:m,:t,:c,:l)"),
+            {"f": farm_id, "m": message_id, "t": (trigger_text or "")[:1000], "c": confidence, "l": line})
+
+
+async def get_shadow(farm_id, limit=100):
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT id, message_id, trigger_text, confidence, line, created_at FROM flagleaf_shadow "
+            "WHERE farm_id=:f ORDER BY created_at DESC LIMIT :lim"),
+            {"f": farm_id, "lim": limit})).mappings().all()
+
+
+async def shadow_stats(farm_id, days=7):
+    """Denominator for hit-rate: human text messages the bot COULD have evaluated vs the ones it
+    flagged (shadow rows), over the last N days."""
+    async with engine.connect() as conn:
+        row = (await conn.execute(text(
+            "SELECT "
+            " (SELECT count(*) FROM wall_messages m WHERE m.farm_id=:f AND NOT m.is_bot "
+            "    AND m.submission_id IS NULL AND m.created_at > now() - make_interval(days => :d)) AS human_texts, "
+            " (SELECT count(*) FROM flagleaf_shadow s WHERE s.farm_id=:f "
+            "    AND s.created_at > now() - make_interval(days => :d)) AS flagged"),
+            {"f": farm_id, "d": days})).mappings().first()
+        return row
+
+
 async def get_feed(farm_id, viewer_id, limit=60):
     async with engine.connect() as conn:
         return (await conn.execute(text(
