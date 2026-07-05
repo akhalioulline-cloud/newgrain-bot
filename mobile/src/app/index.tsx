@@ -128,7 +128,10 @@ function Main({ onLogout }: { onLogout: () => void }) {
             : <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
           <BlurView intensity={75} tint="light" style={[styles.headerGlass, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
             <View style={styles.chatHdrRow}>
-              <Pressable onPress={back} hitSlop={12} style={styles.backBtn}><Ionicons name="chevron-back" size={27} color={GOLD} /></Pressable>
+              <Pressable onPress={back} hitSlop={14} style={styles.backBtn}>
+                <Ionicons name="chevron-back" size={27} color={GOLD} />
+                <Text style={styles.backTxt}>Чаты</Text>
+              </Pressable>
               <View style={[styles.rowAv, open === 'feed' ? styles.avGroup : styles.avBot]}>
                 {open === 'feed' ? <Ionicons name="people" size={17} color="#fff" /> : <MaterialCommunityIcons name="robot-outline" size={17} color="#fff" />}
               </View>
@@ -352,7 +355,8 @@ const styles = StyleSheet.create({
   rowPreview: { fontSize: 14, color: MUTED, marginTop: 3 },
   // chat header (inside an open conversation)
   chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 6, paddingRight: 16, paddingVertical: 9, gap: 9 },
-  backBtn: { padding: 2 },
+  backBtn: { padding: 2, flexDirection: 'row', alignItems: 'center' },
+  backTxt: { fontSize: 16, color: GOLD, marginLeft: -2 },
   chatHdrTitle: { fontSize: 16, fontWeight: '700', color: INK, flexShrink: 1 },
   empty: { textAlign: 'center', color: MUTED, fontSize: 14, padding: 24, lineHeight: 20 },
   // post card
