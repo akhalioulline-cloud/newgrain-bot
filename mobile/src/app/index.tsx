@@ -580,7 +580,8 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
   };
   const send = () => {
     const b = text.trim(); if (!b || busy) return;
-    post(formData({ body: b }), /@(flagleaf|флаглиф|флаглаф|flag)\b/i.test(b) || /^\s*(бот|bot)\b/i.test(b));
+    const botExpected = /@(flagleaf|флаглиф|флаглаф|flag)\b/i.test(b) || /^\s*(бот|bot)\b/i.test(b) || !!replyTo?.bot;
+    post(formData({ body: b }), botExpected);
   };
   const capture = async () => {
     const a = await pickMedia(); if (!a) return;
@@ -595,7 +596,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
   const react = async (id: number, verdict: string) => {
     try { await api.postJson(`/api/wall/${id}/react`, { verdict }); await load(); } catch {}
   };
-  const startReply = (m: any) => setReplyTo({ id: m.id, author: m.is_bot ? 'Flagleaf' : m.author, snippet: m.body || (m.media ? '📷 фото' : '') });
+  const startReply = (m: any) => setReplyTo({ id: m.id, author: m.is_bot ? 'Flagleaf' : m.author, snippet: m.body || (m.media ? '📷 фото' : ''), bot: m.is_bot });
 
   const onChangeText = (v: string) => {
     setText(v);

@@ -1184,7 +1184,7 @@ async def get_wall_message(message_id):
     async with engine.connect() as conn:
         return (await conn.execute(text(
             "SELECT m.id, m.farm_id, m.author_id, m.is_bot, m.body, m.submission_id::text AS submission_id, "
-            "       m.field_id, f.name AS field_name, f.crop AS crop, "
+            "       m.field_id, m.reply_to, f.name AS field_name, f.crop AS crop, "
             "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=m.submission_id) AS is_video "
             "FROM wall_messages m LEFT JOIN fields f ON f.id=m.field_id WHERE m.id=:id"),
             {"id": message_id})).mappings().first()

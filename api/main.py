@@ -937,6 +937,27 @@ def _wall_history(rows):
     return "\n".join(lines)[-4000:] or None
 
 
+async def _reply_photo_bytes(reply_msg):
+    """The photo to re-show Flagleaf when a text @flagleaf / quote references it: the quoted
+    message's own photo, or — if quoting the bot's answer — the photo that answer was about."""
+    target = None
+    if reply_msg:
+        if reply_msg["submission_id"] and not reply_msg["is_video"]:
+            target = reply_msg["submission_id"]
+        elif reply_msg["is_bot"] and reply_msg.get("reply_to"):
+            parent = await get_wall_message(reply_msg["reply_to"])
+            if parent and parent["submission_id"] and not parent["is_video"]:
+                target = parent["submission_id"]
+    if not target:
+        return None
+    try:
+        u = await get_submission_image_url(target)
+        return await download_bytes(u) if u else None
+    except Exception:
+        logger.exception("wall: reply-chain photo re-fetch failed")
+        return None
+
+
 @app.get("/api/wall")
 async def wall_get(user=Depends(require_user)):
     rows = await get_wall(user["farm_id"], user["id"], 80)
@@ -1008,21 +1029,14 @@ async def wall_post(request: Request, user=Depends(require_user),
     if targets:
         _push_bg(list(targets), user["full_name"] or "Новое сообщение", txt or "📷 фото")
 
-    # Flagleaf replies: automatically to media, or when @flagleaf'd in text. Generated in the
-    # BACKGROUND so the POST returns instantly (recognition is 20-40s — holding the request open
-    # stalled the upload); the reply lands in the wall via the client's next poll.
-    if has_media or flagleaf.mentions_bot(txt):
-        if ctx is None:                                # text @flagleaf → build context
-            img = None
-            if reply_msg and reply_msg["submission_id"] and not reply_msg["is_video"]:
-                try:                                   # re-look at the quoted photo
-                    u = await get_submission_image_url(reply_msg["submission_id"])
-                    if u:
-                        img = await download_bytes(u)
-                except Exception:
-                    logger.exception("wall: quoted-photo re-fetch failed")
+    # Flagleaf replies: automatically to media, when @flagleaf'd, or when you REPLY to (quote) one
+    # of its messages — quoting the bot continues the conversation. Generated in the BACKGROUND so
+    # the POST returns instantly (recognition is 20-40s); the reply lands via the client's poll.
+    replying_to_bot = bool(reply_msg and reply_msg["is_bot"])
+    if has_media or flagleaf.mentions_bot(txt) or replying_to_bot:
+        if ctx is None:                                # text trigger (@flagleaf or quoting the bot)
             ctx = flagleaf.Context(
-                image=img, text=flagleaf.strip_address(txt),
+                image=await _reply_photo_bytes(reply_msg), text=flagleaf.strip_address(txt),
                 crop=(reply_msg["crop"] if reply_msg else cr),
                 field_hint=(reply_msg["field_name"] if reply_msg else None),
                 history=_wall_history(await recent_wall(user["farm_id"])))
