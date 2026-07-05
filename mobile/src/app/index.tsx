@@ -551,27 +551,37 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
   const [replyTo, setReplyTo] = useState<any>(null);
   const [mentionQ, setMentionQ] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
+  const [thinking, setThinking] = useState(false);
   const kb = useKeyboard();
   const chief = me?.role === 'chief_agronomist' || me?.role === 'admin';
   const load = useCallback(async () => {
-    try { const d = await api.get('/api/wall'); setMsgs(d.messages || []); }
-    catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
+    try {
+      const d = await api.get('/api/wall');
+      setMsgs(d.messages || []);
+      if ((d.messages || [])[0]?.is_bot) setThinking(false);   // bot has replied (it's newest)
+    } catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
   }, [onLogout]);
   useEffect(() => {
     load();
-    const iv = setInterval(load, 8000);   // freshness: teammates' messages + bot replies appear live
+    const iv = setInterval(load, thinking ? 4000 : 8000);   // poll faster while awaiting the bot
     return () => clearInterval(iv);
-  }, [load]);
+  }, [load, thinking]);
   useEffect(() => { api.get('/api/members').then((d) => setMembers(d.members || [])).catch(() => {}); }, []);
 
-  const post = async (fd: FormData) => {
+  const post = async (fd: FormData, botExpected: boolean) => {
     if (replyTo) fd.append('reply_to', String(replyTo.id));
     setText(''); setReplyTo(null); setMentionQ(null); setBusy(true);
-    try { await api.postForm('/api/wall', fd); await load(); }
-    catch (e: any) { Alert.alert('Не отправилось', e?.message || 'Проверьте связь и попробуйте ещё раз.'); }
+    try {
+      await api.postForm('/api/wall', fd);
+      if (botExpected) { setThinking(true); setTimeout(() => setThinking(false), 60000); }
+      await load();
+    } catch (e: any) { Alert.alert('Не отправилось', e?.message || 'Проверьте связь и попробуйте ещё раз.'); }
     finally { setBusy(false); }
   };
-  const send = () => { const b = text.trim(); if (!b || busy) return; post(formData({ body: b })); };
+  const send = () => {
+    const b = text.trim(); if (!b || busy) return;
+    post(formData({ body: b }), /@(flagleaf|флаглиф|флаглаф|flag)\b/i.test(b) || /^\s*(бот|bot)\b/i.test(b));
+  };
   const capture = async () => {
     const a = await pickMedia(); if (!a) return;
     const fd = formData({ body: text.trim() });
@@ -580,7 +590,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
       uri: a.uri, name: a.fileName || (isVideo ? 'scout.mp4' : 'photo.jpg'),
       type: a.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
     } as any);
-    post(fd);
+    post(fd, true);   // media always gets an auto reply
   };
   const react = async (id: number, verdict: string) => {
     try { await api.postJson(`/api/wall/${id}/react`, { verdict }); await load(); } catch {}
@@ -603,12 +613,19 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
   return (
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
-        <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any) => m.sep ? m.id : String(m.id)} style={StyleSheet.absoluteFill}
+        <FlatList
+          data={(() => {
+            const d = [...withDays([...msgs].reverse())].reverse();   // oldest→newest for day sep, then newest-first for inverted
+            return thinking ? [{ thinking: true, id: '__thinking' }, ...d] : d;
+          })()}
+          inverted keyExtractor={(m: any) => m.thinking ? '__thinking' : m.sep ? m.id : String(m.id)} style={StyleSheet.absoluteFill}
           contentContainerStyle={{ paddingHorizontal: 12, paddingTop: kb.open ? kb.height + 60 : bottomInset + (replyTo ? 118 : 72), paddingBottom: headerPad + 4, gap: 7 }}
           keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
-          renderItem={({ item }: any) => item.sep
-            ? <Text style={styles.daySep}>{item.sep}</Text>
-            : <WallMsg m={item} mine={item.author_id === me?.id} chief={chief} onReply={startReply} onReact={react} onZoom={setZoom} />}
+          renderItem={({ item }: any) => item.thinking
+            ? <View style={styles.botWrap}><View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View><Text style={styles.botTxt}>смотрит и отвечает…</Text></View>
+            : item.sep
+              ? <Text style={styles.daySep}>{item.sep}</Text>
+              : <WallMsg m={item} mine={item.author_id === me?.id} chief={chief} onReply={startReply} onReact={react} onZoom={setZoom} />}
           ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Сфотографируйте растение или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</Text></View>} />
       )}
       <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
@@ -636,7 +653,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
               <Pressable onPress={() => setReplyTo(null)} hitSlop={10}><Ionicons name="close" size={20} color={t.muted} /></Pressable>
             </BlurView>
           )}
-          <Composer value={text} onChange={onChangeText} onSend={send} busy={busy} onCamera={capture} placeholder="Сообщение… (@flagleaf — спросить ИИ)" />
+          <Composer value={text} onChange={onChangeText} onSend={send} busy={busy} onCamera={capture} placeholder="Сообщение (@flagleaf — ИИ)" />
         </View>
       </KeyboardAvoidingView>
     </View>

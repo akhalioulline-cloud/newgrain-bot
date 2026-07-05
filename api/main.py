@@ -1008,7 +1008,9 @@ async def wall_post(request: Request, user=Depends(require_user),
     if targets:
         _push_bg(list(targets), user["full_name"] or "Новое сообщение", txt or "📷 фото")
 
-    # Flagleaf replies: automatically to media, or when @flagleaf'd in text
+    # Flagleaf replies: automatically to media, or when @flagleaf'd in text. Generated in the
+    # BACKGROUND so the POST returns instantly (recognition is 20-40s — holding the request open
+    # stalled the upload); the reply lands in the wall via the client's next poll.
     if has_media or flagleaf.mentions_bot(txt):
         if ctx is None:                                # text @flagleaf → build context
             img = None
@@ -1024,11 +1026,24 @@ async def wall_post(request: Request, user=Depends(require_user),
                 crop=(reply_msg["crop"] if reply_msg else cr),
                 field_hint=(reply_msg["field_name"] if reply_msg else None),
                 history=_wall_history(await recent_wall(user["farm_id"])))
+        _t = asyncio.create_task(_wall_bot_reply(user["farm_id"], user["id"], msg_id, ctx))
+        _wall_tasks.add(_t)
+    return {"ok": True, "id": msg_id}
+
+
+_wall_tasks: set = set()   # keep strong refs so background replies aren't GC'd mid-flight
+
+
+async def _wall_bot_reply(farm_id, asker_id, reply_to_id, ctx):
+    try:
         reply = await flagleaf.respond(ctx)
         if reply:
-            await create_wall_message(user["farm_id"], None, True, reply, None, None, msg_id)
-            _push_bg([user["id"]], "Flagleaf", reply)
-    return {"ok": True, "id": msg_id}
+            await create_wall_message(farm_id, None, True, reply, None, None, reply_to_id)
+            await _push_notify([asker_id], "Flagleaf", reply)
+    except Exception:
+        logger.exception("wall bot reply failed")
+    finally:
+        _wall_tasks.discard(asyncio.current_task())
 
 
 @app.post("/api/wall/{message_id}/react")
