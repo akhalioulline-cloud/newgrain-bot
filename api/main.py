@@ -717,15 +717,20 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
     post = await get_feed_post(post_id)
     if not post:
         raise HTTPException(404, "Пост не найден.")
+    prior = await get_feed_comments(post_id)          # thread BEFORE this comment
     await add_feed_comment(post_id, user["id"], False, txt)
     if post["author_id"] != user["id"]:
         _push_bg([post["author_id"]], f"{user['full_name']} — в ленте", txt)
-    if flagleaf.addressed(txt):                       # «бот …» → ask the Flagleaf participant
+    # The bot answers when called («бот …») — or when it spoke LAST in the thread, because a
+    # reply right after the bot's answer is a follow-up to the bot. Once humans talk among
+    # themselves (last message is human), it stays silent again unless called.
+    follow_up = bool(prior) and bool(prior[-1]["is_bot"])
+    if flagleaf.addressed(txt) or follow_up:
         # Ear owns the conversation: build the thread transcript + the thread's field, hand to Flagleaf
         hist = []
         if post["body"]:
             hist.append(f"{post['author']}: {post['body']}")
-        for c in await get_feed_comments(post_id):
+        for c in prior:
             who = "Flagleaf" if c["is_bot"] else (c["author"] or "агроном")
             b = (c["body"] or "").strip()
             if b:
