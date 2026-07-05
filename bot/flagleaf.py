@@ -35,14 +35,23 @@ class Context:
 
 # ── being addressed («бот …») — Flagleaf decides when it's spoken to ──────────────
 _ADDR_RE = re.compile(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]", re.I)
+# @-mention of the bot anywhere in the message (the wall's summon, like @grok in X)
+_MENTION_RE = re.compile(r"(?:^|\s)@(flagleaf|флаглиф|флаглаф|flag)\b", re.I)
 
 
 def addressed(text: str) -> bool:
     return bool(_ADDR_RE.match(text or ""))
 
 
+def mentions_bot(text: str) -> bool:
+    """The wall summons Flagleaf with @flagleaf (or «бот …» for continuity)."""
+    return bool(_MENTION_RE.search(text or "") or addressed(text or ""))
+
+
 def strip_address(text: str) -> str:
-    return re.sub(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]+", "", text or "", flags=re.I).strip() or (text or "")
+    t = re.sub(r"^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]+", "", text or "", flags=re.I)
+    t = _MENTION_RE.sub(" ", t).strip()
+    return t or (text or "")
 
 
 # ── field routing (moved here from the api layer; owned by Flagleaf now) ──────────

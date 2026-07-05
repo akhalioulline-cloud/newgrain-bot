@@ -124,6 +124,21 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   bubbleUser: { alignSelf: 'flex-end', backgroundColor: t.bubbleMine },
   bubbleBotTxt: { fontSize: 15, lineHeight: 21, color: t.text },
   bubbleUserTxt: { fontSize: 15, lineHeight: 21, color: t.bubbleMineText },
+  // wall (flat message stream)
+  botWrap: { alignSelf: 'flex-start', maxWidth: '90%', backgroundColor: t.botPanel, borderRadius: 18, padding: 12 },
+  wallTime: { fontSize: 10.5, color: t.muted, marginTop: 4 },
+  wallAuthorSm: { fontSize: 12.5, fontWeight: '700', color: t.gold, marginBottom: 2 },
+  verdictBtns: { flexDirection: 'row', gap: 6, marginLeft: 8 },
+  vBtn: { width: 34, height: 30, borderRadius: 10, backgroundColor: t.cardAlt, alignItems: 'center', justifyContent: 'center' },
+  vBtnOn: { backgroundColor: t.bg },
+  replyQuote: { borderLeftWidth: 3, borderLeftColor: t.gold, paddingLeft: 8, marginBottom: 6, opacity: 0.9 },
+  replyQuoteAuthor: { fontSize: 12.5, fontWeight: '700', color: t.gold },
+  replyQuoteText: { fontSize: 13, color: t.muted },
+  mentionBox: { marginHorizontal: 12, marginBottom: 6, borderRadius: 16, backgroundColor: t.card, overflow: 'hidden', ...softShadow },
+  mentionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  mentionName: { fontSize: 15, color: t.text, fontWeight: '600' },
+  replyBar: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 10, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, overflow: 'hidden' },
+  replyBarLine: { width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: t.gold },
   // composer
   composerHover: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   composer: { flexDirection: 'row', gap: 9, paddingHorizontal: 12, paddingVertical: 9, alignItems: 'flex-end' },
@@ -326,7 +341,7 @@ function Main({ onLogout }: { onLogout: () => void }) {
 
       {open && (
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: t.bg, zIndex: 20, elevation: 20, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}>
-          {open.kind === 'feed' && <FeedView onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />}
+          {open.kind === 'feed' && <WallView me={me} onLogout={onLogout} headerPad={headerPad} bottomInset={insets.bottom} />}
           {open.kind === 'bot' && <DmView headerPad={headerPad} bottomInset={insets.bottom} />}
           {open.kind === 'person' && <PersonView peer={open} headerPad={headerPad} bottomInset={insets.bottom} />}
           <View style={[styles.headerGlass, styles.chatHdrBg, { paddingTop: insets.top, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
@@ -359,7 +374,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
   const [last, setLast] = useState<any>(null);
   const [peers, setPeers] = useState<any[]>([]);
   const load = useCallback(() => {
-    api.get('/api/feed').then((d) => setLast((d.posts || [])[0] || null)).catch(() => {});
+    api.get('/api/wall').then((d) => setLast((d.messages || [])[0] || null)).catch(() => {});
     api.get('/api/dm/threads').then((d) => setPeers(d.peers || [])).catch(() => {});
   }, []);
   useEffect(() => {
@@ -368,7 +383,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
     return () => clearInterval(iv);
   }, [load]);
   const feedPreview = last
-    ? `${last.author || ''}: ${last.body || (last.is_video ? '🎥 видео' : last.media ? '📷 фото' : '…')}`.trim()
+    ? `${last.is_bot ? 'Flagleaf' : (last.author || '')}: ${last.body || (last.is_video ? '🎥 видео' : last.media ? '📷 фото' : '…')}`.trim()
     : 'Наблюдения команды, ответы ИИ, проверка старшим';
   return (
     <View style={{ flex: 1 }}>
@@ -434,134 +449,196 @@ function Composer({ value, onChange, onSend, busy, placeholder, onCamera }:
 }
 
 // ─────────────────────────── feed ───────────────────────────
-function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; headerPad: number; bottomInset: number }) {
-  const { t, styles } = useTheme();
-  const [posts, setPosts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const kb = useKeyboard();
-  const load = useCallback(async () => {
-    try { const d = await api.get('/api/feed'); setPosts(d.posts || []); }
-    catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
-  }, [onLogout]);
-  useEffect(() => {
-    load();
-    const iv = setInterval(load, 12000);   // freshness: teammates' posts appear without reopening
-    return () => clearInterval(iv);
-  }, [load]);
-  const publish = async () => {
-    const b = text.trim(); if (!b) return; setText(''); setBusy(true);
-    try { await api.postForm('/api/feed/post', formData({ body: b })); await load(); } catch {} finally { setBusy(false); }
-  };
-  const capture = async () => {
-    const a = await pickMedia();
-    if (!a) return;
-    setBusy(true);
-    try {
-      const fd = formData({ body: text.trim() });
-      const isVideo = a.type === 'video';
-      fd.append(isVideo ? 'video' : 'image', {
-        uri: a.uri,
-        name: a.fileName || (isVideo ? 'scout.mp4' : 'photo.jpg'),
-        type: a.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-      } as any);
-      setText('');
-      await api.postForm('/api/feed/post', fd);
-      await load();
-    } catch (e: any) {
-      Alert.alert('Не отправилось', e?.message || 'Проверьте связь и попробуйте ещё раз.');
-    } finally { setBusy(false); }
-  };
+function ImageZoom({ uri, onClose }: { uri: string | null; onClose: () => void }) {
+  const { styles } = useTheme();
   return (
-    <View style={{ flex: 1 }}>
-      {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
-        <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)} style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
-          renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
-          ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text></View>} />
-      )}
-      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
-          <Composer value={text} onChange={setText} onSend={publish} busy={busy} onCamera={capture} placeholder="Сообщение команде…" />
-        </View>
-      </KeyboardAvoidingView>
+    <Modal visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.viewerBg}>
+        <ScrollView maximumZoomScale={5} minimumZoomScale={1} contentContainerStyle={styles.viewerScroll}
+          centerContent showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
+          {!!uri && <Image source={{ uri }} style={styles.viewerImg} resizeMode="contain" />}
+        </ScrollView>
+        <Pressable style={styles.viewerClose} onPress={onClose} hitSlop={14}>
+          <Ionicons name="close" size={30} color="#fff" />
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
+
+// message text with @mentions highlighted
+function MsgText({ body, style }: { body?: string; style?: any }) {
+  const { t } = useTheme();
+  if (!body) return null;
+  const parts = body.split(/(@[^\s@,.:;!?]+)/g);
+  return (
+    <Text style={style}>
+      {parts.map((p, i) => /^@/.test(p)
+        ? <Text key={i} style={{ color: t.gold, fontWeight: '700' }}>{p}</Text>
+        : <Text key={i}>{p}</Text>)}
+    </Text>
+  );
+}
+
+function ReplyQuote({ author, snippet }: { author?: string | null; snippet?: string | null }) {
+  const { styles } = useTheme();
+  return (
+    <View style={styles.replyQuote}>
+      <Text style={styles.replyQuoteAuthor} numberOfLines={1}>{author || ''}</Text>
+      <Text style={styles.replyQuoteText} numberOfLines={1}>{snippet || ''}</Text>
     </View>
   );
 }
 
-function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
+// one wall message: bot panel, prominent media card, or chat bubble
+function WallMsg({ m, mine, chief, onReply, onReact, onZoom }:
+  { m: any; mine: boolean; chief: boolean; onReply: (m: any) => void; onReact: (id: number, v: string) => void; onZoom: (uri: string) => void }) {
   const { t, styles } = useTheme();
-  const [c, setC] = useState('');
-  const [sending, setSending] = useState(false);
-  const [lastSent, setLastSent] = useState('');
-  const [zoomed, setZoomed] = useState(false);
-  const addComment = async () => {
-    const b = c.trim(); if (!b) return; setC(''); setLastSent(b); setSending(true);
-    try { await api.postJson(`/api/feed/${p.id}/comment`, { body: b }); onChanged(); } catch {} finally { setSending(false); }
-  };
-  return (
-    <View style={styles.post}>
-      <View style={styles.phead}>
-        <View style={styles.pav}><Text style={styles.pavTxt}>{initials(p.author)}</Text></View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.pauth}>{p.author}</Text>
-          {(!!p.field || !!p.created_at) && (
-            <Text style={styles.pmeta}>{p.field ? <><Ionicons name="location-outline" size={12} color={t.muted} /> {p.field} · </> : ''}{when(p.created_at)}</Text>
-          )}
-        </View>
-      </View>
-      {!!p.body && <Text style={styles.pbody}>{p.body}</Text>}
-      {!!p.media && (p.is_video
-        ? <View style={styles.videoBox}><Ionicons name="videocam-outline" size={30} color={t.muted} /></View>
-        : <>
-          <Pressable onPress={() => setZoomed(true)}>
-            <Image source={{ uri: p.media }} style={styles.pmedia} resizeMode="cover" />
-          </Pressable>
-          <Modal visible={zoomed} transparent animationType="fade" onRequestClose={() => setZoomed(false)}>
-            <View style={styles.viewerBg}>
-              <ScrollView maximumZoomScale={5} minimumZoomScale={1} contentContainerStyle={styles.viewerScroll}
-                centerContent showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
-                <Image source={{ uri: p.media }} style={styles.viewerImg} resizeMode="contain" />
-              </ScrollView>
-              <Pressable style={styles.viewerClose} onPress={() => setZoomed(false)} hitSlop={14}>
-                <Ionicons name="close" size={30} color="#fff" />
-              </Pressable>
+  const verdict = m.ups > 0 ? 'up' : m.downs > 0 ? 'down' : null;
+  if (m.is_bot) {
+    return (
+      <Pressable onLongPress={() => onReply(m)} style={styles.botWrap}>
+        {!!m.reply_to && <ReplyQuote author={m.reply_author} snippet={m.reply_snippet} />}
+        <View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
+        <MsgText body={m.body} style={styles.botTxt} />
+        <Text style={styles.wallTime}>{when(m.created_at)}</Text>
+      </Pressable>
+    );
+  }
+  if (m.media) {
+    return (
+      <Pressable onLongPress={() => onReply(m)} style={styles.post}>
+        <Text style={styles.pauth}>{m.author}{m.field ? <Text style={styles.pmeta}>  · {m.field}</Text> : null}</Text>
+        {!!m.reply_to && <ReplyQuote author={m.reply_author} snippet={m.reply_snippet} />}
+        {m.is_video
+          ? <View style={styles.videoBox}><Ionicons name="videocam-outline" size={30} color={t.muted} /></View>
+          : <Pressable onPress={() => onZoom(m.media)}><Image source={{ uri: m.media }} style={styles.pmedia} resizeMode="cover" /></Pressable>}
+        {!!m.body && <MsgText body={m.body} style={styles.pbody} />}
+        <View style={styles.actRow}>
+          {verdict && (
+            <View style={[styles.pill, verdict === 'up' ? styles.pillOk : styles.pillBad]}>
+              <Ionicons name={verdict === 'up' ? 'checkmark' : 'close'} size={14} color={verdict === 'up' ? t.pillOk : t.pillBad} />
+              <Text style={[styles.pillTxt, { color: verdict === 'up' ? t.pillOk : t.pillBad }]}>{verdict === 'up' ? 'подтвердил старший' : 'отклонил старший'}</Text>
             </View>
-          </Modal>
-        </>)}
-      {(p.thread || []).filter((cm: any) => cm.is_bot).slice(0, 1).map((cm: any) => (
-        <View key={cm.id} style={styles.botPanel}>
-          <View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
-          <Text style={styles.botTxt}>{cm.body}</Text>
+          )}
+          {chief && (
+            <View style={styles.verdictBtns}>
+              <Pressable onPress={() => onReact(m.id, verdict === 'up' ? 'none' : 'up')} style={[styles.vBtn, verdict === 'up' && styles.vBtnOn]} hitSlop={6}><Ionicons name="checkmark" size={18} color={verdict === 'up' ? t.pillOk : t.muted} /></Pressable>
+              <Pressable onPress={() => onReact(m.id, verdict === 'down' ? 'none' : 'down')} style={[styles.vBtn, verdict === 'down' && styles.vBtnOn]} hitSlop={6}><Ionicons name="close" size={18} color={verdict === 'down' ? t.pillBad : t.muted} /></Pressable>
+            </View>
+          )}
+          <Text style={[styles.wallTime, { marginLeft: 'auto' }]}>{when(m.created_at)}</Text>
         </View>
-      ))}
-      <View style={styles.actRow}>
-        {(p.ups > 0 || p.downs > 0) && (
-          <View style={[styles.pill, p.ups > 0 ? styles.pillOk : styles.pillBad]}>
-            <Ionicons name={p.ups > 0 ? 'checkmark' : 'close'} size={14} color={p.ups > 0 ? t.pillOk : t.pillBad} />
-            <Text style={[styles.pillTxt, { color: p.ups > 0 ? t.pillOk : t.pillBad }]}>{p.ups > 0 ? 'подтвердил старший' : 'отклонил старший'}</Text>
-          </View>
-        )}
-        {(p.comments > 0) && <View style={styles.cmtCount}><Ionicons name="chatbubble-outline" size={14} color={t.muted} /><Text style={styles.cmtCountTxt}> {p.comments}</Text></View>}
-      </View>
-      {(p.thread || []).filter((cm: any) => !cm.is_bot).map((cm: any) => (
-        <View key={cm.id} style={styles.cmt}>
-          <Text style={styles.cb}><Text style={styles.ca}>{cm.author}{cm.chief ? ' • старший' : ''}</Text>  {cm.body}</Text>
-        </View>
-      ))}
-      {sending && (/^\s*(бот|bot|флаглиф|flagleaf)\b/i.test(lastSent) || p.bot_follows) && (
-        <View style={styles.botPanel}>
-          <View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
-          <Text style={styles.botTxt}>смотрит и отвечает…</Text>
-        </View>
+      </Pressable>
+    );
+  }
+  return (
+    <Pressable onLongPress={() => onReply(m)} style={[styles.bubble, mine ? styles.bubbleUser : styles.bubbleBot]}>
+      {!mine && <Text style={styles.wallAuthorSm}>{m.author}{chief && m.chief ? ' • старший' : ''}</Text>}
+      {!!m.reply_to && <ReplyQuote author={m.reply_author} snippet={m.reply_snippet} />}
+      <MsgText body={m.body} style={mine ? styles.bubbleUserTxt : styles.bubbleBotTxt} />
+    </Pressable>
+  );
+}
+
+function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout: () => void; headerPad: number; bottomInset: number }) {
+  const { t, styles } = useTheme();
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [replyTo, setReplyTo] = useState<any>(null);
+  const [mentionQ, setMentionQ] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<string | null>(null);
+  const kb = useKeyboard();
+  const chief = me?.role === 'chief_agronomist' || me?.role === 'admin';
+  const load = useCallback(async () => {
+    try { const d = await api.get('/api/wall'); setMsgs(d.messages || []); }
+    catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
+  }, [onLogout]);
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 8000);   // freshness: teammates' messages + bot replies appear live
+    return () => clearInterval(iv);
+  }, [load]);
+  useEffect(() => { api.get('/api/members').then((d) => setMembers(d.members || [])).catch(() => {}); }, []);
+
+  const post = async (fd: FormData) => {
+    if (replyTo) fd.append('reply_to', String(replyTo.id));
+    setText(''); setReplyTo(null); setMentionQ(null); setBusy(true);
+    try { await api.postForm('/api/wall', fd); await load(); }
+    catch (e: any) { Alert.alert('Не отправилось', e?.message || 'Проверьте связь и попробуйте ещё раз.'); }
+    finally { setBusy(false); }
+  };
+  const send = () => { const b = text.trim(); if (!b || busy) return; post(formData({ body: b })); };
+  const capture = async () => {
+    const a = await pickMedia(); if (!a) return;
+    const fd = formData({ body: text.trim() });
+    const isVideo = a.type === 'video';
+    fd.append(isVideo ? 'video' : 'image', {
+      uri: a.uri, name: a.fileName || (isVideo ? 'scout.mp4' : 'photo.jpg'),
+      type: a.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+    } as any);
+    post(fd);
+  };
+  const react = async (id: number, verdict: string) => {
+    try { await api.postJson(`/api/wall/${id}/react`, { verdict }); await load(); } catch {}
+  };
+  const startReply = (m: any) => setReplyTo({ id: m.id, author: m.is_bot ? 'Flagleaf' : m.author, snippet: m.body || (m.media ? '📷 фото' : '') });
+
+  const onChangeText = (v: string) => {
+    setText(v);
+    const mm = v.match(/@([^\s@]*)$/);
+    setMentionQ(mm ? mm[1].toLowerCase() : null);
+  };
+  const pickMention = (name: string) => {
+    setText((v) => v.replace(/@([^\s@]*)$/, `@${name} `));
+    setMentionQ(null);
+  };
+  const mentionList = mentionQ !== null
+    ? [{ id: 'bot', first: 'Flagleaf' }, ...members].filter((x: any) => (x.first || '').toLowerCase().startsWith(mentionQ)).slice(0, 5)
+    : [];
+
+  return (
+    <View style={{ flex: 1 }}>
+      {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
+        <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any) => m.sep ? m.id : String(m.id)} style={StyleSheet.absoluteFill}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: kb.open ? kb.height + 60 : bottomInset + (replyTo ? 118 : 72), paddingBottom: headerPad + 4, gap: 7 }}
+          keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+          renderItem={({ item }: any) => item.sep
+            ? <Text style={styles.daySep}>{item.sep}</Text>
+            : <WallMsg m={item} mine={item.author_id === me?.id} chief={chief} onReply={startReply} onReact={react} onZoom={setZoom} />}
+          ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Сфотографируйте растение или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</Text></View>} />
       )}
-      <View style={styles.cmtForm}>
-        <TextInput style={styles.cinputSm} value={c} onChangeText={setC} placeholder={p.bot_follows ? 'Спросите Flagleaf или команду…' : 'Ответить… («бот …» — спросить ИИ)'} placeholderTextColor={t.muted} />
-        <Pressable style={[styles.sendSm, sending && styles.off]} onPress={addComment} disabled={sending}>
-          {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={18} color="#fff" />}
-        </Pressable>
-      </View>
+      <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
+      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
+        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
+          {mentionList.length > 0 && (
+            <View style={styles.mentionBox}>
+              {mentionList.map((x: any) => (
+                <Pressable key={String(x.id)} onPress={() => pickMention(x.first)} style={styles.mentionRow}>
+                  <View style={[styles.rowAv, x.id === 'bot' ? styles.avBot : styles.avPerson]}>
+                    {x.id === 'bot' ? <Ionicons name="leaf" size={15} color={t.gold} /> : <Text style={styles.avInitialsSm}>{initials(x.name)}</Text>}
+                  </View>
+                  <Text style={styles.mentionName}>{x.id === 'bot' ? 'Flagleaf' : x.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {replyTo && (
+            <BlurView intensity={60} tint={t.blurTint} style={styles.replyBar}>
+              <View style={styles.replyBarLine} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.replyQuoteAuthor} numberOfLines={1}>{replyTo.author}</Text>
+                <Text style={styles.replyQuoteText} numberOfLines={1}>{replyTo.snippet}</Text>
+              </View>
+              <Pressable onPress={() => setReplyTo(null)} hitSlop={10}><Ionicons name="close" size={20} color={t.muted} /></Pressable>
+            </BlurView>
+          )}
+          <Composer value={text} onChange={onChangeText} onSend={send} busy={busy} onCamera={capture} placeholder="Сообщение… (@flagleaf — спросить ИИ)" />
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

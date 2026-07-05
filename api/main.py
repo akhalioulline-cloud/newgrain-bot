@@ -59,6 +59,12 @@ from bot.db import (
     get_feed_comments,
     get_feed_comments_bulk,
     get_feed_post,
+    create_wall_message,
+    get_wall,
+    get_wall_message,
+    recent_wall,
+    set_wall_reaction,
+    get_farm_members,
     get_dm_peers,
     get_dm_messages,
     send_dm,
@@ -252,7 +258,7 @@ async def _optional_user(request: Request):
 
 @app.get("/api/me")
 async def me(user=Depends(require_user)):
-    return {"name": user["full_name"], "role": user["role"], "farm_id": user["farm_id"]}
+    return {"id": user["id"], "name": user["full_name"], "role": user["role"], "farm_id": user["farm_id"]}
 
 
 # ── Web Push (PWA notifications) ─────────────────────────────────────────────────
@@ -891,6 +897,163 @@ async def dm_send(peer_id: int, body: DmSend, user=Depends(require_user)):
     row = await send_dm(user["farm_id"], user["id"], peer_id, txt)
     _push_bg([peer_id], user["full_name"] or "Новое сообщение", txt)
     return {"ok": True, "id": row["id"], "created_at": row["created_at"].isoformat()}
+
+
+# ── Team wall (single flat message stream; @flagleaf summons the bot, photos auto) ──
+@app.get("/api/members")
+async def members(user=Depends(require_user)):
+    """Teammates for the @-mention picker + client-side highlight (excludes self)."""
+    out = []
+    for m in await get_farm_members(user["farm_id"]):
+        if m["id"] == user["id"]:
+            continue
+        first = (m["full_name"] or "").split()[0] if m["full_name"] else ""
+        out.append({"id": m["id"], "name": m["full_name"], "first": first, "role": m["role"]})
+    return {"members": out}
+
+
+def _mention_targets(txt, members, exclude_id):
+    """user_ids @-mentioned by first name (best-effort; team is small)."""
+    if not txt or "@" not in txt:
+        return set()
+    tokens = {t.lower() for t in re.findall(r"@([^\s@,.:;!?]+)", txt)}
+    out = set()
+    for m in members:
+        if m["id"] == exclude_id:
+            continue
+        first = ((m["full_name"] or "").split()[0] if m["full_name"] else "").lower()
+        if first and first in tokens:
+            out.add(m["id"])
+    return out
+
+
+def _wall_history(rows):
+    lines = []
+    for r in rows:
+        who = "Flagleaf" if r["is_bot"] else (r["author"] or "агроном")
+        b = (r["body"] or "").strip()
+        if b:
+            lines.append(f"{who}: {b[:800]}")
+    return "\n".join(lines)[-4000:] or None
+
+
+@app.get("/api/wall")
+async def wall_get(user=Depends(require_user)):
+    rows = await get_wall(user["farm_id"], user["id"], 80)
+    msgs = [{
+        "id": r["id"], "body": r["body"], "is_bot": r["is_bot"], "author_id": r["author_id"],
+        "author": ("Flagleaf" if r["is_bot"] else r["author"]),
+        "chief": (not r["is_bot"]) and r["author_role"] in ("chief_agronomist", "admin"),
+        "media": _presign(r["image_url"]), "is_video": bool(r["is_video"]), "field": r["field_name"],
+        "reply_to": r["reply_to"],
+        "reply_author": (("Flagleaf" if r["reply_is_bot"] else r["reply_author"]) if r["reply_to"] else None),
+        "reply_snippet": ((r["reply_body"] or ("📷 фото" if r["reply_has_media"] else "")) if r["reply_to"] else None),
+        "ups": r["ups"], "downs": r["downs"], "my_reaction": r["my_reaction"],
+        "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+    } for r in rows]
+    return {"messages": msgs, "me": {"id": user["id"], "role": user["role"], "name": user["full_name"]}}
+
+
+@app.post("/api/wall")
+async def wall_post(request: Request, user=Depends(require_user),
+                    body: str = Form(""), field_id: str = Form(""), crop: str = Form(""),
+                    reply_to: str = Form(""), image: UploadFile | None = File(None),
+                    video: UploadFile | None = File(None)):
+    """Post one message to the flat team wall. Media is stored (+ auto Flagleaf reply); text gets
+    a reply only when it @flagleafs. A reply_to quotes another message (and, if that message is a
+    photo, an @flagleaf re-looks at it)."""
+    if not await _rate_ok(_client_ip(request), "feed", FEED_PER_HOUR):
+        raise HTTPException(429, "Слишком много сообщений. Попробуйте позже.")
+    txt = body.strip()
+    fid = int(field_id) if field_id.strip().isdigit() else None
+    cr = crop.strip() or None
+    rid = int(reply_to) if reply_to.strip().isdigit() else None
+    reply_msg = await get_wall_message(rid) if rid else None
+    if rid and (not reply_msg or reply_msg["farm_id"] != user["farm_id"]):
+        rid, reply_msg = None, None
+
+    sub_id, ctx, has_media = None, None, False
+    if image is not None:
+        img = await image.read()
+        if not img:
+            raise HTTPException(400, "Фото не загрузилось. Попробуйте ещё раз.")
+        if len(img) > MAX_IMG:
+            raise HTTPException(413, "Фото слишком большое (макс. 12 МБ).")
+        sub_id = await _store_photo_submission(user, img, image.content_type or "image/jpeg", field_id, txt)
+        if sub_id is None:
+            raise HTTPException(502, "Не удалось сохранить фото. Попробуйте ещё раз.")
+        ctx = flagleaf.Context(image=img, text=txt or None, crop=cr); has_media = True
+    elif video is not None:
+        data = await video.read()
+        if not data:
+            raise HTTPException(400, "Видео не загрузилось. Попробуйте ещё раз.")
+        if len(data) > MAX_VIDEO_COMMENT:
+            raise HTTPException(413, "Видео слишком большое (макс. 60 МБ). Снимите короче.")
+        try:
+            sub_id = await _store_scout_video(user, data, video.content_type or "video/mp4", field_id, txt)
+        except Exception:
+            logger.exception("wall: video store failed")
+        ctx = flagleaf.Context(video=data, text=txt or None, crop=cr); has_media = True
+    if not (sub_id or ctx or txt):
+        raise HTTPException(400, "Пустое сообщение.")
+
+    row = await create_wall_message(user["farm_id"], user["id"], False, txt or None, sub_id, fid, rid)
+    msg_id = row["id"]
+
+    # notify @-mentioned teammates + whoever you replied to
+    mem = await get_farm_members(user["farm_id"])
+    targets = _mention_targets(txt, mem, user["id"])
+    if reply_msg and reply_msg["author_id"] and reply_msg["author_id"] != user["id"]:
+        targets.add(reply_msg["author_id"])
+    if targets:
+        _push_bg(list(targets), user["full_name"] or "Новое сообщение", txt or "📷 фото")
+
+    # Flagleaf replies: automatically to media, or when @flagleaf'd in text
+    if has_media or flagleaf.mentions_bot(txt):
+        if ctx is None:                                # text @flagleaf → build context
+            img = None
+            if reply_msg and reply_msg["submission_id"] and not reply_msg["is_video"]:
+                try:                                   # re-look at the quoted photo
+                    u = await get_submission_image_url(reply_msg["submission_id"])
+                    if u:
+                        img = await download_bytes(u)
+                except Exception:
+                    logger.exception("wall: quoted-photo re-fetch failed")
+            ctx = flagleaf.Context(
+                image=img, text=flagleaf.strip_address(txt),
+                crop=(reply_msg["crop"] if reply_msg else cr),
+                field_hint=(reply_msg["field_name"] if reply_msg else None),
+                history=_wall_history(await recent_wall(user["farm_id"])))
+        reply = await flagleaf.respond(ctx)
+        if reply:
+            await create_wall_message(user["farm_id"], None, True, reply, None, None, msg_id)
+            _push_bg([user["id"]], "Flagleaf", reply)
+    return {"ok": True, "id": msg_id}
+
+
+@app.post("/api/wall/{message_id}/react")
+async def wall_react(message_id: int, body: FeedReact, user=Depends(require_user)):
+    """Chief 👍/👎 on a message — the ground-truth signal that drives the labeling gate on the
+    message's photo (👍 → into training, 👎 → out)."""
+    _require_chief(user)
+    v = body.verdict if body.verdict in ("up", "down", "none") else "none"
+    await set_wall_reaction(message_id, user["id"], v)
+    if v in ("up", "down"):
+        msg = await get_wall_message(message_id)
+        if msg and msg["author_id"] and msg["author_id"] != user["id"]:
+            _push_bg([msg["author_id"]], "Вердикт старшего",
+                     ("✅ подтвердил: " if v == "up" else "❌ отклонил: ") + (msg["body"] or "фото"))
+        if msg and msg["submission_id"]:
+            try:
+                sub = await get_submission_review(msg["submission_id"])
+                if sub:
+                    if v == "down" and sub["status"] != "rejected":
+                        await update_submission(msg["submission_id"], status="rejected")
+                    elif v == "up" and sub["status"] in ("pending_review", "rejected"):
+                        await update_submission(msg["submission_id"], status=approved_status(sub))
+            except Exception:
+                logger.exception("wall react: submission status update failed")
+    return {"ok": True}
 
 
 @app.get("/api/chat/history")

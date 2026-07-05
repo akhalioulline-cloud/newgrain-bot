@@ -1145,6 +1145,81 @@ async def set_feed_reaction(post_id, user_id, verdict):
                                {"p": post_id, "u": user_id})
 
 
+# ── flat team wall (single message stream; replaces feed posts+threads) ──────────
+async def create_wall_message(farm_id, author_id, is_bot, body, submission_id, field_id, reply_to):
+    async with engine.begin() as conn:
+        return (await conn.execute(text(
+            "INSERT INTO wall_messages (farm_id, author_id, is_bot, body, submission_id, field_id, reply_to) "
+            "VALUES (:farm,:author,:bot,:body,:sub,:field,:reply) RETURNING id, created_at"),
+            {"farm": farm_id, "author": author_id, "bot": is_bot, "body": body,
+             "sub": submission_id, "field": field_id, "reply": reply_to})).mappings().first()
+
+
+async def get_wall(farm_id, viewer_id, limit=80):
+    """The farm's flat message stream, newest first (client inverts). Each row carries author,
+    media, the quoted-reply snippet, and chief-verdict reaction counts."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT m.id, m.body, m.created_at, m.is_bot, m.author_id, "
+            "       u.full_name AS author, u.role AS author_role, "
+            "       m.submission_id::text AS submission_id, s.image_url, "
+            "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=m.submission_id) AS is_video, "
+            "       f.name AS field_name, m.reply_to, "
+            "       rm.body AS reply_body, rm.is_bot AS reply_is_bot, ru.full_name AS reply_author, "
+            "       (rm.submission_id IS NOT NULL) AS reply_has_media, "
+            "       (SELECT count(*) FROM wall_reactions r WHERE r.message_id=m.id AND r.verdict='up') AS ups, "
+            "       (SELECT count(*) FROM wall_reactions r WHERE r.message_id=m.id AND r.verdict='down') AS downs, "
+            "       (SELECT verdict FROM wall_reactions r WHERE r.message_id=m.id AND r.user_id=:viewer) AS my_reaction "
+            "FROM wall_messages m "
+            "LEFT JOIN users u ON u.id=m.author_id "
+            "LEFT JOIN submissions s ON s.id=m.submission_id "
+            "LEFT JOIN fields f ON f.id=m.field_id "
+            "LEFT JOIN wall_messages rm ON rm.id=m.reply_to "
+            "LEFT JOIN users ru ON ru.id=rm.author_id "
+            "WHERE m.farm_id=:farm ORDER BY m.created_at DESC LIMIT :lim"),
+            {"farm": farm_id, "viewer": viewer_id, "lim": limit})).mappings().all()
+
+
+async def get_wall_message(message_id):
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT m.id, m.farm_id, m.author_id, m.is_bot, m.body, m.submission_id::text AS submission_id, "
+            "       m.field_id, f.name AS field_name, f.crop AS crop, "
+            "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=m.submission_id) AS is_video "
+            "FROM wall_messages m LEFT JOIN fields f ON f.id=m.field_id WHERE m.id=:id"),
+            {"id": message_id})).mappings().first()
+
+
+async def recent_wall(farm_id, limit=8):
+    """Last N messages (chronological) — conversational context handed to Flagleaf."""
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            "SELECT m.is_bot, m.body, u.full_name AS author FROM wall_messages m "
+            "LEFT JOIN users u ON u.id=m.author_id WHERE m.farm_id=:farm "
+            "ORDER BY m.created_at DESC LIMIT :lim"), {"farm": farm_id, "lim": limit})).mappings().all()
+    return list(reversed(rows))
+
+
+async def set_wall_reaction(message_id, user_id, verdict):
+    async with engine.begin() as conn:
+        if verdict in ("up", "down"):
+            await conn.execute(text(
+                "INSERT INTO wall_reactions (message_id,user_id,verdict) VALUES (:m,:u,:v) "
+                "ON CONFLICT (message_id,user_id) DO UPDATE SET verdict=:v, created_at=now()"),
+                {"m": message_id, "u": user_id, "v": verdict})
+        else:
+            await conn.execute(text("DELETE FROM wall_reactions WHERE message_id=:m AND user_id=:u"),
+                               {"m": message_id, "u": user_id})
+
+
+async def get_farm_members(farm_id):
+    """Active teammates on the farm — for the @mention picker and mention→push resolution."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT id, full_name, role FROM users WHERE farm_id=:farm AND is_active ORDER BY full_name"),
+            {"farm": farm_id})).mappings().all()
+
+
 async def get_feed(farm_id, viewer_id, limit=60):
     async with engine.connect() as conn:
         return (await conn.execute(text(
