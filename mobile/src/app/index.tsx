@@ -16,16 +16,16 @@ const softShadow = {
   shadowColor: '#3c280a', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 3,
 };
 
-function useKeyboardOpen() {
-  const [open, setOpen] = useState(false);
+function useKeyboard() {
+  const [kb, setKb] = useState({ open: false, height: 0 });
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const s = Keyboard.addListener(showEvt, () => setOpen(true));
-    const h = Keyboard.addListener(hideEvt, () => setOpen(false));
+    const s = Keyboard.addListener(showEvt, (e: any) => setKb({ open: true, height: e?.endCoordinates?.height || 0 }));
+    const h = Keyboard.addListener(hideEvt, () => setKb({ open: false, height: 0 }));
     return () => { s.remove(); h.remove(); };
   }, []);
-  return open;
+  return kb;
 }
 function formData(fields: Record<string, string>) {
   const fd = new FormData();
@@ -254,7 +254,7 @@ function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; 
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const kbOpen = useKeyboardOpen();
+  const kb = useKeyboard();
   const load = useCallback(async () => {
     try { const d = await api.get('/api/feed'); setPosts(d.posts || []); }
     catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
@@ -268,12 +268,12 @@ function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; 
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={GOLD} /></View> : (
         <FlatList data={posts} inverted keyExtractor={(p) => String(p.id)} style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 14 }} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => <PostCard p={item} onChanged={load} />}
           ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Напишите наблюдение — оно появится здесь для всей команды.</Text></View>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={publish} busy={busy} camera placeholder="Сообщение команде…" />
         </View>
       </KeyboardAvoidingView>
@@ -338,7 +338,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   ]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const kbOpen = useKeyboardOpen();
+  const kb = useKeyboard();
   const send = async () => {
     const q = text.trim(); if (!q || busy) return; setText('');
     const hist = msgs.slice(-6).map((m) => ({ role: m.role, text: m.text }));
@@ -354,14 +354,14 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   return (
     <View style={{ flex: 1 }}>
       <FlatList data={[...msgs].reverse()} inverted keyExtractor={(_, i) => String(i)} style={StyleSheet.absoluteFill}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
             <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
           </View>
         )} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
         </View>
       </KeyboardAvoidingView>
@@ -375,7 +375,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const kbOpen = useKeyboardOpen();
+  const kb = useKeyboard();
   const load = useCallback(async () => {
     try { const d = await api.get(`/api/dm/with/${peer.id}`); setMsgs(d.messages || []); }
     catch {} finally { setLoading(false); }
@@ -395,7 +395,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={GOLD} /></View> : (
         <FlatList data={[...msgs].reverse()} inverted keyExtractor={(m) => String(m.id)} style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <View style={[styles.bubble, item.mine ? styles.bubbleUser : styles.bubbleBot]}>
               <Text style={item.mine ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.body}</Text>
@@ -405,7 +405,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
           ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text></View>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kbOpen ? 0 : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Сообщение…" />
         </View>
       </KeyboardAvoidingView>
