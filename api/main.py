@@ -63,6 +63,11 @@ from bot.db import (
     get_dm_messages,
     send_dm,
     get_farm_user,
+    save_bot_chat,
+    get_bot_chat,
+    save_push_token,
+    get_push_tokens,
+    delete_push_token,
 )
 from bot import flagleaf
 from bot.flagleaf import _field_route      # Flagleaf owns field-routing now (also used by /api/chat)
@@ -712,6 +717,8 @@ async def feed_comment(post_id: int, body: FeedComment, user=Depends(require_use
     if not post:
         raise HTTPException(404, "Пост не найден.")
     await add_feed_comment(post_id, user["id"], False, txt)
+    if post["author_id"] != user["id"]:
+        _push_bg([post["author_id"]], f"{user['full_name']} — в ленте", txt)
     if flagleaf.addressed(txt):                       # «бот …» → ask the Flagleaf participant
         # Ear owns the conversation: build the thread transcript + the thread's field, hand to Flagleaf
         hist = []
@@ -744,6 +751,9 @@ async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
     await set_feed_reaction(post_id, user["id"], v)
     if v in ("up", "down"):
         post = await get_feed_post(post_id)
+        if post and post["author_id"] != user["id"]:
+            _push_bg([post["author_id"]], "Вердикт старшего",
+                     ("✅ подтвердил: " if v == "up" else "❌ отклонил: ") + (post["body"] or "ваше наблюдение"))
         if post and post["submission_id"]:
             try:
                 sub = await get_submission_review(post["submission_id"])
@@ -755,6 +765,46 @@ async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
             except Exception:
                 logger.exception("feed react: submission status update failed")
     return {"ok": True}
+
+
+# ── Native push (Expo) — one token per device; delivery needs the EAS build ──────
+class PushReg(BaseModel):
+    token: str
+    platform: str = ""
+
+
+@app.post("/api/push/register")
+async def push_register(body: PushReg, user=Depends(require_user)):
+    tok = (body.token or "").strip()
+    if not tok.startswith("ExponentPushToken"):
+        raise HTTPException(400, "not an Expo push token")
+    await save_push_token(user["id"], tok, (body.platform or "")[:20])
+    return {"ok": True}
+
+
+async def _push_notify(user_ids, title, body):
+    """Fire-and-forget Expo push to all devices of the given users. Silently no-ops when
+    nobody has registered a token (i.e., until the EAS build ships). Dead tokens are pruned."""
+    try:
+        tokens = await get_push_tokens(list(user_ids))
+        if not tokens:
+            return
+        import aiohttp
+        msgs = [{"to": t, "title": title, "body": (body or "")[:170], "sound": "default"} for t in tokens]
+        async with aiohttp.ClientSession() as s:
+            async with s.post("https://exp.host/--/api/v2/push/send", json=msgs,
+                              timeout=aiohttp.ClientTimeout(total=10)) as r:
+                data = await r.json()
+        for t, tick in zip(tokens, (data or {}).get("data", [])):
+            if isinstance(tick, dict) and tick.get("details", {}).get("error") == "DeviceNotRegistered":
+                await delete_push_token(t)
+    except Exception:
+        logger.exception("push send failed")
+
+
+def _push_bg(user_ids, title, body):
+    if user_ids:
+        asyncio.create_task(_push_notify(user_ids, title, body))
 
 
 # ── Person-to-person DMs (agronomist ↔ agronomist, human-only) ───────────────────
@@ -782,6 +832,7 @@ async def dm_thread(peer_id: int, user=Depends(require_user)):
     msgs = await get_dm_messages(user["id"], peer_id)
     return {"peer": {"id": peer["id"], "name": peer["full_name"], "role": peer["role"]},
             "messages": [{"id": m["id"], "mine": m["sender_id"] == user["id"], "body": m["body"],
+                          "read": m["read_at"] is not None,
                           "created_at": m["created_at"].isoformat()} for m in msgs]}
 
 
@@ -796,7 +847,17 @@ async def dm_send(peer_id: int, body: DmSend, user=Depends(require_user)):
     if not peer:
         raise HTTPException(404, "Нет такого участника.")
     row = await send_dm(user["farm_id"], user["id"], peer_id, txt)
+    _push_bg([peer_id], user["full_name"] or "Новое сообщение", txt)
     return {"ok": True, "id": row["id"], "created_at": row["created_at"].isoformat()}
+
+
+@app.get("/api/chat/history")
+async def chat_history(user=Depends(require_user)):
+    """The signed-in user's «Личное» thread with Flagleaf — server-side, so it survives
+    app restarts and follows the account across devices."""
+    rows = await get_bot_chat(user["id"])
+    return {"messages": [{"role": r["role"], "text": r["body"],
+                          "created_at": r["created_at"].isoformat()} for r in rows]}
 
 
 @app.post("/api/chat")
@@ -811,10 +872,16 @@ async def chat(body: ChatIn, request: Request):
     crop = (body.crop or "").strip()
     full_q = f"Культура: {crop}. {q}" if crop else q   # give the grounding the crop context
     plan, field_ctx = await _field_route(q)           # field questions answered in-chat (no commands on web)
-    if plan:
-        return {"answer": plan}
-    ans = await agro_answer(full_q, context=field_ctx, history=_format_history(body.history))
-    return {"answer": ans or "Не понял вопрос — переформулируйте, пожалуйста."}
+    ans = plan or await agro_answer(full_q, context=field_ctx, history=_format_history(body.history)) \
+        or "Не понял вопрос — переформулируйте, пожалуйста."
+    user = await _optional_user(request)
+    if user:                                          # signed-in turns persist (restart/device-proof)
+        try:
+            await save_bot_chat(user["id"], "user", q)
+            await save_bot_chat(user["id"], "bot", ans)
+        except Exception:
+            logger.exception("bot chat save failed")
+    return {"answer": ans}
 
 
 @app.post("/api/chat/stream")

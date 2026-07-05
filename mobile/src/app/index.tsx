@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, PanResponder,
-  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, useWindowDimensions, View,
+  ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
+  PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme,
+  useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { api, getToken, setToken } from '@/lib/api';
@@ -70,7 +72,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   unreadBadge: { minWidth: 21, height: 21, borderRadius: 11, backgroundColor: t.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginLeft: 8, marginTop: 3 },
   unreadTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
   flip: { transform: [{ scaleY: -1 }] },
-  bubbleTime: { fontSize: 10.5, color: t.muted, marginTop: 3, alignSelf: 'flex-end' },
+  bubbleTime: { fontSize: 10.5, color: t.muted },
+  bubbleMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, alignSelf: 'flex-end' },
+  daySep: { textAlign: 'center', color: t.muted, fontSize: 12, paddingVertical: 6 },
+  viewerBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' },
+  viewerScroll: { flexGrow: 1 },
+  viewerImg: { width: '100%', height: '100%' },
+  viewerClose: { position: 'absolute', top: 54, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   rowTop: { flexDirection: 'row', alignItems: 'center' },
   rowTitle: { fontSize: 16.5, fontFamily: BRAND_FONT, fontWeight: '800', color: t.text, flexShrink: 1 },
   rowTime: { fontSize: 12, color: t.muted },
@@ -155,6 +163,46 @@ function when(iso?: string) {
   return d.toDateString() === n.toDateString()
     ? `сегодня ${t}`
     : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${t}`;
+}
+function dayLabel(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso), n = new Date();
+  if (d.toDateString() === n.toDateString()) return 'сегодня';
+  const y = new Date(n); y.setDate(n.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'вчера';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+// interleave day separators into a chronological message array (for inverted lists)
+function withDays<T extends { created_at?: string }>(msgs: T[]): (T | { sep: string; id: string })[] {
+  const out: any[] = [];
+  let prev = '';
+  msgs.forEach((m, i) => {
+    const lbl = dayLabel(m.created_at);
+    if (lbl && lbl !== prev) { out.push({ sep: lbl, id: `sep-${i}` }); prev = lbl; }
+    out.push(m);
+  });
+  return out;
+}
+// camera-or-gallery chooser → returns the picked asset (photo or video) or null
+async function pickMedia(): Promise<ImagePicker.ImagePickerAsset | null> {
+  return new Promise((resolve) => {
+    const open = async (camera: boolean) => {
+      try {
+        const perm = camera
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { resolve(null); return; }
+        const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images', 'videos'], quality: 0.7, videoMaxDuration: 60 };
+        const res = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
+        resolve(res.canceled ? null : res.assets[0]);
+      } catch { resolve(null); }
+    };
+    Alert.alert('Фото или видео', 'Снимок уйдёт в ленту — Flagleaf распознает и сохранит для обучения.', [
+      { text: 'Камера', onPress: () => open(true) },
+      { text: 'Галерея', onPress: () => open(false) },
+      { text: 'Отмена', style: 'cancel', onPress: () => resolve(null) },
+    ]);
+  });
 }
 function Logo({ size = 20 }: { size?: number }) {
   const { t, styles } = useTheme();
@@ -362,15 +410,15 @@ function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned, unread 
   );
 }
 
-function Composer({ value, onChange, onSend, busy, placeholder, camera }:
-  { value: string; onChange: (s: string) => void; onSend: () => void; busy: boolean; placeholder: string; camera?: boolean }) {
+function Composer({ value, onChange, onSend, busy, placeholder, onCamera }:
+  { value: string; onChange: (s: string) => void; onSend: () => void; busy: boolean; placeholder: string; onCamera?: () => void }) {
   const { t, styles } = useTheme();
   return (
     <BlurView intensity={70} tint={t.blurTint} style={styles.composer}>
-      {camera && <Pressable style={styles.iconCircle}><Ionicons name="camera-outline" size={20} color={t.gold} /></Pressable>}
+      {onCamera && <Pressable style={styles.iconCircle} onPress={onCamera} disabled={busy}><Ionicons name="camera-outline" size={20} color={t.gold} /></Pressable>}
       <TextInput style={styles.capsule} value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={t.muted} multiline />
       <Pressable style={[styles.sendCircle, busy && styles.off]} onPress={onSend} disabled={busy}>
-        <Ionicons name="arrow-up" size={22} color="#fff" />
+        {busy ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={22} color="#fff" />}
       </Pressable>
     </BlurView>
   );
@@ -388,10 +436,33 @@ function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; 
     try { const d = await api.get('/api/feed'); setPosts(d.posts || []); }
     catch (e: any) { if (e?.status === 401) onLogout(); } finally { setLoading(false); }
   }, [onLogout]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 12000);   // freshness: teammates' posts appear without reopening
+    return () => clearInterval(iv);
+  }, [load]);
   const publish = async () => {
     const b = text.trim(); if (!b) return; setText(''); setBusy(true);
     try { await api.postForm('/api/feed/post', formData({ body: b })); await load(); } catch {} finally { setBusy(false); }
+  };
+  const capture = async () => {
+    const a = await pickMedia();
+    if (!a) return;
+    setBusy(true);
+    try {
+      const fd = formData({ body: text.trim() });
+      const isVideo = a.type === 'video';
+      fd.append(isVideo ? 'video' : 'image', {
+        uri: a.uri,
+        name: a.fileName || (isVideo ? 'scout.mp4' : 'photo.jpg'),
+        type: a.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+      } as any);
+      setText('');
+      await api.postForm('/api/feed/post', fd);
+      await load();
+    } catch (e: any) {
+      Alert.alert('Не отправилось', e?.message || 'Проверьте связь и попробуйте ещё раз.');
+    } finally { setBusy(false); }
   };
   return (
     <View style={{ flex: 1 }}>
@@ -403,7 +474,7 @@ function FeedView({ onLogout, headerPad, bottomInset }: { onLogout: () => void; 
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
         <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
-          <Composer value={text} onChange={setText} onSend={publish} busy={busy} camera placeholder="Сообщение команде…" />
+          <Composer value={text} onChange={setText} onSend={publish} busy={busy} onCamera={capture} placeholder="Сообщение команде…" />
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -414,6 +485,7 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
   const { t, styles } = useTheme();
   const [c, setC] = useState('');
   const [sending, setSending] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
   const addComment = async () => {
     const b = c.trim(); if (!b) return; setC(''); setSending(true);
     try { await api.postJson(`/api/feed/${p.id}/comment`, { body: b }); onChanged(); } catch {} finally { setSending(false); }
@@ -432,7 +504,22 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
       {!!p.body && <Text style={styles.pbody}>{p.body}</Text>}
       {!!p.media && (p.is_video
         ? <View style={styles.videoBox}><Ionicons name="videocam-outline" size={30} color={t.muted} /></View>
-        : <Image source={{ uri: p.media }} style={styles.pmedia} resizeMode="cover" />)}
+        : <>
+          <Pressable onPress={() => setZoomed(true)}>
+            <Image source={{ uri: p.media }} style={styles.pmedia} resizeMode="cover" />
+          </Pressable>
+          <Modal visible={zoomed} transparent animationType="fade" onRequestClose={() => setZoomed(false)}>
+            <View style={styles.viewerBg}>
+              <ScrollView maximumZoomScale={5} minimumZoomScale={1} contentContainerStyle={styles.viewerScroll}
+                centerContent showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
+                <Image source={{ uri: p.media }} style={styles.viewerImg} resizeMode="contain" />
+              </ScrollView>
+              <Pressable style={styles.viewerClose} onPress={() => setZoomed(false)} hitSlop={14}>
+                <Ionicons name="close" size={30} color="#fff" />
+              </Pressable>
+            </View>
+          </Modal>
+        </>)}
       {(p.thread || []).filter((cm: any) => cm.is_bot).slice(0, 1).map((cm: any) => (
         <View key={cm.id} style={styles.botPanel}>
           <View style={styles.botLabel}><Ionicons name="leaf" size={14} color={t.botLabel} /><Text style={styles.botLabelTxt}> Flagleaf</Text></View>
@@ -462,14 +549,19 @@ function PostCard({ p, onChanged }: { p: any; onChanged: () => void }) {
 }
 
 // ─────────────────────────── DM (you↔bot) ───────────────────────────
+const BOT_GREETING = { role: 'bot' as const, text: 'Здравствуйте! Я ИИ-агроном Flagleaf. Здесь мы говорим лично — спросите про препараты, ЭПВ, историю или план поля.' };
+
 function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: number }) {
   const { t, styles } = useTheme();
-  const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string }[]>([
-    { role: 'bot', text: 'Здравствуйте! Я ИИ-агроном Flagleaf. Здесь мы говорим лично — спросите про препараты, ЭПВ, историю или план поля.' },
-  ]);
+  const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string; created_at?: string }[]>([BOT_GREETING]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const kb = useKeyboard();
+  useEffect(() => {   // history is server-side: survives restarts, follows the account across devices
+    api.get('/api/chat/history')
+      .then((d) => { if (d.messages?.length) setMsgs([BOT_GREETING, ...d.messages]); })
+      .catch(() => {});
+  }, []);
   const send = async () => {
     const q = text.trim(); if (!q || busy) return; setText('');
     const hist = msgs.slice(-6).map((m) => ({ role: m.role, text: m.text }));
@@ -484,9 +576,11 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   };
   return (
     <View style={{ flex: 1 }}>
-      <FlatList data={[...msgs].reverse()} inverted keyExtractor={(_, i) => String(i)} style={StyleSheet.absoluteFill}
+      <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any, i) => m.sep ? m.id : String(i)} style={StyleSheet.absoluteFill}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
+        renderItem={({ item }: any) => item.sep
+          ? <Text style={styles.daySep}>{item.sep}</Text>
+          : (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
             <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
           </View>
@@ -526,12 +620,20 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
   return (
     <View style={{ flex: 1 }}>
       {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
-        <FlatList data={[...msgs].reverse()} inverted keyExtractor={(m) => String(m.id)} style={StyleSheet.absoluteFill}
+        <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any) => String(m.id)} style={StyleSheet.absoluteFill}
           contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
+          renderItem={({ item }: any) => item.sep
+            ? <Text style={styles.daySep}>{item.sep}</Text>
+            : (
             <View style={[styles.bubble, item.mine ? styles.bubbleUser : styles.bubbleBot]}>
               <Text style={item.mine ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.body}</Text>
-              {!!item.created_at && <Text style={[styles.bubbleTime, item.mine && { color: t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)' }]}>{when(item.created_at)}</Text>}
+              <View style={styles.bubbleMeta}>
+                {!!item.created_at && <Text style={[styles.bubbleTime, item.mine && { color: t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)' }]}>{when(item.created_at).replace('сегодня ', '')}</Text>}
+                {item.mine && !String(item.id).startsWith('tmp') && (
+                  <Ionicons name={item.read ? 'checkmark-done' : 'checkmark'} size={13}
+                    color={item.read ? t.gold : (t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)')} />
+                )}
+              </View>
             </View>
           )}
           ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text></View>} />

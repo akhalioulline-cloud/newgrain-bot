@@ -7,6 +7,13 @@
     "icon": "./assets/images/icon.png",
     "scheme": "flagleaf",
     "userInterfaceStyle": "automatic",
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "Камера нужна, чтобы фотографировать растения для распознавания и ленты команды.",
+        "NSPhotoLibraryUsageDescription": "Доступ к галерее нужен, чтобы отправлять фото растений в ленту команды.",
+        "NSMicrophoneUsageDescription": "Микрофон нужен для записи видео с голосовым комментарием."
+      }
+    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

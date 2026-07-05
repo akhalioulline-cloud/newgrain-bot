@@ -1186,7 +1186,7 @@ async def get_feed_comments_bulk(post_ids):
 async def get_feed_post(post_id):
     async with engine.connect() as conn:
         return (await conn.execute(text(
-            "SELECT p.id, p.body, p.farm_id, p.field_id, p.submission_id::text AS submission_id, "
+            "SELECT p.id, p.body, p.farm_id, p.field_id, p.author_id, p.submission_id::text AS submission_id, "
             "       u.full_name AS author, f.name AS field_name, f.crop AS crop, "
             "       EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=p.submission_id) AS is_video "
             "FROM feed_posts p JOIN users u ON u.id=p.author_id LEFT JOIN fields f ON f.id=p.field_id "
@@ -1215,7 +1215,7 @@ async def get_dm_messages(me_id, peer_id, limit=200):
     """Thread between me and a teammate (chronological) — and mark their messages read."""
     async with engine.begin() as conn:
         rows = (await conn.execute(text(
-            "SELECT id, sender_id, body, created_at FROM dm_messages "
+            "SELECT id, sender_id, body, created_at, read_at FROM dm_messages "
             "WHERE (sender_id=:me AND recipient_id=:peer) OR (sender_id=:peer AND recipient_id=:me) "
             "ORDER BY created_at DESC LIMIT :lim"),
             {"me": me_id, "peer": peer_id, "lim": limit})).mappings().all()
@@ -1239,6 +1239,46 @@ async def get_farm_user(farm_id, user_id):
         return (await conn.execute(text(
             "SELECT id, full_name, role FROM users WHERE id=:u AND farm_id=:farm AND is_active"),
             {"u": user_id, "farm": farm_id})).mappings().first()
+
+
+async def save_bot_chat(user_id, role, body):
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO bot_chat_messages (user_id, role, body) VALUES (:u, :r, :b)"),
+            {"u": user_id, "r": role, "b": body})
+
+
+async def get_bot_chat(user_id, limit=100):
+    """The user's «Личное» thread with Flagleaf, chronological."""
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            "SELECT role, body, created_at FROM bot_chat_messages "
+            "WHERE user_id=:u ORDER BY created_at DESC LIMIT :lim"),
+            {"u": user_id, "lim": limit})).mappings().all()
+    return list(reversed(rows))
+
+
+async def save_push_token(user_id, token, platform):
+    """One row per device; re-registering an existing token re-binds it to this user."""
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO push_tokens (token, user_id, platform) VALUES (:t, :u, :p) "
+            "ON CONFLICT (token) DO UPDATE SET user_id=:u, platform=:p"),
+            {"t": token, "u": user_id, "p": platform})
+
+
+async def get_push_tokens(user_ids):
+    if not user_ids:
+        return []
+    async with engine.connect() as conn:
+        return [r[0] for r in (await conn.execute(text(
+            "SELECT token FROM push_tokens WHERE user_id = ANY(:ids)"),
+            {"ids": list(user_ids)})).all()]
+
+
+async def delete_push_token(token):
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM push_tokens WHERE token=:t"), {"t": token})
 
 
 async def get_team_progress():
