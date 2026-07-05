@@ -71,6 +71,9 @@ _Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
   native app moves to streaming replies.
 
 ## AI / learning
+- **Proactive Flagleaf — SHADOW MODE running (5 Jul):** unsummoned messages evaluated + logged
+  (would-be line), nothing posted. Read `flagleaf_shadow` / `GET /api/shadow` together; decide if
+  it graduates to 'live' (rate-limited, maybe private-DM). See [[newgrain-flagleaf-proactive]].
 - **Train from the discussion**: use feed **comments** (peers correcting each other) as a training
   signal — captured today, not yet fed to the model. Chief 👍/👎 already drives the labeling gate.
 - Condition-/threshold-triggered product surfacing (idea borrowed from AgriChat.AI): surface
