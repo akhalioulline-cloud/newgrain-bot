@@ -3,7 +3,7 @@
 Deferred work + ideas, parked here on purpose so we don't lose them and don't build them
 prematurely. Ask "show me the backlog" anytime. Newest asks near the top of each section.
 
-_Last updated: 2026-07-05 (Telegram-gap review with the founder; order below is the agreed one)._
+_Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
 
 ## Messenger features — agreed plan (5 Jul 2026 review vs Telegram)
 
@@ -40,10 +40,17 @@ _Last updated: 2026-07-05 (Telegram-gap review with the founder; order below is 
 - Web-app parity for person DMs; media in person DMs.
 
 ## Product / EAR (the chat)
+- ~~Flat team wall~~ — **DONE 5 Jul 2026.** Team chat is now ONE flat message stream (migration
+  0041 `wall_messages`/`wall_reactions`, replaced posts+threads; old feed migrated in). @flagleaf
+  summons the bot (photos still auto-reply); reply/quote via long-press; @mention teammates
+  (autocomplete + push + highlight); chief 👍/👎 inline. **Web feed still on the OLD `feed_*`
+  tables → native & web now DIVERGE** — do web→wall parity, or retire the web feed, once the team
+  is fully on native. `/api/feed*` kept alive for the web app only.
 - ~~Private human-to-human chats~~ — **DONE 5 Jul 2026** (migration 0039 `dm_messages`,
   `/api/dm/*`, native chat-list rows + thread view with unread badges).
-- Chief-review reactions (👍/👎) in the **native** feed (web has them; native shows the verdict
-  badge but no react buttons yet).
+- ~~Chief-review reactions in native~~ — **DONE** (👍/👎 inline on wall photo messages → labeling gate).
+- Wall niceties: tap a reply-quote to scroll to the original; swipe-to-reply (Telegram gesture,
+  currently long-press → Ответить); edit/delete own messages; feed-row unread badge.
 - «Ваш вклад» / team-goal + «мои загрузки» in native (web-only for now).
 
 ## Native app (Expo) — Milestone roadmap
