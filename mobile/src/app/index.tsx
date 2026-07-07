@@ -105,7 +105,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   rowPreview: { fontSize: 14, color: t.muted, marginTop: 3 },
   // chat header (inside an open conversation)
   chatHdrBg: { backgroundColor: t.headerBg },
-  chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4, paddingRight: 16, paddingVertical: 9, gap: 8 },
+  chatHdrRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4, paddingRight: 12, paddingVertical: 7, gap: 9 },
+  chatHdrAv: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   backBtn: { paddingVertical: 6, paddingRight: 6, flexDirection: 'row', alignItems: 'center' },
   backTxt: { fontSize: 17, color: t.gold, marginLeft: -3 },
   chatHdrTitle: { fontSize: 16, fontFamily: BRAND_FONT, fontWeight: '800', color: t.text, flexShrink: 1 },
@@ -377,14 +378,16 @@ function Main({ onLogout }: { onLogout: () => void }) {
                 <Ionicons name="chevron-back" size={28} color={t.gold} />
                 <Text style={styles.backTxt}>Чаты</Text>
               </Pressable>
-              <View style={[styles.rowAv, open.kind === 'bot' ? styles.avBot : styles.avGroup]}>
-                {open.kind === 'feed' ? <Ionicons name="people" size={17} color="#fff" />
-                  : open.kind === 'bot' ? <Ionicons name="leaf" size={17} color={t.gold} />
+              <View style={{ flex: 1 }} />
+              {/* Telegram-style: title + circular avatar as one cluster on the right */}
+              <Text style={styles.chatHdrTitle} numberOfLines={1}>
+                {open.kind === 'feed' ? 'Лента команды' : open.kind === 'bot' ? 'Flagleaf' : open.name}
+              </Text>
+              <View style={[styles.chatHdrAv, open.kind === 'bot' ? styles.avBot : styles.avGroup]}>
+                {open.kind === 'feed' ? <Ionicons name="people" size={18} color="#fff" />
+                  : open.kind === 'bot' ? <Ionicons name="leaf" size={18} color={t.gold} />
                   : <Text style={styles.avInitialsSm}>{initials(open.name)}</Text>}
               </View>
-              <Text style={styles.chatHdrTitle} numberOfLines={1}>
-                {open.kind === 'feed' ? 'Лента команды' : open.kind === 'bot' ? 'Flagleaf · ИИ-агроном' : open.name}
-              </Text>
             </View>
           </View>
           <View {...swipe.panHandlers} style={[styles.edgeStrip, { top: headerPad }]} />
@@ -687,7 +690,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
       )}
       <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 6) : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 52) : Math.max(bottomInset, 10) }}>
           {mentionList.length > 0 && (
             <View style={styles.mentionBox}>
               {mentionList.map((x: any) => (
@@ -755,7 +758,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
           </View>
         )} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 6) : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 52) : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
         </View>
       </KeyboardAvoidingView>
@@ -813,7 +816,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
           ListEmptyComponent={<Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 6) : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 52) : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Сообщение…" />
         </View>
       </KeyboardAvoidingView>
