@@ -841,7 +841,8 @@ async def _push_notify(user_ids, title, body):
         if not tokens:
             return
         import aiohttp
-        msgs = [{"to": t, "title": title, "body": (body or "")[:170], "sound": "default"} for t in tokens]
+        msgs = [{"to": t, "title": title, "body": (body or "")[:170], "sound": "default",
+                 "channelId": "messages", "priority": "high", "badge": 1} for t in tokens]
         async with aiohttp.ClientSession() as s:
             async with s.post("https://exp.host/--/api/v2/push/send", json=msgs,
                               timeout=aiohttp.ClientTimeout(total=10)) as r:

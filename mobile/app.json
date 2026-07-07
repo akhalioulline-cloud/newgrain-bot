@@ -7,6 +7,12 @@
     "icon": "./assets/images/icon.png",
     "scheme": "flagleaf",
     "userInterfaceStyle": "automatic",
+    "updates": {
+      "url": "https://u.expo.dev/321be4ac-aae0-4fb9-8c8b-58326d098eae"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "bundleIdentifier": "ru.flagleaf.ear",
       "supportsTablet": false,

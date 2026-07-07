@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
-  PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme,
-  useWindowDimensions, View,
+  ActivityIndicator, Alert, Animated, AppState, FlatList, Image, Keyboard, KeyboardAvoidingView,
+  Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  useColorScheme, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -11,7 +11,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 
 import { api, getToken, setToken } from '@/lib/api';
-import { registerPush } from '@/lib/push';
+import { registerPush, clearBadge } from '@/lib/push';
 
 // dense rounded brand face; system-bundled on iOS, Roboto Black on Android — no font assets needed
 const BRAND_FONT = Platform.select({ ios: 'Avenir Next', android: 'sans-serif-black', default: undefined });
@@ -309,7 +309,12 @@ function Main({ onLogout }: { onLogout: () => void }) {
   const [me, setMe] = useState<any>(null);
   const [open, setOpen] = useState<null | Chat>(null);
   const slide = useRef(new Animated.Value(0)).current;
-  useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); registerPush(); }, []);
+  useEffect(() => {
+    api.get('/api/me').then(setMe).catch(() => {});
+    registerPush(); clearBadge();
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') clearBadge(); });
+    return () => sub.remove();
+  }, []);
   const headerPad = insets.top + 52;
   const openChat = (c: Chat) => {
     setOpen(c);
