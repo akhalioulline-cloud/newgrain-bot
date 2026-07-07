@@ -65,6 +65,8 @@ from bot.db import (
     recent_wall,
     set_wall_reaction,
     get_farm_members,
+    mark_wall_seen,
+    get_wall_overview,
     log_shadow,
     get_shadow,
     shadow_stats,
@@ -962,9 +964,36 @@ async def _reply_photo_bytes(reply_msg):
         return None
 
 
+@app.get("/api/chats")
+async def chats_overview(user=Depends(require_user)):
+    """The chat-list home in one call: wall preview + unread, teammates with last/unread.
+    Read-only — does NOT mark anything seen (opening a chat does that)."""
+    wall = await get_wall_overview(user["farm_id"], user["id"])
+    peers = await get_dm_peers(user["farm_id"], user["id"])
+    return {
+        "wall": (None if not wall else {
+            "author": ("Flagleaf" if wall["is_bot"] else wall["author"]),
+            "body": wall["body"] or ("🎥 видео" if wall["is_video"] else "📷 фото" if wall["has_media"] else ""),
+            "created_at": wall["created_at"].isoformat() if wall["created_at"] else None,
+            "unread": wall["unread"],
+        }),
+        "peers": [
+            {"id": r["id"], "name": r["name"], "role": r["role"],
+             "last_body": r["last_body"], "last_at": r["last_at"].isoformat() if r["last_at"] else None,
+             "last_mine": r["last_sender"] == user["id"] if r["last_sender"] is not None else False,
+             "unread": r["unread"]}
+            for r in peers],
+    }
+
+
 @app.get("/api/wall")
 async def wall_get(user=Depends(require_user)):
     rows = await get_wall(user["farm_id"], user["id"], 80)
+    if rows:
+        try:
+            await mark_wall_seen(user["id"], max(r["id"] for r in rows))
+        except Exception:
+            logger.exception("mark wall seen failed")
     msgs = [{
         "id": r["id"], "body": r["body"], "is_bot": r["is_bot"], "author_id": r["author_id"],
         "author": ("Flagleaf" if r["is_bot"] else r["author"]),

@@ -1212,6 +1212,31 @@ async def set_wall_reaction(message_id, user_id, verdict):
                                {"m": message_id, "u": user_id})
 
 
+async def mark_wall_seen(user_id, last_id):
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO wall_reads (user_id, last_seen_id) VALUES (:u, :l) "
+            "ON CONFLICT (user_id) DO UPDATE SET last_seen_id = GREATEST(wall_reads.last_seen_id, :l), updated_at = now()"),
+            {"u": user_id, "l": last_id})
+
+
+async def get_wall_overview(farm_id, user_id):
+    """Chat-list preview for the wall: last message + how many messages (not mine) arrived
+    after my last-seen mark. Does NOT mark anything read (that's GET /api/wall's job)."""
+    async with engine.connect() as conn:
+        return (await conn.execute(text(
+            "SELECT lm.body, lm.created_at, lm.is_bot, lm.author, lm.has_media, lm.is_video, "
+            "       (SELECT count(*) FROM wall_messages m WHERE m.farm_id=:farm "
+            "          AND m.id > COALESCE((SELECT last_seen_id FROM wall_reads WHERE user_id=:me), 0) "
+            "          AND (m.author_id IS DISTINCT FROM :me)) AS unread "
+            "FROM (SELECT m.body, m.created_at, m.is_bot, u.full_name AS author, "
+            "             (m.submission_id IS NOT NULL) AS has_media, "
+            "             EXISTS(SELECT 1 FROM video_jobs vj WHERE vj.submission_id=m.submission_id) AS is_video "
+            "      FROM wall_messages m LEFT JOIN users u ON u.id=m.author_id "
+            "      WHERE m.farm_id=:farm ORDER BY m.created_at DESC LIMIT 1) lm"),
+            {"farm": farm_id, "me": user_id})).mappings().first()
+
+
 async def get_farm_members(farm_id):
     """Active teammates on the farm — for the @mention picker and mention→push resolution."""
     async with engine.connect() as conn:

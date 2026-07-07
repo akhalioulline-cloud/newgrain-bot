@@ -320,9 +320,12 @@ function Main({ onLogout }: { onLogout: () => void }) {
     setOpen(c);
     Animated.timing(slide, { toValue: 1, duration: 240, useNativeDriver: true }).start();
   };
+  const [listRefresh, setListRefresh] = useState(0);
   const back = () => {
     Keyboard.dismiss();
-    Animated.timing(slide, { toValue: 0, duration: 210, useNativeDriver: true }).start(({ finished }) => { if (finished) setOpen(null); });
+    Animated.timing(slide, { toValue: 0, duration: 210, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) { setOpen(null); setListRefresh((n) => n + 1); }   // returning home refreshes unread state
+    });
   };
   // swipe from the left edge to go back (drag follows the finger, Telegram-style)
   const swipe = useMemo(() => PanResponder.create({
@@ -343,7 +346,7 @@ function Main({ onLogout }: { onLogout: () => void }) {
   }), [width, slide]);
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <ChatList me={me} onLogout={onLogout} onOpen={openChat} headerPad={headerPad} insetsTop={insets.top} bottomInset={insets.bottom} />
+      <ChatList me={me} onLogout={onLogout} onOpen={openChat} headerPad={headerPad} insetsTop={insets.top} bottomInset={insets.bottom} refreshKey={listRefresh} />
 
       {open && (
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: t.bg, zIndex: 20, elevation: 20, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}>
@@ -374,29 +377,29 @@ function Main({ onLogout }: { onLogout: () => void }) {
 }
 
 // ─────────────────────── chat list (home) ───────────────────────
-function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
-  { me: any; onLogout: () => void; onOpen: (t: Chat) => void; headerPad: number; insetsTop: number; bottomInset: number }) {
+function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset, refreshKey }:
+  { me: any; onLogout: () => void; onOpen: (t: Chat) => void; headerPad: number; insetsTop: number; bottomInset: number; refreshKey?: number }) {
   const { t, styles } = useTheme();
-  const [last, setLast] = useState<any>(null);
+  const [wall, setWall] = useState<any>(null);
   const [peers, setPeers] = useState<any[]>([]);
   const load = useCallback(() => {
-    api.get('/api/wall').then((d) => setLast((d.messages || [])[0] || null)).catch(() => {});
-    api.get('/api/dm/threads').then((d) => setPeers(d.peers || [])).catch(() => {});
+    api.get('/api/chats').then((d) => { setWall(d.wall || null); setPeers(d.peers || []); }).catch(() => {});
   }, []);
   useEffect(() => {
     load();
-    const iv = setInterval(load, 20000);   // keep previews + unread badges fresh
+    const iv = setInterval(load, 15000);   // keep previews + unread badges fresh
     return () => clearInterval(iv);
-  }, [load]);
-  const feedPreview = last
-    ? `${last.is_bot ? 'Flagleaf' : (last.author || '')}: ${last.body || (last.is_video ? '🎥 видео' : last.media ? '📷 фото' : '…')}`.trim()
+  }, [load, refreshKey]);
+  const feedPreview = wall
+    ? `${wall.author || ''}: ${wall.body || '…'}`.trim()
     : 'Наблюдения команды, ответы ИИ, проверка старшим';
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingTop: headerPad + 6, paddingBottom: bottomInset + 16 }}>
         <ChatRow onPress={() => onOpen({ kind: 'feed' })} avStyle={styles.avGroup}
           icon={<Ionicons name="people" size={24} color="#fff" />}
-          title="Лента команды" pinned time={when(last?.created_at)} preview={feedPreview} />
+          title="Лента команды" pinned time={when(wall?.created_at)} preview={feedPreview}
+          unread={wall?.unread} />
         <ChatRow onPress={() => onOpen({ kind: 'bot' })} avStyle={styles.avBot}
           icon={<Ionicons name="leaf" size={24} color={t.gold} />}
           title="Flagleaf · ИИ-агроном" preview="Личный чат: препараты, ЭПВ, история и план поля" />
@@ -421,6 +424,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset }:
 function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned, unread }:
   { onPress: () => void; icon: any; avStyle: any; title: string; preview: string; time?: string; pinned?: boolean; unread?: number }) {
   const { t, styles } = useTheme();
+  const hot = !!unread;   // Telegram-style: unread chats read bold
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.chatRow, pressed && { backgroundColor: t.pressed }]}>
       <View style={[styles.rowAvLg, avStyle]}>{icon}</View>
@@ -429,10 +433,10 @@ function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned, unread 
           <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
           {pinned && <Ionicons name="pin" size={13} color={t.muted} style={{ marginLeft: 5 }} />}
           <View style={{ flex: 1 }} />
-          {!!time && <Text style={styles.rowTime}>{time}</Text>}
+          {!!time && <Text style={[styles.rowTime, hot && { color: t.gold, fontWeight: '700' }]}>{time}</Text>}
         </View>
         <View style={styles.rowTop}>
-          <Text style={[styles.rowPreview, { flex: 1 }]} numberOfLines={1}>{preview}</Text>
+          <Text style={[styles.rowPreview, { flex: 1 }, hot && { color: t.text, fontWeight: '700' }]} numberOfLines={1}>{preview}</Text>
           {!!unread && <View style={styles.unreadBadge}><Text style={styles.unreadTxt}>{unread}</Text></View>}
         </View>
       </View>
