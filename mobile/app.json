@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Flagleaf",
+    "name": "EAR",
     "slug": "flagleaf",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,6 +8,8 @@
     "scheme": "flagleaf",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "ru.flagleaf.ear",
+      "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Камера нужна, чтобы фотографировать растения для распознавания и ленты команды.",
         "NSPhotoLibraryUsageDescription": "Доступ к галерее нужен, чтобы отправлять фото растений в ленту команды.",
@@ -16,6 +18,7 @@
       }
     },
     "android": {
+      "package": "ru.flagleaf.ear",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

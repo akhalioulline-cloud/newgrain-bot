@@ -11,6 +11,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 
 import { api, getToken, setToken } from '@/lib/api';
+import { registerPush } from '@/lib/push';
 
 // dense rounded brand face; system-bundled on iOS, Roboto Black on Android — no font assets needed
 const BRAND_FONT = Platform.select({ ios: 'Avenir Next', android: 'sans-serif-black', default: undefined });
@@ -308,7 +309,7 @@ function Main({ onLogout }: { onLogout: () => void }) {
   const [me, setMe] = useState<any>(null);
   const [open, setOpen] = useState<null | Chat>(null);
   const slide = useRef(new Animated.Value(0)).current;
-  useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); }, []);
+  useEffect(() => { api.get('/api/me').then(setMe).catch(() => {}); registerPush(); }, []);
   const headerPad = insets.top + 52;
   const openChat = (c: Chat) => {
     setOpen(c);
