@@ -33,7 +33,8 @@ are intentionally excluded.)
 - [newgrain-pilot-v2](newgrain-pilot-v2.md) — pivot to field treatment-PLANS + chemical-savings metric; /plan generator, scouting capture, one-pager
 - [feedback-auto-handoff](feedback-auto-handoff.md) — run `make handoff` proactively when a unit of work is done; don't wait to be asked
 - [newgrain-pyrus-prices](newgrain-pyrus-prices.md) — Pyrus connector (alive) = real historical price/payments source; add bot to payment lists to enumerate → extract → product_prices
-- [feedback-prod-readonly-access](feedback-prod-readonly-access.md) — read-only prod queries/logs allowed directly; prod writes stay with founder
+- [feedback-prod-readonly-access](feedback-prod-readonly-access.md) — read-only prod queries/logs allowed directly; prod writes (incl. deploy) allowed since founder OK'd it
+- [newgrain-flagleaf-proactive](newgrain-flagleaf-proactive.md) — proactive/unsummoned Flagleaf: SHADOW MODE experiment (logs would-be lines, posts nothing); read the log to decide on going live
 - [trading-project](trading-project.md) — SEPARATE parallel project in ~/trading: crypto systematic-trading learning sandbox (OKX, $1000 educational, no MOEX); backtest/robustness/paper-trade toolkit
 - [newgrain-app-v2-vision](newgrain-app-v2-vision.md) — App v2 strategy: perception-data company, re-pointed journey, native/offline, model/data, robotics thesis, team-social (full plan docs/app-v2-plan.md)
 - [newgrain-flagleaf-ear-native](newgrain-flagleaf-ear-native.md) — Flagleaf/Ear separation + go-native-via-Expo decision & rationale
