@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, AppState, FlatList, Image, Keyboard, KeyboardAvoidingView,
-  Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  ActivityIndicator, Alert, Animated, AppState, FlatList, Image, Keyboard, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput,
   useColorScheme, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Updates from 'expo-updates';
 
 import { api, getToken, setToken } from '@/lib/api';
+import { composerLift, SmartKAV, useKeyboardSmart } from '@/lib/keyboard';
 import { registerPush, clearBadge } from '@/lib/push';
 
 // human-readable build/update stamp for the chat-list footer — ends "which version is this
@@ -173,17 +173,6 @@ const ThemeCtx = createContext({ t: LIGHT, styles: LIGHT_STYLES });
 const useTheme = () => useContext(ThemeCtx);
 
 // ─────────────────────────── helpers ───────────────────────────
-function useKeyboard() {
-  const [kb, setKb] = useState({ open: false, height: 0 });
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const s = Keyboard.addListener(showEvt, (e: any) => setKb({ open: true, height: e?.endCoordinates?.height || 0 }));
-    const h = Keyboard.addListener(hideEvt, () => setKb({ open: false, height: 0 }));
-    return () => { s.remove(); h.remove(); };
-  }, []);
-  return kb;
-}
 function formData(fields: Record<string, string>) {
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
@@ -611,7 +600,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
   const [mentionQ, setMentionQ] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
-  const kb = useKeyboard();
+  const kb = useKeyboardSmart();
   const chief = me?.role === 'chief_agronomist' || me?.role === 'admin';
   const load = useCallback(async () => {
     try {
@@ -689,8 +678,8 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
           ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Сфотографируйте растение или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</Text>} />
       )}
       <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
-      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 26) : Math.max(bottomInset, 10) }}>
+      <SmartKAV style={styles.composerHover} pointerEvents="box-none">
+        <View style={{ marginBottom: kb.open ? composerLift(kb.height) : Math.max(bottomInset, 10) }}>
           {mentionList.length > 0 && (
             <View style={styles.mentionBox}>
               {mentionList.map((x: any) => (
@@ -715,7 +704,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
           )}
           <Composer value={text} onChange={onChangeText} onSend={send} busy={busy} onCamera={capture} placeholder="Сообщение (@flagleaf — ИИ)" />
         </View>
-      </KeyboardAvoidingView>
+      </SmartKAV>
     </View>
   );
 }
@@ -728,7 +717,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   const [msgs, setMsgs] = useState<{ role: 'user' | 'bot'; text: string; created_at?: string }[]>([BOT_GREETING]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const kb = useKeyboard();
+  const kb = useKeyboardSmart();
   useEffect(() => {   // history is server-side: survives restarts, follows the account across devices
     api.get('/api/chat/history')
       .then((d) => { if (d.messages?.length) setMsgs([BOT_GREETING, ...d.messages]); })
@@ -757,11 +746,11 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
             <Text style={item.role === 'user' ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.text}</Text>
           </View>
         )} />
-      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 26) : Math.max(bottomInset, 10) }}>
+      <SmartKAV style={styles.composerHover} pointerEvents="box-none">
+        <View style={{ marginBottom: kb.open ? composerLift(kb.height) : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
         </View>
-      </KeyboardAvoidingView>
+      </SmartKAV>
     </View>
   );
 }
@@ -773,7 +762,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const kb = useKeyboard();
+  const kb = useKeyboardSmart();
   const load = useCallback(async () => {
     try { const d = await api.get(`/api/dm/with/${peer.id}`); setMsgs(d.messages || []); }
     catch {} finally { setLoading(false); }
@@ -815,11 +804,11 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
           )}
           ListEmptyComponent={<Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text>} />
       )}
-      <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 26) : Math.max(bottomInset, 10) }}>
+      <SmartKAV style={styles.composerHover} pointerEvents="box-none">
+        <View style={{ marginBottom: kb.open ? composerLift(kb.height) : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Сообщение…" />
         </View>
-      </KeyboardAvoidingView>
+      </SmartKAV>
     </View>
   );
 }

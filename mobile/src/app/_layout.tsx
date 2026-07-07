@@ -6,6 +6,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Updates from 'expo-updates';
 
+import { KeyboardProviderMaybe } from '@/lib/keyboard';
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   useEffect(() => {   // deterministic OTA: check on launch, apply immediately when found
@@ -22,10 +24,12 @@ export default function RootLayout() {
   }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-        <Stack screenOptions={{ headerShown: false }} />
-      </SafeAreaProvider>
+      <KeyboardProviderMaybe>
+        <SafeAreaProvider>
+          <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+          <Stack screenOptions={{ headerShown: false }} />
+        </SafeAreaProvider>
+      </KeyboardProviderMaybe>
     </GestureHandlerRootView>
   );
 }
