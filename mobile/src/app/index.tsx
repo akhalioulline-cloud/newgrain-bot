@@ -5,13 +5,26 @@ import {
   useColorScheme, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 
+import * as Updates from 'expo-updates';
+
 import { api, getToken, setToken } from '@/lib/api';
 import { registerPush, clearBadge } from '@/lib/push';
+
+// human-readable build/update stamp for the chat-list footer — ends "which version is this
+// phone actually running?" debugging forever
+const VERSION_STAMP = (() => {
+  const v = Constants.expoConfig?.version || '?';
+  if (__DEV__) return `EAR ${v} · dev`;
+  if (!Updates.isEnabled || Updates.isEmbeddedLaunch || !Updates.createdAt) return `EAR ${v} · базовая сборка`;
+  const d = Updates.createdAt;
+  return `EAR ${v} · обновлено ${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+})();
 
 // dense rounded brand face; system-bundled on iOS, Roboto Black on Android — no font assets needed
 const BRAND_FONT = Platform.select({ ios: 'Avenir Next', android: 'sans-serif-black', default: undefined });
@@ -88,6 +101,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-medium' } : { fontFamily: BRAND_FONT, fontWeight: '500' as const }),
   },
   rowTime: { fontSize: 12, color: t.muted },
+  versionStamp: { textAlign: 'center', color: t.muted, opacity: 0.6, fontSize: 11, paddingTop: 18 },
   rowPreview: { fontSize: 14, color: t.muted, marginTop: 3 },
   // chat header (inside an open conversation)
   chatHdrBg: { backgroundColor: t.headerBg },
@@ -414,6 +428,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset, ref
             preview={p.last_body ? `${p.last_mine ? 'Вы: ' : ''}${p.last_body}` : (p.role === 'admin' ? 'руководитель' : 'агроном')}
             unread={p.unread} />
         ))}
+        <Text style={styles.versionStamp}>{VERSION_STAMP}</Text>
       </ScrollView>
 
       <BlurView intensity={75} tint={t.blurTint} style={[styles.headerGlass, { paddingTop: insetsTop, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
