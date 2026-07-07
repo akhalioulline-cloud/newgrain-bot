@@ -46,10 +46,10 @@ _Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
 2. **English version** — UI i18n (expo-localization + RU/EN dict): EASY (~2 days). English
    AI answers = dual-market grounding project (Госкаталог/ЭПВ are RU) — schedule with the
    relocation/dual-market push.
-3. **Add users without Telegram** — admin «Пригласить» screen: name+email → account + invite
-   email. EASY (~1 day), HIGH value; do at team-rollout (TestFlight) time.
-4. **Leaf-contour chat wallpaper** — subtle brand-style tileable pattern, light/dark variants,
-   low opacity behind chats. EASY (half day), ships OTA; big delight-per-effort.
+3. ~~Add users without Telegram~~ — **DONE 7 Jul** (POST /api/invite, person-add button in home
+   header for admin/chief, invite email; negative synthetic tg_user_id = email-only login).
+4. ~~Leaf-contour chat wallpaper~~ — **DONE 7 Jul** (seamless tileable leaf outlines, light+dark,
+   behind all three chats).
 5. **User photos (avatars)** — upload → S3 → shown everywhere (initials fallback). EASY-MODERATE
    (~1 day incl. backend).
 
