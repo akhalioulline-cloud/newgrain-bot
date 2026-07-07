@@ -82,7 +82,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   viewerImg: { width: '100%', height: '100%' },
   viewerClose: { position: 'absolute', top: 54, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   rowTop: { flexDirection: 'row', alignItems: 'center' },
-  rowTitle: { fontSize: 16.5, fontFamily: BRAND_FONT, fontWeight: '800', color: t.text, flexShrink: 1 },
+  rowTitle: { fontSize: 16.5, fontFamily: BRAND_FONT, fontWeight: '600', color: t.text, flexShrink: 1 },
   rowTime: { fontSize: 12, color: t.muted },
   rowPreview: { fontSize: 14, color: t.muted, marginTop: 3 },
   // chat header (inside an open conversation)
@@ -781,15 +781,12 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
                 {!!item.created_at && <Text style={[styles.bubbleTime, item.mine && { color: t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)' }]}>{when(item.created_at).replace('сегодня ', '')}</Text>}
                 {item.mine && !String(item.id).startsWith('tmp') && (() => {
                   const faded = t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)';
-                  const [icon, color, word] = item.read
-                    ? ['checkmark-done', t.gold, 'прочитано']
+                  const [icon, color] = item.read
+                    ? ['checkmark-done', t.gold]
                     : item.delivered
-                      ? ['checkmark-done', faded, 'получено']
-                      : ['checkmark', faded, 'отправлено'];
-                  return (<>
-                    <Ionicons name={icon as any} size={13} color={color as string} />
-                    <Text style={[styles.bubbleTime, { color: color as string }]}>{word}</Text>
-                  </>);
+                      ? ['checkmark-done', faded]
+                      : ['checkmark', faded];
+                  return <Ionicons name={icon as any} size={13} color={color as string} />;
                 })()}
               </View>
             </View>
