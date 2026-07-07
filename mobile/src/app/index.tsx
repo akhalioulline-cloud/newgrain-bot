@@ -82,7 +82,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   viewerImg: { width: '100%', height: '100%' },
   viewerClose: { position: 'absolute', top: 54, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   rowTop: { flexDirection: 'row', alignItems: 'center' },
-  rowTitle: { fontSize: 16.5, fontFamily: BRAND_FONT, fontWeight: '500', color: t.text, flexShrink: 1 },
+  rowTitle: {
+    fontSize: 16.5, color: t.text, flexShrink: 1,
+    // Android's 'sans-serif-black' ignores fontWeight — pick a genuinely medium face there
+    ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-medium' } : { fontFamily: BRAND_FONT, fontWeight: '500' as const }),
+  },
   rowTime: { fontSize: 12, color: t.muted },
   rowPreview: { fontSize: 14, color: t.muted, marginTop: 3 },
   // chat header (inside an open conversation)
