@@ -39,6 +39,20 @@ _Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
   the "know immediately" need once EAS lands.
 - Web-app parity for person DMs; media in person DMs.
 
+## Founder asks 7 Jul 2026 (suggested order: 3 → 4 → 5 → 1a → 2 → 1b)
+1. **Encryption** — (a) at-rest (YC disk/backup encryption): EASY, do soon. (b) E2E: HARD and
+   incompatible with Flagleaf reading the wall (bot/learning/verdicts); only feasible for
+   person-DMs (bot-free) — parked unless demanded. In-transit already HTTPS.
+2. **English version** — UI i18n (expo-localization + RU/EN dict): EASY (~2 days). English
+   AI answers = dual-market grounding project (Госкаталог/ЭПВ are RU) — schedule with the
+   relocation/dual-market push.
+3. **Add users without Telegram** — admin «Пригласить» screen: name+email → account + invite
+   email. EASY (~1 day), HIGH value; do at team-rollout (TestFlight) time.
+4. **Leaf-contour chat wallpaper** — subtle brand-style tileable pattern, light/dark variants,
+   low opacity behind chats. EASY (half day), ships OTA; big delight-per-effort.
+5. **User photos (avatars)** — upload → S3 → shown everywhere (initials fallback). EASY-MODERATE
+   (~1 day incl. backend).
+
 ## Product / EAR (the chat)
 - ~~Flat team wall~~ — **DONE 5 Jul 2026.** Team chat is now ONE flat message stream (migration
   0041 `wall_messages`/`wall_reactions`, replaced posts+threads; old feed migrated in). @flagleaf
