@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "89314155431",
+    "project_id": "flagleaf",
+    "storage_bucket": "flagleaf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:89314155431:android:132e49341bd21aa0fb7482",
+        "android_client_info": {
+          "package_name": "ru.flagleaf.ear"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAOJQOBIuTPNF512KOWUCQa1aAlMbHoAU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
