@@ -687,7 +687,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
       )}
       <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 6) : Math.max(bottomInset, 10) }}>
           {mentionList.length > 0 && (
             <View style={styles.mentionBox}>
               {mentionList.map((x: any) => (
@@ -755,7 +755,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
           </View>
         )} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 6) : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Ваш вопрос агроному…" />
         </View>
       </KeyboardAvoidingView>
@@ -813,7 +813,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
           ListEmptyComponent={<Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-        <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
+        <View style={{ marginBottom: kb.open ? (Platform.OS === 'ios' ? 0 : kb.height + 6) : Math.max(bottomInset, 10) }}>
           <Composer value={text} onChange={setText} onSend={send} busy={busy} placeholder="Сообщение…" />
         </View>
       </KeyboardAvoidingView>
