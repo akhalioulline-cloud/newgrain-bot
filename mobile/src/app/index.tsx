@@ -29,6 +29,14 @@ const VERSION_STAMP = (() => {
 // dense rounded brand face; system-bundled on iOS, Roboto Black on Android — no font assets needed
 const BRAND_FONT = Platform.select({ ios: 'Avenir Next', android: 'sans-serif-black', default: undefined });
 
+// leaf-contour chat wallpaper (subtle, brand-style; alpha baked into the tiles)
+const LEAF_BG_LIGHT = require('../../assets/images/leafbg-light.png');
+const LEAF_BG_DARK = require('../../assets/images/leafbg-dark.png');
+function Wallpaper() {
+  const { t } = useTheme();
+  return <Image source={t.dark ? LEAF_BG_DARK : LEAF_BG_LIGHT} style={StyleSheet.absoluteFill} resizeMode="repeat" />;
+}
+
 // ─────────────────────────── theme ───────────────────────────
 const LIGHT = {
   dark: false, blurTint: 'light' as 'light' | 'dark',
@@ -102,6 +110,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   rowTime: { fontSize: 12, color: t.muted },
   versionStamp: { textAlign: 'center', color: t.muted, opacity: 0.6, fontSize: 11, paddingTop: 18 },
+  // invite modal
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  modalCard: { alignSelf: 'stretch', backgroundColor: t.card, borderRadius: 22, padding: 20, ...softShadow },
+  modalTitle: { fontSize: 17, fontFamily: BRAND_FONT, fontWeight: '800', color: t.text, marginBottom: 14 },
+  roleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
+  roleTxt: { fontSize: 13.5, color: t.text, flexShrink: 1 },
   rowPreview: { fontSize: 14, color: t.muted, marginTop: 3 },
   // chat header (inside an open conversation)
   chatHdrBg: { backgroundColor: t.headerBg },
@@ -392,6 +406,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset, ref
   const { t, styles } = useTheme();
   const [wall, setWall] = useState<any>(null);
   const [peers, setPeers] = useState<any[]>([]);
+  const [inviting, setInviting] = useState(false);
   const load = useCallback(() => {
     api.get('/api/chats').then((d) => { setWall(d.wall || null); setPeers(d.peers || []); }).catch(() => {});
   }, []);
@@ -426,10 +441,61 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset, ref
       <BlurView intensity={75} tint={t.blurTint} style={[styles.headerGlass, { paddingTop: insetsTop, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }]}>
         <View style={styles.headerRow}>
           <Logo />
+          {(me?.role === 'admin' || me?.role === 'chief_agronomist') && (
+            <Pressable onPress={() => setInviting(true)} hitSlop={10} style={{ marginLeft: 14 }}>
+              <Ionicons name="person-add-outline" size={19} color={t.gold} />
+            </Pressable>
+          )}
           <Text style={styles.hdrRight}>{me?.name || ''} · <Text style={{ color: t.gold }} onPress={onLogout}>выйти</Text></Text>
         </View>
       </BlurView>
+
+      <InviteModal visible={inviting} onClose={(added) => { setInviting(false); if (added) load(); }} />
     </View>
+  );
+}
+
+// admin/chief adds a teammate by email — account created + invite letter sent, no Telegram needed
+function InviteModal({ visible, onClose }: { visible: boolean; onClose: (added?: boolean) => void }) {
+  const { t, styles } = useTheme();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [chief, setChief] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api.postJson('/api/invite', { name: name.trim(), email: email.trim(), role: chief ? 'chief_agronomist' : 'agronomist' });
+      Alert.alert('Готово', r.email_sent
+        ? `Приглашение отправлено на ${email.trim().toLowerCase()}.`
+        : 'Аккаунт создан, но письмо не ушло — передайте коллеге: вход по этой почте в приложении EAR.');
+      setName(''); setEmail(''); setChief(false);
+      onClose(true);
+    } catch (e: any) {
+      Alert.alert('Не получилось', e?.message || 'Попробуйте ещё раз.');
+    } finally { setBusy(false); }
+  };
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => onClose()}>
+      <Pressable style={styles.modalBg} onPress={() => onClose()}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Text style={styles.modalTitle}>Пригласить в команду</Text>
+          <Text style={styles.fld}>Имя и фамилия</Text>
+          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Иван Петров" placeholderTextColor={t.muted} />
+          <Text style={[styles.fld, { marginTop: 12 }]}>Почта</Text>
+          <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="email" autoCapitalize="none" keyboardType="email-address" placeholderTextColor={t.muted} />
+          <Pressable onPress={() => setChief(!chief)} style={styles.roleRow} hitSlop={6}>
+            <Ionicons name={chief ? 'checkbox' : 'square-outline'} size={20} color={t.gold} />
+            <Text style={styles.roleTxt}>Старший агроном (проверяет наблюдения)</Text>
+          </Pressable>
+          <Pressable style={[styles.btn, busy && styles.off]} onPress={submit} disabled={busy}>
+            {busy ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.btnTxt}>Отправить приглашение</Text>}
+          </Pressable>
+          <Text style={styles.help}>Коллега войдёт по коду из письма — Telegram не нужен.</Text>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 function ChatRow({ onPress, icon, avStyle, title, preview, time, pinned, unread }:
@@ -661,6 +727,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
 
   return (
     <View style={{ flex: 1 }}>
+      <Wallpaper />
       {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
         <FlatList
           data={(() => {
@@ -737,6 +804,7 @@ function DmView({ headerPad, bottomInset }: { headerPad: number; bottomInset: nu
   };
   return (
     <View style={{ flex: 1 }}>
+      <Wallpaper />
       <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any, i) => m.sep ? m.id : String(i)} style={StyleSheet.absoluteFill}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
         renderItem={({ item }: any) => item.sep
@@ -780,6 +848,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
   };
   return (
     <View style={{ flex: 1 }}>
+      <Wallpaper />
       {loading ? <View style={styles.center}><ActivityIndicator color={t.gold} /></View> : (
         <FlatList data={[...withDays(msgs)].reverse()} inverted keyExtractor={(m: any) => String(m.id)} style={StyleSheet.absoluteFill}
           contentContainerStyle={{ paddingHorizontal: 14, paddingTop: kb.open ? kb.height + 64 : bottomInset + 72, paddingBottom: headerPad + 4, gap: 8 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"

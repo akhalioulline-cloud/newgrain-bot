@@ -1245,6 +1245,23 @@ async def get_farm_members(farm_id):
             {"farm": farm_id})).mappings().all()
 
 
+async def invite_user(farm_id, full_name, email, role):
+    """Create a teammate account for email-only login (no Telegram). Synthetic NEGATIVE
+    tg_user_id — real Telegram ids are positive, so no collision ever; the account simply
+    can't use the Telegram bot until a real id is attached. Returns (user_id, error)."""
+    async with engine.begin() as conn:
+        dup = (await conn.execute(text(
+            "SELECT id FROM users WHERE lower(email)=lower(:e)"), {"e": email})).scalar()
+        if dup:
+            return None, "Эта почта уже зарегистрирована."
+        uid = (await conn.execute(text(
+            "INSERT INTO users (tg_user_id, full_name, role, farm_id, is_active, email) "
+            "VALUES ((SELECT LEAST(COALESCE(MIN(tg_user_id),0), 0) - 1 FROM users), "
+            "        :n, :r, :f, true, lower(:e)) RETURNING id"),
+            {"n": full_name, "r": role, "f": farm_id, "e": email})).scalar()
+        return uid, None
+
+
 async def log_shadow(farm_id, message_id, trigger_text, confidence, line):
     async with engine.begin() as conn:
         await conn.execute(text(

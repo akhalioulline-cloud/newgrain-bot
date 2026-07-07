@@ -68,6 +68,7 @@ from bot.db import (
     mark_wall_seen,
     get_wall_overview,
     mark_dm_delivered,
+    invite_user,
     log_shadow,
     get_shadow,
     shadow_stats,
@@ -89,7 +90,7 @@ from bot.diagnose import diagnose_video as diagnose_video_frames
 from bot.diagnose import _vision_sync as _vision_recognize
 from bot.video_frames import extract_frames
 from bot.video_transcribe import transcribe_video
-from bot.email_send import email_enabled, send_login_code
+from bot.email_send import email_enabled, send_invite, send_login_code
 from bot.field_plan import generate_field_plan
 from bot.push import push_enabled, send_push
 from bot.review_actions import approved_status, notify_submitter_decision
@@ -860,6 +861,32 @@ async def _push_notify(user_ids, title, body):
 def _push_bg(user_ids, title, body):
     if user_ids:
         asyncio.create_task(_push_notify(user_ids, title, body))
+
+
+# ── Team invites (admin/chief adds a member by email — no Telegram needed) ────────
+class InviteIn(BaseModel):
+    name: str
+    email: str
+    role: str = "agronomist"      # 'agronomist' | 'chief_agronomist' | 'admin'
+
+
+@app.post("/api/invite")
+async def invite(body: InviteIn, user=Depends(require_user)):
+    _require_chief(user)
+    name = (body.name or "").strip()
+    email = (body.email or "").strip().lower()
+    role = body.role if body.role in ("agronomist", "chief_agronomist", "admin") else "agronomist"
+    if len(name) < 2:
+        raise HTTPException(400, "Введите имя и фамилию.")
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1] or len(email) > 254:
+        raise HTTPException(400, "Введите корректную почту.")
+    if not email_enabled():
+        raise HTTPException(503, "Почтовые приглашения пока недоступны.")
+    uid, err = await invite_user(user["farm_id"], name, email, role)
+    if err:
+        raise HTTPException(409, err)
+    sent = await asyncio.to_thread(send_invite, email, name, user["full_name"] or "Администратор")
+    return {"ok": True, "user_id": uid, "email_sent": bool(sent)}
 
 
 # ── Person-to-person DMs (agronomist ↔ agronomist, human-only) ───────────────────

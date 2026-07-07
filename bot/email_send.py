@@ -44,6 +44,22 @@ def _send(to_addr: str, subject: str, body: str) -> bool:
         return False
 
 
+def send_invite(to_addr: str, name: str, inviter: str) -> bool:
+    """Invite a new team member to EAR (created by an admin in-app). Returns True on success."""
+    if not email_enabled():
+        return False
+    body = (
+        f"Здравствуйте, {name}!\n\n"
+        f"{inviter} добавил(а) вас в EAR — рабочий чат агрономов с ИИ-помощником Flagleaf.\n\n"
+        f"Как войти:\n"
+        f"1. Откройте приложение EAR (или сайт ai.flagleaf.ru/app).\n"
+        f"2. Введите эту почту ({to_addr}) — придёт 6-значный код.\n"
+        f"3. Введите код — и вы в команде.\n\n"
+        f"Если письмо попало к вам по ошибке — просто проигнорируйте его."
+    )
+    return _send(to_addr, "Вас пригласили в EAR", body)
+
+
 def send_login_code(to_addr: str, code: str) -> bool:
     """Email a 6-digit login code. Returns True on success."""
     if not email_enabled():
