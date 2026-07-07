@@ -664,7 +664,7 @@ function WallView({ me, onLogout, headerPad, bottomInset }: { me: any; onLogout:
             : item.sep
               ? <Text style={styles.daySep}>{item.sep}</Text>
               : <SwipeReply onReply={() => startReply(item)}><WallMsg m={item} mine={item.author_id === me?.id} chief={chief} onReply={startReply} onReact={react} onZoom={setZoom} /></SwipeReply>}
-          ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Пока пусто. Сфотографируйте растение или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</Text></View>} />
+          ListEmptyComponent={<Text style={styles.empty}>Пока пусто. Сфотографируйте растение или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</Text>} />
       )}
       <ImageZoom uri={zoom} onClose={() => setZoom(null)} />
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
@@ -794,7 +794,7 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
               </View>
             </View>
           )}
-          ListEmptyComponent={<View style={styles.flip}><Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text></View>} />
+          ListEmptyComponent={<Text style={styles.empty}>Личная переписка с {peer.name}. Видите только вы двое.</Text>} />
       )}
       <KeyboardAvoidingView style={styles.composerHover} behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
         <View style={{ marginBottom: kb.open ? 0 : Math.max(bottomInset, 10) }}>
