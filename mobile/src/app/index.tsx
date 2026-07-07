@@ -779,10 +779,18 @@ function PersonView({ peer, headerPad, bottomInset }: { peer: { id: number; name
               <Text style={item.mine ? styles.bubbleUserTxt : styles.bubbleBotTxt}>{item.body}</Text>
               <View style={styles.bubbleMeta}>
                 {!!item.created_at && <Text style={[styles.bubbleTime, item.mine && { color: t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)' }]}>{when(item.created_at).replace('сегодня ', '')}</Text>}
-                {item.mine && !String(item.id).startsWith('tmp') && (
-                  <Ionicons name={item.read ? 'checkmark-done' : 'checkmark'} size={13}
-                    color={item.read ? t.gold : (t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)')} />
-                )}
+                {item.mine && !String(item.id).startsWith('tmp') && (() => {
+                  const faded = t.dark ? 'rgba(244,236,217,0.55)' : 'rgba(255,255,255,0.55)';
+                  const [icon, color, word] = item.read
+                    ? ['checkmark-done', t.gold, 'прочитано']
+                    : item.delivered
+                      ? ['checkmark-done', faded, 'получено']
+                      : ['checkmark', faded, 'отправлено'];
+                  return (<>
+                    <Ionicons name={icon as any} size={13} color={color as string} />
+                    <Text style={[styles.bubbleTime, { color: color as string }]}>{word}</Text>
+                  </>);
+                })()}
               </View>
             </View>
           )}

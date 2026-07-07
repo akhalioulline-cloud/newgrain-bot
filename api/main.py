@@ -67,6 +67,7 @@ from bot.db import (
     get_farm_members,
     mark_wall_seen,
     get_wall_overview,
+    mark_dm_delivered,
     log_shadow,
     get_shadow,
     shadow_stats,
@@ -869,6 +870,10 @@ class DmSend(BaseModel):
 @app.get("/api/dm/threads")
 async def dm_threads(user=Depends(require_user)):
     """Teammates as chat rows: last message + unread count (whole farm — team is small)."""
+    try:
+        await mark_dm_delivered(user["id"])
+    except Exception:
+        logger.exception("mark delivered failed")
     rows = await get_dm_peers(user["farm_id"], user["id"])
     return {"peers": [
         {"id": r["id"], "name": r["name"], "role": r["role"],
@@ -887,6 +892,7 @@ async def dm_thread(peer_id: int, user=Depends(require_user)):
     return {"peer": {"id": peer["id"], "name": peer["full_name"], "role": peer["role"]},
             "messages": [{"id": m["id"], "mine": m["sender_id"] == user["id"], "body": m["body"],
                           "read": m["read_at"] is not None,
+                          "delivered": m["delivered_at"] is not None,
                           "created_at": m["created_at"].isoformat()} for m in msgs]}
 
 
@@ -967,7 +973,11 @@ async def _reply_photo_bytes(reply_msg):
 @app.get("/api/chats")
 async def chats_overview(user=Depends(require_user)):
     """The chat-list home in one call: wall preview + unread, teammates with last/unread.
-    Read-only — does NOT mark anything seen (opening a chat does that)."""
+    Does NOT mark anything read — but fetching proves this device RECEIVED pending DMs."""
+    try:
+        await mark_dm_delivered(user["id"])
+    except Exception:
+        logger.exception("mark delivered failed")
     wall = await get_wall_overview(user["farm_id"], user["id"])
     peers = await get_dm_peers(user["farm_id"], user["id"])
     return {

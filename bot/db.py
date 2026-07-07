@@ -1345,14 +1345,23 @@ async def get_dm_messages(me_id, peer_id, limit=200):
     """Thread between me and a teammate (chronological) — and mark their messages read."""
     async with engine.begin() as conn:
         rows = (await conn.execute(text(
-            "SELECT id, sender_id, body, created_at, read_at FROM dm_messages "
+            "SELECT id, sender_id, body, created_at, read_at, delivered_at FROM dm_messages "
             "WHERE (sender_id=:me AND recipient_id=:peer) OR (sender_id=:peer AND recipient_id=:me) "
             "ORDER BY created_at DESC LIMIT :lim"),
             {"me": me_id, "peer": peer_id, "lim": limit})).mappings().all()
         await conn.execute(text(
-            "UPDATE dm_messages SET read_at=now() WHERE sender_id=:peer AND recipient_id=:me AND read_at IS NULL"),
+            "UPDATE dm_messages SET read_at=now(), delivered_at=COALESCE(delivered_at, now()) "
+            "WHERE sender_id=:peer AND recipient_id=:me AND read_at IS NULL"),
             {"me": me_id, "peer": peer_id})
     return list(reversed(rows))
+
+
+async def mark_dm_delivered(user_id):
+    """The user's device just fetched chat data → everything addressed to them is DELIVERED."""
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "UPDATE dm_messages SET delivered_at=now() WHERE recipient_id=:u AND delivered_at IS NULL"),
+            {"u": user_id})
 
 
 async def send_dm(farm_id, me_id, peer_id, body):
