@@ -73,7 +73,11 @@ _Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
 - **M2:** on-device offline recognition (our fine-tuned model via Core ML/TFLite; instant guess
   offline → auto-upgrade to qwen online).
 - **M3:** AR (live camera overlay) — the wow, last.
-- ~~EAS build~~ ✅ (7 Jul: builds #1–5, push, OTA channel `preview`, version stamp).
+- ~~EAS build~~ ✅ (7 Jul: builds #1–5, push, version stamp).
+- **OTA updates are SELF-HOSTED as of 8 Jul** (`scripts/publish_ota.py` → ai.flagleaf.ru;
+  `/api/ota/manifest` + nginx-static assets) — Expo's CDN silently 403'd all our update assets
+  ('Unauthorized asset request', no dashboard/email explanation; suspected new-account
+  anti-abuse). EAS still does builds + push. Optional: forum ticket to Expo w/ evidence.
 - **Store presence** (researched 8 Jul 2026; OTA stays allowed & unchanged in ALL stores — JS/asset
   OTA is policy-compliant, only native builds go through review):
   - **RuStore — first, candidate for NOW:** free dev account (VK ID, console.rustore.ru), accepts
