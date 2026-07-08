@@ -57,9 +57,10 @@ _Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
 - ~~Flat team wall~~ — **DONE 5 Jul 2026.** Team chat is now ONE flat message stream (migration
   0041 `wall_messages`/`wall_reactions`, replaced posts+threads; old feed migrated in). @flagleaf
   summons the bot (photos still auto-reply); reply/quote via long-press; @mention teammates
-  (autocomplete + push + highlight); chief 👍/👎 inline. **Web feed still on the OLD `feed_*`
-  tables → native & web now DIVERGE** — do web→wall parity, or retire the web feed, once the team
-  is fully on native. `/api/feed*` kept alive for the web app only.
+  (autocomplete + push + highlight); chief 👍/👎 inline. ~~Web/native divergence~~ — **FIXED 8 Jul**: web
+  feed.html rewritten onto /api/wall (flat wall, reply-quote, @flagleaf, chief verdicts);
+  assistant.html seeds server-side bot-chat history. Old `/api/feed*` endpoints now unused —
+  retire in a later cleanup.
 - ~~Private human-to-human chats~~ — **DONE 5 Jul 2026** (migration 0039 `dm_messages`,
   `/api/dm/*`, native chat-list rows + thread view with unread badges).
 - ~~Chief-review reactions in native~~ — **DONE** (👍/👎 inline on wall photo messages → labeling gate).
