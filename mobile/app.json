@@ -8,7 +8,9 @@
     "scheme": "flagleaf",
     "userInterfaceStyle": "automatic",
     "updates": {
-      "url": "https://u.expo.dev/321be4ac-aae0-4fb9-8c8b-58326d098eae"
+      "url": "https://ai.flagleaf.ru/api/ota/manifest",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD"
     },
     "runtimeVersion": {
       "policy": "appVersion"

@@ -22,7 +22,7 @@ from io import BytesIO
 from uuid import uuid4
 
 import redis.asyncio as aioredis
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from PIL import Image
@@ -820,6 +820,44 @@ async def feed_react(post_id: int, body: FeedReact, user=Depends(require_user)):
             except Exception:
                 logger.exception("feed react: submission status update failed")
     return {"ok": True}
+
+
+# ── Self-hosted OTA updates (Expo Updates protocol; replaces eascdn after its 403s) ──
+import json as _json
+import os as _os
+from uuid import uuid4 as _uuid4
+
+_OTA_DIR = "/ota/dist"   # bind-mounted from /var/www/ai/updates/dist (published by scripts/publish_ota.py)
+
+
+@app.get("/api/ota/manifest")
+async def ota_manifest(request: Request):
+    """Expo Updates v1 manifest endpoint. The app polls this on launch; assets themselves are
+    served statically by nginx from /updates/dist/. multipart/mixed per protocol; when the
+    client already runs the latest update → noUpdateAvailable directive."""
+    platform = (request.headers.get("expo-platform") or "").lower()
+    if platform not in ("android", "ios"):
+        raise HTTPException(400, "expo-platform required")
+    path = f"{_OTA_DIR}/manifest-{platform}.json"
+    if not _os.path.exists(path):
+        raise HTTPException(404, "no update published")
+    with open(path) as f:
+        manifest = _json.load(f)
+    runtime = request.headers.get("expo-runtime-version") or ""
+    current = (request.headers.get("expo-current-update-id") or "").lower()
+    if current == manifest["id"].lower() or (runtime and runtime != manifest["runtimeVersion"]):
+        name, payload = "directive", _json.dumps({"type": "noUpdateAvailable"})
+    else:
+        name, payload = "manifest", _json.dumps(manifest)
+    boundary = _uuid4().hex
+    body = (f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n'
+            f"Content-Type: application/json\r\n\r\n"
+            f"{payload}\r\n"
+            f"--{boundary}--\r\n")
+    return Response(content=body, media_type=f"multipart/mixed; boundary={boundary}",
+                    headers={"expo-protocol-version": "1", "expo-sfv-version": "0",
+                             "cache-control": "private, max-age=0"})
 
 
 # ── Native push (Expo) — one token per device; delivery needs the EAS build ──────
