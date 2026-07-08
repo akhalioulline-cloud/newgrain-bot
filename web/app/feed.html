@@ -39,7 +39,7 @@
   .fieldbar select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:#fff;flex:1;outline:none}
   #geoNote{font-size:12px;color:#6b6b6b;background:#f1f5ee;border-bottom:1px solid #dde6d5;padding:6px 14px;max-width:760px;margin:0 auto;width:100%}
 
-  main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:7px}
+  main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:7px;background-image:url('/app/leafbg.png');background-repeat:repeat}
   .newchip{position:fixed;left:50%;transform:translateX(-50%);bottom:170px;z-index:9;font:inherit;font-size:13px;
            color:#fff;background:var(--gold);border:none;border-radius:16px;padding:8px 16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.22)}
   .daysep{text-align:center;color:var(--muted);font-size:12px;padding:6px 0}
@@ -104,11 +104,13 @@
       <button class="navb" id="navRefresh" title="Обновить">⟳</button>
     </div>
     <span class="logo">FLAG<b>LEAF</b></span>
+    <button class="navb hidden" id="inviteBtn" title="Пригласить в команду">👤+</button>
     <span class="sub" id="hdrSub"><span class="who" id="hdrWho"></span></span>
   </div>
   <nav class="tabs" id="tabs">
     <a class="tab on" href="/app/feed.html">👥 Лента</a>
-    <a class="tab" href="/app/assistant.html">💬 Личное</a>
+    <a class="tab" href="/app/dms.html">💬 Команда</a>
+    <a class="tab" href="/app/assistant.html">🌿 Flagleaf</a>
   </nav>
 </header>
 
@@ -121,6 +123,21 @@
 
 <main id="feed"><div class="empty">Загружаю ленту…</div></main>
 
+<div id="inviteModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div style="background:#fff;border-radius:18px;padding:20px;max-width:400px;width:100%">
+    <div style="font-family:Oswald;font-weight:600;font-size:17px;margin-bottom:12px">Пригласить в команду</div>
+    <label style="font-size:13px;color:var(--muted)">Имя и фамилия</label>
+    <input id="invName" style="width:100%;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:4px 0 10px">
+    <label style="font-size:13px;color:var(--muted)">Почта</label>
+    <input id="invEmail" type="email" style="width:100%;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:4px 0 10px">
+    <label style="font-size:13.5px;display:flex;gap:7px;align-items:center;margin:4px 0 14px"><input type="checkbox" id="invChief"> Старший агроном (проверяет наблюдения)</label>
+    <div style="display:flex;gap:8px">
+      <button id="invSend" style="flex:1;background:var(--gold);border:1px solid var(--gold);color:#fff;font:inherit;font-weight:600;border-radius:12px;padding:10px">Отправить приглашение</button>
+      <button id="invCancel" style="border:1px solid var(--line);background:#fff;font:inherit;border-radius:12px;padding:10px 14px">Отмена</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:10px">Коллега войдёт по коду из письма — Telegram не нужен.</div>
+  </div>
+</div>
 <div class="replybar" id="replybar"><div class="rline"></div><div style="min-width:0"><span class="rwho" id="rwho"></span><span id="rsnippet"></span></div><span class="x" id="rx">✕</span></div>
 <div class="att" id="att"><img id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
 <form id="form">
@@ -335,6 +352,25 @@ async function boot(){
     $('field').onchange=()=>{ toggleCrop(); $('geoNote').classList.add('hidden'); };
   }catch(e){}
   geoLocate();
+  if(isChief()){
+    const ib=$('inviteBtn'); ib.classList.remove('hidden');
+    ib.onclick=()=>$('inviteModal').classList.remove('hidden');
+    $('invCancel').onclick=()=>$('inviteModal').classList.add('hidden');
+    $('invSend').onclick=async()=>{
+      const name=$('invName').value.trim(), email=$('invEmail').value.trim();
+      if(name.length<2||!email.includes('@')){ alert('Заполните имя и почту.'); return; }
+      $('invSend').disabled=true;
+      try{
+        const r=await api('/api/invite',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({name,email,role:$('invChief').checked?'chief_agronomist':'agronomist'})});
+        alert(r.email_sent?('Приглашение отправлено на '+email.toLowerCase()+'.')
+                          :'Аккаунт создан, но письмо не ушло — передайте коллеге: вход по этой почте.');
+        $('invName').value=''; $('invEmail').value=''; $('invChief').checked=false;
+        $('inviteModal').classList.add('hidden');
+      }catch(e){ alert(e.message||'Не получилось.'); }
+      finally{ $('invSend').disabled=false; }
+    };
+  }
   await loadWall(true);
   setInterval(()=>{ poll(); }, 8000);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') poll(); });
