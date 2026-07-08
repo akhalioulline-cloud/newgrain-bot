@@ -845,16 +845,20 @@ async def ota_manifest(request: Request):
         manifest = _json.load(f)
     runtime = request.headers.get("expo-runtime-version") or ""
     current = (request.headers.get("expo-current-update-id") or "").lower()
-    if current == manifest["id"].lower() or (runtime and runtime != manifest["runtimeVersion"]):
-        name, payload = "directive", _json.dumps({"type": "noUpdateAvailable"})
-    else:
-        name, payload = "manifest", _json.dumps(manifest)
     boundary = _uuid4().hex
-    body = (f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="{name}"\r\n'
-            f"Content-Type: application/json\r\n\r\n"
-            f"{payload}\r\n"
-            f"--{boundary}--\r\n")
+
+    def part(name, payload):
+        return (f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n'
+                f"Content-Type: application/json; charset=utf-8\r\n\r\n"
+                f"{payload}\r\n")
+
+    if current == manifest["id"].lower() or (runtime and runtime != manifest["runtimeVersion"]):
+        body = part("directive", _json.dumps({"type": "noUpdateAvailable"})) + f"--{boundary}--\r\n"
+    else:
+        body = (part("manifest", _json.dumps(manifest))
+                + part("extensions", _json.dumps({"assetRequestHeaders": {}}))
+                + f"--{boundary}--\r\n")
     return Response(content=body, media_type=f"multipart/mixed; boundary={boundary}",
                     headers={"expo-protocol-version": "1", "expo-sfv-version": "0",
                              "cache-control": "private, max-age=0"})

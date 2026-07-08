@@ -56,6 +56,12 @@ def main() -> None:
     subprocess.run(["npx", "expo", "export", "--platform", "all", "--output-dir", "dist-ota"],
                    cwd=MOBILE, check=True, capture_output=True)
 
+    # the client validates updates against the app's own Expo config (extra.expoClient) —
+    # without it the manifest is silently rejected as out-of-scope
+    cfg_raw = subprocess.run(["npx", "expo", "config", "--type", "public", "--json"],
+                             cwd=MOBILE, check=True, capture_output=True, text=True).stdout
+    expo_client = json.loads(cfg_raw[cfg_raw.index("{"):])
+
     meta = json.loads((DIST / "metadata.json").read_text())
     for platform, fm in meta["fileMetadata"].items():
         launch = asset_entry(fm["bundle"], None)
@@ -71,7 +77,7 @@ def main() -> None:
             "launchAsset": launch,
             "assets": assets,
             "metadata": {},
-            "extra": {"message": message},
+            "extra": {"expoClient": expo_client, "message": message},
         }
         (DIST / f"manifest-{platform}.json").write_text(json.dumps(manifest))
         print(f"  {platform}: update id {manifest['id']}  (runtime {version})")
