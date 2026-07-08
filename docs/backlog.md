@@ -73,8 +73,21 @@ _Last updated: 2026-07-05 (flat wall shipped; deploy-order lesson noted)._
 - **M2:** on-device offline recognition (our fine-tuned model via Core ML/TFLite; instant guess
   offline → auto-upgrade to qwen online).
 - **M3:** AR (live camera overlay) — the wow, last.
-- EAS build / store presence (RuStore Android; iOS TestFlight/sideload) — promoted to "next up"
-  above (push depends on it).
+- ~~EAS build~~ ✅ (7 Jul: builds #1–5, push, OTA channel `preview`, version stamp).
+- **Store presence** (researched 8 Jul 2026; OTA stays allowed & unchanged in ALL stores — JS/asset
+  OTA is policy-compliant, only native builds go through review):
+  - **RuStore — first, candidate for NOW:** free dev account (VK ID, console.rustore.ru), accepts
+    our EAS APK, moderation ~1–3 days, no tester quotas. To solve: (a) login-walled app needs
+    review access → demo account on the DEMO farm (migration 0003) + static login code accepted
+    only for the review email; (b) privacy policy page at ai.flagleaf.ru/privacy (~half a day);
+    (c) listing assets (icon ✓, screenshots from device, RU description). Caveat: FCM push needs
+    Google services on the phone — no-GMS devices (Huawei) later need the RuStore push SDK (native).
+  - **Google Play — later (go-public/dual-market):** $25 once, non-RU card; PERSONAL accounts must
+    run a closed test with 12+ testers for 14 days before production (org accounts exempt); AAB via
+    `eas submit`; privacy-policy + data-safety paperwork. Decide account country/identity together
+    with Apple.
+  - **App Store — after Apple Developer enrollment** (TestFlight for the team first; storefront at
+    go-public).
 
 ## Backend / architecture
 - **Finish Flagleaf/Ear separation:** migrate the still-coupled surfaces to `flagleaf.respond()`
