@@ -420,6 +420,7 @@ function ChatList({ me, onLogout, onOpen, headerPad, insetsTop, bottomInset, ref
     : 'Наблюдения команды, ответы ИИ, проверка старшим';
   return (
     <View style={{ flex: 1 }}>
+      <Wallpaper />
       <ScrollView contentContainerStyle={{ paddingTop: headerPad + 6, paddingBottom: bottomInset + 16 }}>
         <ChatRow onPress={() => onOpen({ kind: 'feed' })} avStyle={styles.avGroup}
           icon={<Ionicons name="people" size={24} color="#fff" />}
