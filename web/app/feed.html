@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FLAGLEAF — Лента</title>
-<meta name="description" content="Общая лента команды агрономов Flagleaf: наблюдения с полей, ответы ИИ-агронома и обсуждение.">
+<meta name="description" content="Общий чат команды агрономов Flagleaf: наблюдения с полей, ответы ИИ-агронома и обсуждение.">
 <link rel="manifest" href="/app/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
@@ -39,45 +39,47 @@
   .fieldbar select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:#fff;flex:1;outline:none}
   #geoNote{font-size:12px;color:#6b6b6b;background:#f1f5ee;border-bottom:1px solid #dde6d5;padding:6px 14px;max-width:760px;margin:0 auto;width:100%}
 
-  main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:12px}
-  .newchip{position:fixed;left:50%;transform:translateX(-50%);bottom:150px;z-index:9;font:inherit;font-size:13px;
+  main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:760px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:7px}
+  .newchip{position:fixed;left:50%;transform:translateX(-50%);bottom:170px;z-index:9;font:inherit;font-size:13px;
            color:#fff;background:var(--gold);border:none;border-radius:16px;padding:8px 16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.22)}
-  .post{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
-  .phead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px}
-  .pav{width:30px;height:30px;border-radius:50%;background:#efe7d2;color:#6b541f;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:13px;flex:none}
-  .pauth{font-weight:500}
-  .pmeta{margin-left:auto;color:var(--muted);font-size:12px;text-align:right;line-height:1.3}
-  .pbody{font-size:14.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;margin-bottom:8px}
-  .pmedia{width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:#f2eee4;display:block;margin-bottom:8px}
-  .botreply{background:#faf6ec;border:1px solid #eadfbf;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
-  .botreply .bl{font-size:11.5px;color:#6b541f;font-weight:500;margin-bottom:4px}
-  .pacts{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}
-  .pbtn{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:16px;padding:6px 12px;cursor:pointer;color:var(--ink);display:flex;align-items:center;gap:5px}
+  .daysep{text-align:center;color:var(--muted);font-size:12px;padding:6px 0}
+
+  /* flat wall messages */
+  .msg{max-width:86%;border-radius:16px;padding:9px 12px;font-size:14.5px;line-height:1.5;position:relative}
+  .msg .mb{white-space:pre-wrap;word-wrap:break-word}
+  .msg .mb .mention{color:var(--gold);font-weight:600}
+  .theirs{align-self:flex-start;background:#fff;border:1px solid var(--line)}
+  .mine{align-self:flex-end;background:var(--ink);color:#fff}
+  .mine .mt{color:rgba(255,255,255,.55)}
+  .botmsg{align-self:flex-start;background:#faf6ec;border:1px solid #eadfbf;max-width:92%}
+  .botmsg .ca{color:#6b541f}
+  .mediamsg{align-self:stretch;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 12px}
+  .ca{font-weight:500;font-size:12.5px;margin-bottom:3px;color:#8a6d1f}
+  .theirs .ca{color:var(--gold)}
+  .mt{color:var(--muted);font-size:11px;margin-top:4px;text-align:right}
+  .pmedia{width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:#f2eee4;display:block;margin:6px 0}
+  .quote{border-left:3px solid var(--gold);padding:2px 8px;margin-bottom:6px;font-size:12.5px;color:var(--muted)}
+  .quote .qa{color:var(--gold);font-weight:600;display:block}
+  .mine .quote{border-left-color:#d9c17a}
+  .mine .quote,.mine .quote .qa{color:rgba(255,255,255,.75)}
+  .macts{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .pbtn{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:14px;padding:4px 10px;cursor:pointer;color:var(--ink);display:flex;align-items:center;gap:4px}
   .pbtn.on.up{border-color:var(--ok);color:var(--ok)}
   .pbtn.on.down{border-color:var(--bad);color:var(--bad)}
-  .pbtn .n{color:var(--muted);font-size:12px}
-  .vbadge{font-size:12px;padding:5px 10px;border-radius:14px;font-weight:500}
+  .vbadge{font-size:12px;padding:4px 9px;border-radius:12px;font-weight:500}
   .vbadge.ok{color:var(--ok);background:#eef5e9;border:1px solid #cfe3c2}
   .vbadge.bad{color:var(--bad);background:#fbeceb;border:1px solid #f0cfcd}
-  .thread{display:flex;flex-direction:column;gap:8px}
-  .thread:not(:empty){margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
-  .cmt{font-size:13.5px;line-height:1.45;background:#f4f1ea;border-radius:10px;padding:8px 10px}
-  .cmt.bot{background:#faf6ec;border:1px solid #eadfbf}
-  .cmt .ca{font-weight:500}
-  .cmt.bot .ca{color:#6b541f}
-  .cmt .ct{color:var(--muted);font-size:11px;margin-left:4px}
-  .cmt .chiefbadge{font-size:10.5px;color:#6b541f;background:#fff;border:1px solid var(--gold);border-radius:10px;padding:1px 6px;margin-left:4px}
-  .cmt .cb{white-space:pre-wrap;word-wrap:break-word;margin-top:3px}
-  .cmtform{display:flex;gap:6px;align-items:flex-end;margin-top:10px}
-  .cmtform input{flex:1;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;outline:none}
-  .cmtform input:focus{border-color:var(--gold)}
-  .cmtform button{border:1px solid var(--gold);background:var(--gold);color:#fff;border-radius:10px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
+  .rbtn{font-size:11.5px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;font-family:inherit}
   .empty{text-align:center;color:var(--muted);font-size:14px;padding:24px 12px;line-height:1.5}
 
   /* composer */
   .att{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:6px 12px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);background:#fff}
   .att img{height:40px;border-radius:8px;border:1px solid var(--line)}
   .att .x{cursor:pointer;color:#c0392b;font-weight:700;margin-left:auto}
+  .replybar{display:none;align-items:center;gap:8px;max-width:760px;width:100%;margin:0 auto;padding:6px 12px;font-size:12.5px;border-top:1px solid var(--line);background:#fff}
+  .replybar .rline{width:3px;align-self:stretch;background:var(--gold);border-radius:2px}
+  .replybar .rwho{color:var(--gold);font-weight:600;display:block}
+  .replybar .x{cursor:pointer;color:var(--muted);font-weight:700;margin-left:auto}
   form{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:#fff;max-width:760px;width:100%;margin:0 auto}
   .toprow{display:flex;gap:6px;align-items:flex-end}
   textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;max-height:120px;outline:none}
@@ -119,13 +121,14 @@
 
 <main id="feed"><div class="empty">Загружаю ленту…</div></main>
 
+<div class="replybar" id="replybar"><div class="rline"></div><div style="min-width:0"><span class="rwho" id="rwho"></span><span id="rsnippet"></span></div><span class="x" id="rx">✕</span></div>
 <div class="att" id="att"><img id="thumb"><span id="attname"></span><span class="x" id="attx">убрать ✕</span></div>
 <form id="form">
   <input type="file" id="cam" accept="image/*" capture="environment" hidden>
   <input type="file" id="gal" accept="image/*,video/*" hidden>
   <div class="toprow">
-    <textarea id="q" rows="1" placeholder="Наблюдение с поля или вопрос команде…"></textarea>
-    <button type="submit" class="iconbtn send" id="send" title="Опубликовать" aria-label="Опубликовать">➤</button>
+    <textarea id="q" rows="1" placeholder="Сообщение (@flagleaf — ИИ)"></textarea>
+    <button type="submit" class="iconbtn send" id="send" title="Отправить" aria-label="Отправить">➤</button>
   </div>
   <div class="btnrow">
     <button type="button" class="iconbtn cam" id="camBtn" title="Снять фото">📷</button>
@@ -133,100 +136,107 @@
     <button type="button" class="iconbtn" id="mic" title="Голосовой ввод">🎤</button>
   </div>
 </form>
-<div class="hint">Пост виден всей команде. ИИ-агроном ответит; коллеги и старший агроном могут обсудить.</div>
+<div class="hint">Чат виден всей команде. Фото ИИ разбирает сам; в тексте позовите его — @flagleaf. «↩» на сообщении — ответить.</div>
 
 <script>
 const TOK='flagleaf_session', $=id=>document.getElementById(id);
-let session=localStorage.getItem(TOK)||'', ME=null, fieldsAll=[], posts=[], topId=0;
-let pendingFile=null, pendingURL=null, pendingIsVideo=false;
+let session=localStorage.getItem(TOK)||'', ME=null, fieldsAll=[], msgs=[], topId=0;
+let pendingFile=null, pendingURL=null, pendingIsVideo=false, replyTo=null, awaitingBot=false;
 const MAX_VIDEO=60*1024*1024;
 const CROP_LIST=['Подсолнечник','Соя','Пшеница озимая','Пшеница яровая','Кукуруза','Ячмень','Сахарная свёкла','Горох','Рапс','Гречиха','Овёс','Рожь','Просо','Нут','Лён масличный','Горчица','Кориандр','Многолетние травы'];
 
 async function api(path,opts={}){
   const headers=opts.headers||{}; if(session) headers['x-session']=session;
   const r=await fetch(path,{...opts,headers}); let b=null; try{b=await r.json();}catch(e){}
-  if(!r.ok){const err=new Error((b&&b.detail)||('Ошибка '+r.status));err.status=r.status;throw err;} return b;
-}
+  if(!r.ok){const err=new Error((b&&b.detail)||('Ошибка '+r.status));err.status=r.status;throw err;} return b;}
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function initials(n){ return (n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+function body_html(s){ return esc(s).replace(/(^|\s)(@[^\s@,.:;!?]+)/g,'$1<span class="mention">$2</span>'); }
 function when(iso){ if(!iso) return ''; const d=new Date(iso), n=new Date();
   const t=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  return d.toDateString()===n.toDateString()?('сегодня '+t):(d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+t); }
+  return d.toDateString()===n.toDateString()?t:(d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+t); }
+function dayLabel(iso){ const d=new Date(iso), n=new Date();
+  if(d.toDateString()===n.toDateString()) return 'сегодня';
+  const y=new Date(n); y.setDate(n.getDate()-1); if(d.toDateString()===y.toDateString()) return 'вчера';
+  return d.toLocaleDateString('ru-RU',{day:'numeric',month:'long'}); }
 function curField(){const v=$('field').value; return fieldsAll.find(f=>String(f.id)===v)||null;}
 function curCrop(){ const f=curField(); return f?(f.crop||''):($('crop').value||''); }
 function isChief(){ return ME && (ME.role==='chief_agronomist'||ME.role==='admin'); }
+const BOT_MENTION=/(^|\s)@(flagleaf|флаглиф|флаглаф|flag)\b|^\s*(бот|bot)\b/i;
 
-// ---------- feed ----------
-async function loadFeed(toBottom){
-  let data; try{ data=await api('/api/feed'); }catch(e){ if(e.status===401){ location.replace('/app/'); return; } return; }
-  ME=data.me; posts=data.posts||[];
-  topId = posts.length ? posts[0].id : 0;
+// ---------- wall ----------
+async function loadWall(toBottom){
+  let data; try{ data=await api('/api/wall'); }catch(e){ if(e.status===401){ location.replace('/app/'); return; } return; }
+  ME=data.me; const fresh=data.messages||[];
+  if(awaitingBot && fresh.length && fresh[0].is_bot) awaitingBot=false;
+  msgs=fresh; topId = msgs.length ? msgs[0].id : 0;
   const nc=$('newChip'); if(nc) nc.remove();
   const el=$('feed'); const prev=el.scrollTop;
-  renderFeed();
-  el.scrollTop = toBottom ? el.scrollHeight : prev;   // stay put on reactions/polls; jump to newest on demand
+  render();
+  el.scrollTop = toBottom ? el.scrollHeight : prev;
 }
-function renderFeed(){
+function quoteHtml(m){
+  if(!m.reply_to) return '';
+  return `<div class="quote"><span class="qa">${esc(m.reply_author||'')}</span>${esc((m.reply_snippet||'').slice(0,80))}</div>`;
+}
+function msgNode(m){
+  const mine = ME && m.author_id===ME.id;
+  const div=document.createElement('div');
+  const verdict = m.ups ? '<span class="vbadge ok">✓ подтвердил старший</span>'
+                : m.downs ? '<span class="vbadge bad">✗ отклонил старший</span>' : '';
+  const reactBtns = (isChief() && m.media)
+    ? `<button class="pbtn up${m.my_reaction==='up'?' on up':''}" data-v="up">👍</button>`+
+      `<button class="pbtn down${m.my_reaction==='down'?' on down':''}" data-v="down">👎</button>` : '';
+  const replyBtn = `<button class="rbtn" data-r="1">↩ ответить</button>`;
+  if(m.is_bot){
+    div.className='msg botmsg';
+    div.innerHTML=`<div class="ca">🌿 Flagleaf</div>${quoteHtml(m)}<div class="mb">${body_html(m.body)}</div>`+
+      `<div class="mt">${esc(when(m.created_at))}</div><div class="macts">${replyBtn}</div>`;
+  } else if(m.media){
+    div.className='mediamsg';
+    const media = m.is_video
+      ? `<video src="${esc(m.media)}" controls playsinline preload="metadata" class="pmedia"></video>`
+      : `<img src="${esc(m.media)}" class="pmedia" alt="" onclick="window.open('${esc(m.media)}','_blank')">`;
+    div.innerHTML=`<div class="ca">${esc(m.author)}${m.field?' · 📍 '+esc(m.field):''}</div>${quoteHtml(m)}${media}`+
+      (m.body?`<div class="mb">${body_html(m.body)}</div>`:'')+
+      `<div class="macts">${reactBtns}${verdict}${replyBtn}<span class="mt" style="margin-left:auto">${esc(when(m.created_at))}</span></div>`;
+  } else {
+    div.className='msg '+(mine?'mine':'theirs');
+    div.innerHTML=(mine?'':`<div class="ca">${esc(m.author)}${m.chief?' · старший':''}</div>`)+quoteHtml(m)+
+      `<div class="mb">${body_html(m.body)}</div><div class="mt">${esc(when(m.created_at))}</div>`+
+      `<div class="macts">${replyBtn}</div>`;
+  }
+  div.querySelectorAll('.pbtn[data-v]').forEach(b=>b.onclick=()=>reactMsg(m.id,b.dataset.v,b));
+  div.querySelector('[data-r]').onclick=()=>setReply(m);
+  return div;
+}
+function render(){
   const el=$('feed');
-  if(!posts.length){ el.innerHTML='<div class="empty">Пока пусто. Пришлите фото/видео с поля или напишите наблюдение — оно появится здесь для всей команды.</div>'; return; }
+  if(!msgs.length){ el.innerHTML='<div class="empty">Пока пусто. Пришлите фото/видео с поля или напишите наблюдение — увидит вся команда. «@flagleaf» — спросить ИИ.</div>'; return; }
   el.innerHTML='';
-  [...posts].reverse().forEach(p=>el.appendChild(renderPost(p)));   // oldest → newest, like a chat
+  let prevDay='';
+  [...msgs].reverse().forEach(m=>{
+    const lbl=dayLabel(m.created_at);
+    if(lbl!==prevDay){ const s=document.createElement('div'); s.className='daysep'; s.textContent=lbl; el.appendChild(s); prevDay=lbl; }
+    el.appendChild(msgNode(m));
+  });
+  if(awaitingBot){ const t=document.createElement('div'); t.className='msg botmsg'; t.id='typing';
+    t.innerHTML='<div class="ca">🌿 Flagleaf</div><div class="mb" style="color:var(--muted)">смотрит и отвечает…</div>'; el.appendChild(t); }
 }
-function commentHtml(cm){
-  return `<div class="cmt ${cm.is_bot?'bot':''}"><span class="ca">${cm.is_bot?'🤖 ':''}${esc(cm.author)}</span>`+
-    `${cm.chief?'<span class="chiefbadge">старший</span>':''}<span class="ct">${esc(when(cm.created_at))}</span>`+
-    `<div class="cb">${esc(cm.body)}</div></div>`;
-}
-const BOT_ADDR=/^\s*(бот|bot|флаглиф|flagleaf)[\s,:!-]/i;
-function renderPost(p){
-  const c=document.createElement('div'); c.className='post'; c.dataset.id=p.id;
-  const media = p.media ? (p.is_video
-      ? `<video src="${esc(p.media)}" controls playsinline preload="metadata" class="pmedia"></video>`
-      : `<img src="${esc(p.media)}" class="pmedia" alt="">`) : '';
-  // only the chief can react, so any reaction on a post IS his verdict
-  const verdict = p.ups ? '<span class="vbadge ok">✓ подтвердил старший</span>'
-                : p.downs ? '<span class="vbadge bad">✗ отклонил старший</span>' : '';
-  const react = (isChief()
-    ? `<button class="pbtn up${p.my_reaction==='up'?' on up':''}" data-v="up">👍 <span class="n">${p.ups||''}</span></button>`+
-      `<button class="pbtn down${p.my_reaction==='down'?' on down':''}" data-v="down">👎 <span class="n">${p.downs||''}</span></button>`
-    : '') + verdict;
-  c.innerHTML=
-    `<div class="phead"><span class="pav">${esc(initials(p.author))}</span><span class="pauth">${esc(p.author)}</span>`+
-    `<span class="pmeta">${esc(when(p.created_at))}${p.field?'<br>📍 '+esc(p.field):''}</span></div>`+
-    (p.body?`<div class="pbody">${esc(p.body)}</div>`:'')+media+
-    (react?`<div class="pacts">${react}</div>`:'')+
-    `<div class="thread">${(p.thread||[]).map(commentHtml).join('')}</div>`+
-    `<div class="cmtform"><input placeholder="Ответить… (напишите «бот …», чтобы спросить ИИ)"><button>➤</button></div>`;
-  c.querySelectorAll('.pbtn[data-v]').forEach(b=>b.onclick=()=>react(p.id, b.dataset.v, b));
-  const cf=c.querySelector('.cmtform'), inp=cf.querySelector('input'), btn=cf.querySelector('button'), th=c.querySelector('.thread');
-  // Post the comment WITHOUT reloading/scrolling the whole feed — stay in this thread, show my
-  // message + a «печатает…» indicator while the bot (which answers synchronously) is thinking.
-  const send=async()=>{
-    const v=inp.value.trim(); if(!v) return; inp.value=''; btn.disabled=true;
-    th.insertAdjacentHTML('beforeend', commentHtml({author:(ME&&ME.name)||'Вы', is_bot:false, chief:isChief(), body:v, created_at:new Date().toISOString()}));
-    let typing=null;
-    if(BOT_ADDR.test(v)){ typing=document.createElement('div'); typing.className='cmt bot';
-      typing.innerHTML='<span class="ca">🤖 Flagleaf</span><div class="cb" style="color:var(--muted)">печатает…</div>'; th.appendChild(typing); }
-    th.lastElementChild.scrollIntoView({block:'nearest'});
-    try{
-      await api(`/api/feed/${p.id}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:v})});
-      const cs=(await api(`/api/feed/${p.id}/comments`)).comments||[];
-      th.innerHTML=cs.map(commentHtml).join('');
-      th.lastElementChild && th.lastElementChild.scrollIntoView({block:'nearest'});
-    }catch(e){ if(typing) typing.querySelector('.cb').textContent='(не удалось — попробуйте ещё раз)'; }
-    btn.disabled=false;
-  };
-  btn.onclick=send; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();send();} });
-  return c;
-}
-async function react(postId, verdict, btn){
+async function reactMsg(id, verdict, btn){
   const on=btn.classList.contains('on');
-  try{ await api(`/api/feed/${postId}/react`,{method:'POST',headers:{'Content-Type':'application/json'},
+  try{ await api(`/api/wall/${id}/react`,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({verdict:on?'none':verdict})}); }catch(e){ return; }
-  loadFeed();
+  loadWall();
 }
+function setReply(m){
+  replyTo={id:m.id, author:m.is_bot?'Flagleaf':m.author, snippet:(m.body||(m.media?'📷 фото':'')).slice(0,80), bot:!!m.is_bot};
+  $('rwho').textContent=replyTo.author; $('rsnippet').textContent=replyTo.snippet;
+  $('replybar').style.display='flex'; $('q').focus();
+}
+function clearReply(){ replyTo=null; $('replybar').style.display='none'; }
+$('rx').onclick=clearReply;
 
-// ---------- compose / post ----------
+// ---------- compose ----------
 function setFile(f){ pendingFile=f; pendingIsVideo=!!(f&&(f.type||'').startsWith('video'));
   if(pendingURL){URL.revokeObjectURL(pendingURL);pendingURL=null;}
   if(f){ pendingURL=URL.createObjectURL(f);
@@ -241,22 +251,26 @@ $('gal').onchange=e=>{ const f=e.target.files[0]; if(f) setFile(f); e.target.val
 $('attx').onclick=()=>setFile(null);
 $('q').addEventListener('input', ()=>{ $('q').style.height='auto'; $('q').style.height=Math.min($('q').scrollHeight,120)+'px'; });
 
-async function createPost(){
+async function sendMsg(){
   const text=$('q').value.trim(), file=pendingFile, crop=curCrop(), f=curField();
   if(!text && !file) return;
-  if(file && pendingIsVideo && file.size>MAX_VIDEO){ alert('Видео до ~60 МБ / 15 сек для ленты. Снимите покороче.'); return; }
+  if(file && pendingIsVideo && file.size>MAX_VIDEO){ alert('Видео до ~60 МБ / 15 сек. Снимите покороче.'); return; }
   $('send').disabled=true;
   const fd=new FormData(); fd.append('body',text); if(f) fd.append('field_id',String(f.id)); if(crop) fd.append('crop',crop);
+  if(replyTo) fd.append('reply_to',String(replyTo.id));
   if(file) fd.append(pendingIsVideo?'video':'image', file);
-  $('q').value=''; $('q').style.height='auto'; setFile(null);
-  const el=$('feed'); const wait=document.createElement('div'); wait.className='post'; wait.innerHTML='<div style="color:var(--muted);font-size:14px">Публикую…' + (file?' (ИИ анализирует '+(file.type.startsWith('video')?'видео':'фото')+'…)':'') + '</div>';
-  el.appendChild(wait); el.scrollTop=el.scrollHeight;
-  try{ await api('/api/feed/post',{method:'POST',body:fd}); await loadFeed(true); }
-  catch(e){ wait.querySelector('div').textContent = e.status===429?'Слишком много постов — попробуйте позже.':'Не удалось опубликовать. Попробуйте ещё раз.'; }
+  const botExpected = !!file || BOT_MENTION.test(text) || !!(replyTo&&replyTo.bot);
+  $('q').value=''; $('q').style.height='auto'; setFile(null); clearReply();
+  try{
+    await api('/api/wall',{method:'POST',body:fd});
+    if(botExpected){ awaitingBot=true; setTimeout(()=>{ awaitingBot=false; }, 90000); }
+    await loadWall(true);
+  }
+  catch(e){ alert(e.status===429?'Слишком много сообщений — попробуйте позже.':(e.message||'Не удалось отправить.')); }
   finally{ $('send').disabled=false; }
 }
-$('form').addEventListener('submit', e=>{ e.preventDefault(); createPost(); });
-$('q').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); createPost(); } });
+$('form').addEventListener('submit', e=>{ e.preventDefault(); sendMsg(); });
+$('q').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); } });
 
 // ---------- voice ----------
 const micBtn=$('mic'); let recording=false, actx=null, mstream=null, mproc=null, mchunks=[];
@@ -287,19 +301,22 @@ async function geoLocate(){
   selectField(f.id); const g=$('geoNote'); g.textContent=`📍 Поле «${f.name}» определено по GPS — измените, если не так.`; g.classList.remove('hidden');
 }
 
-// ---------- polling for new posts (non-disruptive) ----------
+// ---------- polling (faster while the bot is thinking) ----------
 async function poll(){
-  try{ const d=await api('/api/feed'); const nt=(d.posts&&d.posts[0]&&d.posts[0].id)||0;
-    if(nt>topId){ const el=$('feed'); const nearBottom=(el.scrollHeight-el.scrollTop-el.clientHeight)<140;
-      if(nearBottom) loadFeed(true); else showNewChip(); }
+  try{ const d=await api('/api/wall'); const nt=(d.messages&&d.messages[0]&&d.messages[0].id)||0;
+    if(nt>topId || awaitingBot){
+      const el=$('feed'); const nearBottom=(el.scrollHeight-el.scrollTop-el.clientHeight)<160;
+      if(awaitingBot && d.messages.length && d.messages[0].is_bot){ awaitingBot=false; loadWall(true); return; }
+      if(nt>topId){ if(nearBottom) loadWall(true); else showNewChip(); }
+    }
   }catch(e){}
 }
 function showNewChip(){ if($('newChip')) return; const chip=document.createElement('button'); chip.id='newChip'; chip.className='newchip';
-  chip.textContent='↓ новые сообщения'; chip.onclick=()=>{ chip.remove(); loadFeed(true); }; document.body.appendChild(chip); }
+  chip.textContent='↓ новые сообщения'; chip.onclick=()=>{ chip.remove(); loadWall(true); }; document.body.appendChild(chip); }
 
 // ---------- boot ----------
 $('navBack').onclick=()=>window.history.back();
-$('navRefresh').onclick=()=>loadFeed(true);
+$('navRefresh').onclick=()=>loadWall(true);
 async function boot(){
   if(!session){ location.replace('/app/'); return; }
   let me=null; try{ me=await api('/api/me'); }catch(e){}
@@ -307,7 +324,6 @@ async function boot(){
   ME=me; $('hdrWho').textContent=me.name||'';
   $('hdrSub').insertAdjacentHTML('beforeend',' · <button class="logout" id="lo">выйти</button>');
   $('lo').onclick=()=>{ localStorage.removeItem(TOK); location.replace('/app/'); };
-  // No separate «Проверка» — the chief verifies posts right here in the feed (👍/👎 + comments).
   try{ const r=await api('/api/fields'); fieldsAll=r.fields||[];
     $('field').innerHTML=fieldsAll.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')+'<option value="">— другое поле —</option>';
     const merged=[...new Set(fieldsAll.map(f=>f.crop).filter(Boolean))], seen=new Set(merged.map(c=>c.toLowerCase()));
@@ -319,8 +335,8 @@ async function boot(){
     $('field').onchange=()=>{ toggleCrop(); $('geoNote').classList.add('hidden'); };
   }catch(e){}
   geoLocate();
-  await loadFeed(true);
-  setInterval(poll, 15000);
+  await loadWall(true);
+  setInterval(()=>{ poll(); }, 8000);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') poll(); });
 }
 boot();

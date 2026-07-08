@@ -967,6 +967,14 @@ async function boot(){
       $('geoNote').classList.add('hidden'); };   // manual pick overrides the GPS hint
   }catch(e){}
   geoLocate();   // silently pre-select the field the agronomist is standing on (he can override)
+  // server-side chat history (same thread the native app shows) — restores continuity on web
+  try{
+    const h=(await api('/api/chat/history')).messages||[];
+    if(h.length){ killHero();
+      h.slice(-12).forEach(m=>{ if(m.role==='user') addUser(m.text,null); else add(m.text,'bot');
+        chatHist.push({role:m.role,text:m.text}); });
+    }
+  }catch(e){}
   // field-ops: offline queue + push + contribution strip
   refreshPending(); flushQueue();
   maybeShowPushBanner(); ensurePushIfGranted();
