@@ -33,7 +33,16 @@ case $rc in
      echo "--- reference sheet ---"
      $COMPOSE run --rm -T bot python -m labeling.reference --deliver
      echo "reference: rc=$?" ;;
-  1) echo "export: nothing pending — skipped." ;;
+  1) echo "export: nothing pending — skipped."
+     # Reference links are presigned for 7 days (hard AWS cap) — while photos still sit
+     # un-annotated in CVAT, re-deliver a fresh sheet every Monday so the annotator's
+     # link never goes stale. (labeling.reference exits 1 itself when the backlog is
+     # empty, so this never spams an idle team.)
+     if [ "$(date +%u)" = "1" ]; then
+       echo "--- reference refresh (weekly) ---"
+       $COMPOSE run --rm -T bot python -m labeling.reference --deliver
+       echo "reference refresh: rc=$?"
+     fi ;;
   *) echo "export: ERROR (rc=$rc)."
      $COMPOSE run --rm -T bot python -m labeling.alert \
        "⚠️ Flagleaf labeling: ошибка экспорта фото в CVAT (rc=$rc). Вероятно, лимит задач CVAT или связь. См. pipeline.log на сервере." ;;
