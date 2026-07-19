@@ -63,7 +63,7 @@ PESTS = [
     ("trachelus",         "Пилильщик хлебный чёрный",         "Trachelus tabidus",                 False),
     ("agrotis_excl",      "Совка восклицательная",            "Agrotis exclamationis",             False),
     ("apamea",            "Совка зерновая обыкновенная",      "Apamea anceps",                     False),
-    ("helicoverpa",       "Совка хлопковая",                  "Helicoverpa armigera",              False),
+    ("helicoverpa_larva", "Совка хлопковая (гусеница)",       "Helicoverpa armigera",              False),
     ("spring_cutworm",    "Совка яровая",                     "Amphipoea fucosa",                  False),
     ("barley_aphid",      "Тля ячменная",                     "Diuraphis noxia",                   False),
     ("psammotettix",      "Цикадка полосатая",                "Psammotettix striatus",             False),

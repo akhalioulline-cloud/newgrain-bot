@@ -66,15 +66,43 @@ def _project_label_names(base, headers, project_id):
     return names
 
 
+def _label_id(base, headers, project_id, name):
+    url, params = f"{base}/api/labels", {"project_id": project_id, "page_size": 100}
+    while url:
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        for lbl in data.get("results", []):
+            if lbl["name"] == name:
+                return lbl["id"]
+        url, params = data.get("next"), None
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--dry-run", action="store_true",
                     help="Only report what would be added; don't modify CVAT.")
+    ap.add_argument("--rename", nargs=2, metavar=("OLD", "NEW"),
+                    help="Rename a label IN PLACE (keeps its id → existing annotations preserved).")
     args = ap.parse_args()
 
     desired = json.loads(LABELS_FILE.read_text(encoding="utf-8"))
     base, headers = settings.cvat_host, _headers()
     project_id = _resolve_project(base, headers)
+
+    if args.rename:
+        old, new = args.rename
+        lid = _label_id(base, headers, project_id, old)
+        if lid is None:
+            print(f"label {old!r} not found — nothing renamed.", file=sys.stderr)
+            return 1
+        r = requests.patch(f"{base}/api/projects/{project_id}",
+                           headers={**headers, "Content-Type": "application/json"},
+                           json={"labels": [{"id": lid, "name": new}]}, timeout=60)
+        r.raise_for_status()
+        print(f"✅ renamed {old!r} → {new!r} (label id {lid}; annotations preserved).", file=sys.stderr)
+        return 0
     have = set(_project_label_names(base, headers, project_id))
     missing = [lbl for lbl in desired if lbl["name"] not in have]
 
