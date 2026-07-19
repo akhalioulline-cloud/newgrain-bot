@@ -26,6 +26,7 @@ from bot.config import settings
 from bot.db import engine
 from bot.storage import _client
 from bot.taxonomy import DISEASES, PESTS
+from labeling.export import _row_filename   # the exact CVAT frame filename ({slug}__{uuid}.ext)
 
 THUMB_PX = 480
 
@@ -123,8 +124,7 @@ def _render(subs, lut, label) -> str:
     for r in subs:
         status_badge = (f'<span class="badge status">'
                         f'{html.escape(_STATUS_RU.get(r["status"], r["status"] or "—"))}</span>')
-        ext = (r["image_url"].rsplit(".", 1)[-1] if "." in r["image_url"] else "jpg")
-        fname = f"{r['id']}.{ext}"           # exactly what CVAT shows
+        fname = _row_filename(r)             # exactly what CVAT shows (hint-slug__uuid.ext)
         s3_key = r["image_url"].replace(f"s3://{settings.s3_bucket}/", "")
         try:
             img = _client.get_object(Bucket=settings.s3_bucket, Key=s3_key)["Body"].read()
@@ -283,6 +283,11 @@ def main() -> int:
     if not subs:
         print(f"No submissions at status={statuses!r}.", file=sys.stderr)
         return 1
+    # Match CVAT's frame order: CVAT sorts a task's images lexicographically by filename.
+    # Group the batch actually IN CVAT (in_labeling) first, then the queue; within each,
+    # order by the exact CVAT frame name — so the sheet reads top-to-bottom like CVAT.
+    _srank = {"in_labeling": 0, "ready_for_labeling": 1, "labeled": 2}
+    subs = sorted(subs, key=lambda r: (_srank.get(r["status"], 9), _row_filename(r).lower()))
     print(f"Building reference for {len(subs)} photo(s), statuses={statuses!r}…",
           file=sys.stderr)
     lut = _species_lookup(species)
