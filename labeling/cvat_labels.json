@@ -334,5 +334,11 @@
     "type": "rectangle",
     "color": "#d98c3a",
     "attributes": []
+  },
+  {
+    "name": "helicoverpa",
+    "type": "rectangle",
+    "color": "#c96a4a",
+    "attributes": []
   }
 ]
