@@ -26,6 +26,7 @@ from bot.db import (
     add_agronomist,
     count_user_submissions,
     create_submission,
+    create_wall_from_submission,
     deactivate_user,
     delete_submission,
     field_card_text,
@@ -1387,6 +1388,12 @@ async def _finalize(message: Message, state: FSMContext, user) -> None:
     # (scouting/control/treatment_result/stress) is field-state → terminal 'stored',
     # no review, no CVAT.
     annotatable = data.get("category") in ("weed", "disease", "pest")
+    # One team stream: Telegram uploads appear in the wall like web/native posts do —
+    # that's also where the chief now reviews (👍/👎 on the message).
+    try:
+        await create_wall_from_submission(sid)
+    except Exception:
+        logger.exception("wall message for tg submission failed")
     if user["role"] == "agronomist" and annotatable:
         await update_submission(sid, status="pending_review")
         cas = await get_chief_agronomists(user["farm_id"])

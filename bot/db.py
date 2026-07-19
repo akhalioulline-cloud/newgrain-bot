@@ -1237,6 +1237,20 @@ async def get_wall_overview(farm_id, user_id):
             {"farm": farm_id, "me": user_id})).mappings().first()
 
 
+async def create_wall_from_submission(submission_id):
+    """Surface a submission in the team wall (the chief reviews via 👍/👎 there). Used by the
+    Telegram upload flow — web/native post to the wall directly — and for backfills.
+    Idempotent: skips if the submission already has a wall message."""
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO wall_messages (farm_id, author_id, is_bot, body, submission_id, field_id) "
+            "SELECT u.farm_id, u.id, false, s.comment_text, s.id, s.field_id "
+            "FROM submissions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.id = :sid "
+            "  AND NOT EXISTS (SELECT 1 FROM wall_messages w WHERE w.submission_id = s.id)"),
+            {"sid": submission_id})
+
+
 async def get_farm_members(farm_id):
     """Active teammates on the farm — for the @mention picker and mention→push resolution."""
     async with engine.connect() as conn:

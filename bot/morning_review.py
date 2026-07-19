@@ -17,7 +17,7 @@ from bot.push import send_push
 
 logger = logging.getLogger("morning_review")
 
-APP_PATH = "/app/assistant.html?review=1"
+APP_PATH = "/app/feed.html"   # review happens IN the wall: chief taps 👍/👎 on the photo message
 WEB_URL = os.getenv("WEB_APP_URL", "https://ai.flagleaf.ru").rstrip("/") + APP_PATH
 
 
@@ -56,10 +56,11 @@ async def main() -> None:
 
     summary = _summary(items)
     title = "🌅 Материалы на проверке"
-    body = f"{summary} ждут вашей проверки — откройте «Ассистент»."
+    body = f"{summary} ждут вашей проверки — откройте «Ленту» и поставьте 👍/👎."
     tg_text = (
         f"🌅 Доброе утро! На проверке: {summary}.\n"
-        f"Откройте «Ассистент», чтобы разобрать: {WEB_URL}"
+        f"Откройте «Ленту» и поставьте 👍 (в обучение) или 👎 (отклонить) "
+        f"на фото: {WEB_URL}"
     )
 
     rbot = _relay_bot()
