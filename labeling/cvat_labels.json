@@ -340,5 +340,11 @@
     "type": "rectangle",
     "color": "#c96a4a",
     "attributes": []
+  },
+  {
+    "name": "loxostege_larva",
+    "type": "rectangle",
+    "color": "#b87333",
+    "attributes": []
   }
 ]
