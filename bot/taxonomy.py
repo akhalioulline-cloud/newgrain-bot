@@ -56,6 +56,7 @@ PESTS = [
     ("chlorops",          "Зеленоглазка хлебная",             "Chlorops pumilionis",               False),
     ("cnephasia",         "Злаковая листовёртка",             "Cnephasia spp.",                    False),
     ("grain_mite",        "Клещ хлебный",                     "Siteroptes cerealium",              False),
+    ("loxostege",         "Луговой мотылёк",                  "Loxostege sticticalis",             False),
     ("phorbia",           "Муха пшеничная чёрная",            "Phorbia fumigata",                  False),
     ("opomyza",           "Опомиза пшеничная",                "Opomyza florum",                    False),
     ("trachelus",         "Пилильщик хлебный чёрный",         "Trachelus tabidus",                 False),
